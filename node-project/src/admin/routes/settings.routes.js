@@ -1,0 +1,13 @@
+'use strict';
+const router = require('express').Router();
+const { requireAdmin } = require('../middleware/auth');
+const { settings } = require('../controllers/misc.controller');
+router.get('/', requireAdmin, settings.index);
+router.post('/', requireAdmin, settings.update);
+router.post('/payment', requireAdmin, settings.saveKey('payment_api'));
+router.post('/terms', requireAdmin, settings.saveKey('terms'));
+router.post('/privacy', requireAdmin, settings.saveKey('privacy'));
+router.post('/about', requireAdmin, settings.saveKey('about'));
+router.post('/payment-policy', requireAdmin, settings.saveKey('payment_policy'));
+router.put('/password', requireAdmin, require('../controllers/pages.controller').profile.password);
+module.exports = router;

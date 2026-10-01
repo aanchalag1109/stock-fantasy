@@ -1,0 +1,74 @@
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-broadcast-pin text-danger me-2"></i>Live Contest Management</h1>
+            <p class="text-muted mb-0">Sessions that are live or about to start, and their contests</p>
+        </div>
+    </div>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">Active Sessions</div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Session Name</th>
+                        <th>Market Type</th>
+                        <th>Status</th>
+                        <th>Start Time</th>
+                        <th>End Time</th>
+                        <th>Contests</th>
+                        <th>Participants</th>
+                        <th>Prize Pool</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% sessions.forEach(s => {
+                        const related = contests.filter(c => String(c.league_session_id && c.league_session_id._id ? c.league_session_id._id : c.league_session_id) === String(s._id));
+                        const participants = related.reduce((sum, c) => sum + Number(c.total_participants || c.participants || 0), 0);
+                        const pool = related.reduce((sum, c) => sum + Number(c.prize_pool || 0), 0);
+                    %>
+                    <tr>
+                        <td><%= s.old_id || String(s._id).slice(-6) %></td>
+                        <td class="fw-semibold"><%= s.name %></td>
+                        <td><%= s.market_type %></td>
+                        <td><span class="badge bg-<%= s.status === 'live' ? 'success' : 'warning' %>"><%= s.status %></span></td>
+                        <td><%= s.start_time ? new Date(s.start_time).toLocaleString('en-IN') : '—' %></td>
+                        <td><%= s.end_time ? new Date(s.end_time).toLocaleString('en-IN') : '—' %></td>
+                        <td><%= related.length %></td>
+                        <td><%= participants %></td>
+                        <td>₹<%= pool.toLocaleString('en-IN') %></td>
+                        <td><a class="btn btn-sm btn-outline-primary" href="/league_sessions/<%= s._id %>">Open</a></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!sessions.length) { %><tr><td colspan="10" class="text-center py-4 text-muted">No live or upcoming sessions</td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card shadow-sm">
+        <div class="card-header">Live / Upcoming Contests</div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>ID</th><th>Category</th><th>Entry Fee</th><th>Participants</th><th>Prize Pool</th><th>Status</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    <% contests.forEach(c => { %>
+                    <tr>
+                        <td><%= c.old_id || String(c._id).slice(-6) %></td>
+                        <td><%= c.category %></td>
+                        <td>₹<%= Number(c.entry_fee || 0).toLocaleString('en-IN') %></td>
+                        <td><%= c.participants || 0 %></td>
+                        <td>₹<%= Number(c.prize_pool || 0).toLocaleString('en-IN') %></td>
+                        <td><span class="badge bg-<%= c.status === 'live' ? 'success' : 'warning' %>"><%= c.status %></span></td>
+                        <td><a class="btn btn-sm btn-primary" href="/contests/<%= c._id %>">Details</a></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!contests.length) { %><tr><td colspan="7" class="text-center py-4 text-muted">No contests</td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

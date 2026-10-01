@@ -1,0 +1,36 @@
+<div style="max-width:600px;">
+  <a href="/withdrawal_requests" class="btn btn-secondary btn-sm" style="margin-bottom:16px;">← Back</a>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:16px;">Withdrawal Request</div>
+    <div style="display:flex;flex-direction:column;gap:10px;font-size:14px;">
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">User:</span><a href="/users/<%= request.user_id?._id %>" style="color:var(--accent)"><%= request.user_id?.name %></a></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">Mobile:</span><%= request.user_id?.mobile || '—' %></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">Amount:</span><strong style="color:var(--accent2);">₹<%= parseFloat(request.amount || 0).toFixed(2) %></strong></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">USDT Wallet:</span><code><%= request.usdt_wallet_address || '—' %></code></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">Network:</span><%= request.usdt_network || 'BEP20' %></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">Status:</span>
+        <% if (request.status === 'accepted') { %><span class="badge badge-success">Accepted</span>
+        <% } else if (request.status === 'rejected') { %><span class="badge badge-danger">Rejected</span>
+        <% } else { %><span class="badge badge-warning">Pending</span><% } %></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">User Winnings:</span>₹<%= parseFloat(request.user_id?.winnings_balance || 0).toFixed(2) %></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">Requested:</span><%= request.created_at ? new Date(request.created_at).toLocaleString() : '—' %></div>
+      <% if (request.admin_message) { %>
+      <div><span style="color:var(--text-muted);display:inline-block;width:160px;">Admin Note:</span><%= request.admin_message %></div>
+      <% } %>
+    </div>
+    <% if (request.status === 'pending') { %>
+    <div class="form-actions">
+      <form method="POST" action="/withdrawal_requests/<%= request._id %>">
+        <input type="hidden" name="_method" value="PUT"/>
+        <input type="hidden" name="status" value="accepted"/>
+        <button class="btn btn-success">✓ Accept (Send USDT Manually)</button>
+      </form>
+      <form method="POST" action="/withdrawal_requests/<%= request._id %>">
+        <input type="hidden" name="_method" value="PUT"/>
+        <input type="hidden" name="status" value="rejected"/>
+        <button class="btn btn-danger" data-confirm="Reject and refund amount?">✗ Reject & Refund</button>
+      </form>
+    </div>
+    <% } %>
+  </div>
+</div>

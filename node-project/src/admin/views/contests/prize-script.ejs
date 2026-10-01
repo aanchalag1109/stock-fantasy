@@ -1,0 +1,189 @@
+<script>
+let treeRowIdx = 0;
+const TIERS = {
+    10:    [[1,1,30],[2,2,18],[3,3,11],[4,5,13.5],[6,10,27.5]],
+    25:    [[1,1,24],[2,2,14],[3,3,9],[4,5,12.375],[6,10,18.125],[11,25,22.5]],
+    50:    [[1,1,23],[2,2,13],[3,3,9],[4,5,8.1],[6,10,15],[11,25,16.4],[26,50,15.5]],
+    100:   [[1,1,18],[2,2,10],[3,3,8],[4,5,6.576],[6,10,10],[11,25,15.4],[26,50,16.524],[51,100,15.5]],
+    250:   [[1,1,14],[2,2,9],[3,3,7],[4,5,5.169],[6,10,8.602],[11,25,13.323],[26,50,13.031],[51,100,13.375],[101,250,16.5]],
+    500:  [[1,1,14],[2,2,9],[3,3,7],[4,5,3.1],[6,10,6.628],[11,25,10.576],[26,50,10.102],[51,100,12.469],[101,250,13.625],[251,500,13.5]],
+    1000: [[1,1,12],[2,2,8],[3,3,5],[4,5,2.399],[6,10,4.931],[11,25,9.11],[26,50,8.813],[51,100,10.418],[101,250,11.891],[251,500,12.188],[501,1000,15.25]],
+    2500: [[1,1,10],[2,2,7],[3,3,5],[4,5,1.8],[6,10,3.5],[11,25,7.386],[26,50,7.229],[51,100,8.972],[101,250,10.629],[251,500,11.172],[501,1000,12.562],[1001,2500,14.75]],
+    5000: [[1,1,10],[2,2,7],[3,3,5],[4,5,1.75],[6,10,3],[11,25,5.314],[26,50,5.355],[51,100,7.14],[101,250,8.853],[251,500,9.471],[501,1000,10.961],[1001,2500,12.281],[2501,5000,13.875]],
+    10000:[[1,1,10],[2,2,7],[3,3,5],[4,5,1.6],[6,10,2.049],[11,25,4.283],[26,50,4.31],[51,100,5.08],[101,500,8.774],[501,1000,10.365],[1001,2500,12.82],[2501,5000,12.094],[5001,10000,16.625]],
+    25000:[[1,1,8],[2,2,6],[3,3,4.5],[4,5,1.4],[6,10,1.7],[11,25,3.164],[26,50,3.422],[51,100,4.229],[101,500,6.262],[501,1000,7.339],[1001,5000,12.172],[5001,10000,12.562],[10001,25000,29.25]],
+    50000:[[1,1,8],[2,2,6],[3,3,4.5],[4,5,1.2],[6,10,1.7],[11,25,2.903],[26,50,3.043],[51,100,3.89],[101,500,6.187],[501,1000,6.916],[1001,5000,8.555],[5001,10000,10],[10001,25000,17.431],[25001,50000,19.675]],
+    100000:[[1,1,8],[2,2,6],[3,3,4.5],[4,5,1.052],[6,10,1.502],[11,25,2.737],[26,50,2.65],[51,100,3.533],[101,500,5.377],[501,1000,5.1],[1001,5000,7.893],[5001,10000,8.45],[10001,25000,11.031],[25001,50000,12.375],[50001,100000,19.8]],
+    250000:[[1,1,6.5],[2,2,5],[3,3,4],[4,5,1.076],[6,10,1.8],[11,25,2.53],[26,50,2.507],[51,100,3.11],[101,500,5],[501,1000,6],[1001,5000,7.075],[5001,10000,7.766],[10001,25000,8.355],[25001,100000,13.281],[100001,250000,26]],
+    500000:[[1,1,6.5],[2,2,5],[3,3,4],[4,5,1.005],[6,10,1.673],[11,25,2.831],[26,50,2.375],[51,100,2.9],[101,500,4.6],[501,1000,5.6],[1001,5000,6.788],[5001,10000,7.532],[10001,25000,7.734],[25001,100000,9.312],[100001,250000,12.75],[250001,500000,19.4]],
+    1000000:[[1,1,5.5],[2,2,4.2],[3,3,3.5],[4,5,0.941],[6,10,1.621],[11,25,2.194],[26,50,2.159],[51,100,2.812],[101,500,4.538],[501,1000,5.2],[1001,5000,6.555],[5001,10000,7.407],[10001,25000,7.709],[25001,100000,8.945],[100001,250000,11.594],[250001,500000,13.125],[500001,1000000,12]]
+};
+
+function isFixed() { const c = document.getElementById('category').value; return c === 'guaranteed' || c === 'practice'; }
+function num(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
+function getPrizePool() {
+    if (isFixed()) return getTreeTotal();
+    const total = num('participants') * num('entry_fee');
+    return total - (total * num('platform_fee') / 100);
+}
+function onCategoryChange() {
+    const fixed = isFixed();
+    const hint = document.getElementById('categoryHint');
+    document.getElementById('autoStructureBox').classList.toggle('d-none', fixed);
+    document.getElementById('treeStructureBox').classList.toggle('d-none', !fixed);
+    if (hint) {
+        if (fixed) {
+            hint.textContent = '🔒 Fixed pool — tree total = prize pool';
+            hint.className = 'text-danger fw-semibold';
+        } else {
+            hint.textContent = '📈 Dynamic pool — grows with actual joins';
+            hint.className = 'text-success fw-semibold';
+        }
+    }
+    recalc();
+}
+function recalc() {
+    const participants = num('participants');
+    const entryFee = num('entry_fee');
+    const platformFee = num('platform_fee');
+    const winPct = num('winning_percentage');
+    const totalPool = participants * entryFee;
+    const platformFeeAmt = totalPool * platformFee / 100;
+    const prizePool = isFixed() ? getTreeTotal() : (totalPool - platformFeeAmt);
+    const winners = Math.max(1, Math.floor(participants * winPct / 100));
+    document.getElementById('o_totalPool').textContent = totalPool.toFixed(0);
+    document.getElementById('o_platformFee').textContent = platformFeeAmt.toFixed(0);
+    document.getElementById('o_prizePool').textContent = prizePool.toFixed(0);
+    document.getElementById('o_winners').textContent = winners;
+    if (!isFixed()) regenerateAutoTiers();
+    else updateTreeTotal();
+}
+function getClosestTierKey(n) {
+    const keys = Object.keys(TIERS).map(Number).sort((a, b) => a - b);
+    let chosen = keys[0];
+    let minDiff = Math.abs(keys[0] - n);
+    for (const k of keys) {
+        const diff = Math.abs(k - n);
+        if (diff < minDiff) { minDiff = diff; chosen = k; }
+    }
+    return chosen;
+}
+function regenerateAutoTiers() {
+    const pool = getPrizePool();
+    const winners = Math.max(1, Math.floor(num('participants') * num('winning_percentage') / 100));
+    const tbody = document.getElementById('autoTiersBody');
+    tbody.innerHTML = '';
+    if (pool <= 0 || winners <= 0) return;
+    const cat = document.getElementById('category').value;
+    if (cat === 'equal') {
+        const perWinner = Math.floor(pool / winners);
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>Rank 1–' + winners + '</td><td>' + winners + '</td><td>100%</td><td class="fw-bold text-success">' + perWinner + '</td><td>' + Math.floor(pool) + '</td>';
+        tbody.appendChild(tr);
+        document.getElementById('autoTotal').textContent = Math.floor(pool);
+        document.getElementById('prize_distribution_hidden').value = JSON.stringify([{ label: 'Rank 1 to ' + winners, rank_start: 1, rank_end: winners, winners: winners, percent: 100, prize: pool, per_winner: perWinner }]);
+        return;
+    }
+    const key = getClosestTierKey(winners);
+    const isHigher = key > winners;
+    const tiers = TIERS[key];
+    let totalAllocated = 0;
+    const rows = [];
+    tiers.forEach(([s, e, pct], idx) => {
+        if (s > winners) return;
+        const isLastTier = idx === tiers.length - 1;
+        let end = isLastTier ? (isHigher ? Math.min(e, winners) : winners) : Math.min(e, winners);
+        if (end < s) return;
+        const cnt = end - s + 1;
+        const groupPrize = pool * pct / 100;
+        let perWinner;
+        if (isLastTier || end >= winners) {
+            const originalLastTier = tiers[tiers.length - 1];
+            const structureWinners = originalLastTier[1] - originalLastTier[0] + 1;
+            const divisor = cnt <= structureWinners ? structureWinners : cnt;
+            perWinner = groupPrize / divisor;
+        } else {
+            perWinner = groupPrize / cnt;
+        }
+        totalAllocated += groupPrize;
+        rows.push({ s, end, cnt, pct, groupPrize, perWinner });
+    });
+    if (!isHigher) {
+        const lastRow = rows[rows.length - 1];
+        if (lastRow && lastRow.end < winners) {
+            const extraStart = lastRow.end + 1;
+            const extraEnd = winners;
+            const extraCnt = extraEnd - extraStart + 1;
+            const lastTierPct = tiers[tiers.length - 1][2];
+            const extraPrize = pool * lastTierPct / 100;
+            rows.push({ s: extraStart, end: extraEnd, cnt: extraCnt, pct: lastTierPct, groupPrize: extraPrize, perWinner: extraPrize / extraCnt });
+            totalAllocated += extraPrize;
+        }
+    }
+    rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>Rank ' + r.s + (r.end > r.s ? '–' + r.end : '') + '</td><td>' + r.cnt + '</td><td>' + r.pct + '%</td><td class="fw-bold text-success">' + Math.floor(r.perWinner) + '</td><td>' + Math.floor(r.groupPrize) + '</td>';
+        tbody.appendChild(tr);
+    });
+    document.getElementById('autoTotal').textContent = Math.floor(totalAllocated);
+    document.getElementById('prize_distribution_hidden').value = JSON.stringify(rows.map(r => ({
+        label: 'Rank ' + r.s + ' to ' + r.end,
+        rank_start: r.s, rank_end: r.end, winners: r.cnt, percent: r.pct,
+        prize: r.groupPrize, per_winner: Math.floor(r.perWinner)
+    })));
+}
+function addTreeRow(rs, re, pw) {
+    treeRowIdx++;
+    const tr = document.createElement('tr');
+    tr.id = 'tr_' + treeRowIdx;
+    const rowId = treeRowIdx;
+    tr.innerHTML = '<td><input type="number" class="form-control form-control-sm tr-start" min="1" value="' + (rs == null ? '' : rs) + '" oninput="updateTreeTotal()"></td>'
+        + '<td><input type="number" class="form-control form-control-sm tr-end" min="1" value="' + (re == null ? '' : re) + '" oninput="updateTreeTotal()"></td>'
+        + '<td><span class="tr-winners badge bg-secondary">0</span></td>'
+        + '<td><input type="number" class="form-control form-control-sm tr-pw" min="0" step="0.01" value="' + (pw == null ? '' : pw) + '" oninput="updateTreeTotal()"></td>'
+        + '<td><span class="tr-sub">0</span></td>'
+        + '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById(\'tr_' + rowId + '\').remove();updateTreeTotal()"><i class="bi bi-x"></i></button></td>';
+    document.getElementById('treeBody').appendChild(tr);
+    updateTreeTotal();
+}
+function getTreeTotal() {
+    let total = 0;
+    document.querySelectorAll('#treeBody tr').forEach(tr => {
+        const s = parseInt(tr.querySelector('.tr-start')?.value) || 0;
+        const e = parseInt(tr.querySelector('.tr-end')?.value) || 0;
+        const pw = parseFloat(tr.querySelector('.tr-pw')?.value) || 0;
+        const w = (e >= s && s > 0) ? (e - s + 1) : 0;
+        const sub = w * pw;
+        if (tr.querySelector('.tr-winners')) tr.querySelector('.tr-winners').textContent = w;
+        if (tr.querySelector('.tr-sub')) tr.querySelector('.tr-sub').textContent = sub.toFixed(0);
+        total += sub;
+    });
+    return total;
+}
+function updateTreeTotal() {
+    const total = getTreeTotal();
+    const treeTotal = document.getElementById('treeTotal');
+    if (treeTotal) treeTotal.textContent = total.toFixed(0);
+    const fixed = document.getElementById('fixed_prize_pool_hidden');
+    if (fixed) fixed.value = total.toFixed(2);
+    const prize = document.getElementById('o_prizePool');
+    if (prize && isFixed()) prize.textContent = total.toFixed(0);
+    const dist = [];
+    document.querySelectorAll('#treeBody tr').forEach(tr => {
+        const s = parseInt(tr.querySelector('.tr-start')?.value) || 0;
+        const e = parseInt(tr.querySelector('.tr-end')?.value) || 0;
+        const pw = parseFloat(tr.querySelector('.tr-pw')?.value) || 0;
+        if (s > 0 && e >= s && pw > 0) {
+            const w = e - s + 1;
+            dist.push({ label: 'Rank ' + s + ' to ' + e, rank_start: s, rank_end: e, winners: w, per_winner: pw, prize: w * pw, percent: 0 });
+        }
+    });
+    document.getElementById('prize_distribution_hidden').value = JSON.stringify(dist);
+}
+function toggleBotTime() {
+    const val = document.querySelector('input[name="bot_time_type"]:checked')?.value;
+    document.getElementById('botMinutesBox').classList.toggle('d-none', val !== 'auto');
+    document.getElementById('botExactBox').classList.toggle('d-none', val !== 'exact');
+    document.getElementById('botJoiningBox').classList.toggle('d-none', val !== 'joining');
+}
+</script>

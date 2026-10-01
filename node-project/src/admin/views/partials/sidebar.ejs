@@ -1,0 +1,128 @@
+<%
+  function on(prefix) {
+    if (prefix === '/dashboard') return currentPath === '/dashboard' || currentPath === '/';
+    if (prefix === '/testing' || prefix === '/testing/test-users') {
+      return currentPath === '/testing' || currentPath.startsWith('/testing/');
+    }
+    return currentPath === prefix || currentPath.startsWith(prefix + '/');
+  }
+%>
+<div class="sidebar text-white d-flex flex-column d-lg-block" :class="{ 'open': sidebarOpen, 'd-none': !sidebarOpen && window.innerWidth < 992 }" style="width: 250px; z-index: 1040;">
+  <div class="sidebar-logo">
+    <img src="/logo.png" alt="Logo" style="height: 80px;">
+  </div>
+  <div class="sidebar-divider"></div>
+  <nav class="flex-grow-1 overflow-y-auto py-2">
+    <div class="sidebar-section">Main</div>
+    <ul class="nav flex-column px-2">
+      <li class="nav-item">
+        <a href="/dashboard" class="sidebar-link <%= on('/dashboard') ? 'active' : '' %>">
+          <i class="bi bi-speedometer2"></i> Dashboard
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/league_sessions" class="sidebar-link <%= (on('/league_sessions') || on('/sessions')) ? 'active' : '' %>">
+          <i class="bi bi-calendar2-week"></i> Leagues/Sessions
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/templates" class="sidebar-link <%= on('/templates') ? 'active' : '' %>">
+          <i class="bi bi-bookmark"></i> Saved Templates
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/performance" class="sidebar-link <%= on('/performance') ? 'active' : '' %>">
+          <i class="bi bi-graph-up-arrow"></i> Performance
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/contest-analysis" class="sidebar-link <%= on('/contest-analysis') ? 'active' : '' %>">
+          <i class="bi bi-bar-chart-line"></i> Contest Analysis
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/announcements" class="sidebar-link <%= on('/announcements') ? 'active' : '' %>">
+          <i class="bi bi-megaphone"></i> Announcements
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/market_type_categories" class="sidebar-link <%= on('/market_type_categories') ? 'active' : '' %>">
+          <i class="bi bi-tags"></i> Market Type Category
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/users" class="sidebar-link <%= on('/users') ? 'active' : '' %>">
+          <i class="bi bi-people"></i> Players
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/contests" class="sidebar-link <%= on('/contests') ? 'active' : '' %>">
+          <i class="bi bi-trophy"></i> Contests
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/live-management" class="sidebar-link <%= on('/live-management') ? 'active' : '' %>">
+          <i class="bi bi-broadcast-pin"></i> Live Management
+          <span class="badge bg-danger ms-auto" id="liveContestCount">0</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/cron-logs" class="sidebar-link <%= (on('/cron-logs') || on('/cron')) ? 'active' : '' %>">
+          <i class="bi bi-clock-history"></i> Cron Check
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/transactions" class="sidebar-link <%= on('/transactions') ? 'active' : '' %>">
+          <i class="bi bi-arrow-left-right"></i> Transactions
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/pending-prizes" class="sidebar-link <%= on('/pending-prizes') ? 'active' : '' %>">
+          <i class="bi bi-trophy text-warning"></i> Pending Prizes
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/payments" class="sidebar-link <%= on('/payments') ? 'active' : '' %>">
+          <i class="bi bi-credit-card"></i> Payment Orders
+        </a>
+      </li>
+    </ul>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section">Other</div>
+    <ul class="nav flex-column px-2">
+      <li class="nav-item">
+        <a href="/banners" class="sidebar-link <%= on('/banners') ? 'active' : '' %>">
+          <i class="bi bi-image"></i> Manage Banners
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/withdrawal_requests" class="sidebar-link <%= (on('/withdrawal_requests') || on('/withdrawals')) ? 'active' : '' %>">
+          <i class="bi bi-cash-coin"></i> Withdrawal Requests
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/live-price-feeds" class="sidebar-link <%= on('/live-price-feeds') ? 'active' : '' %>">
+          <i class="bi bi-graph-up"></i> Live Price Feeds
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/testing/test-users" class="sidebar-link <%= on('/testing/test-users') ? 'active' : '' %>">
+          <i class="bi bi-bug"></i> Test Users
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/testing" class="sidebar-link <%= on('/testing') ? 'active' : '' %>">
+          <i class="bi bi-bug"></i> Testing
+        </a>
+      </li>
+    </ul>
+  </nav>
+  <div class="sidebar-divider"></div>
+  <div class="px-3 pb-3">
+    <form action="/logout" method="POST" class="w-100">
+      <button type="submit" class="btn btn-outline-light w-100">
+        <i class="bi bi-box-arrow-right me-2"></i> Logout
+      </button>
+    </form>
+  </div>
+</div>

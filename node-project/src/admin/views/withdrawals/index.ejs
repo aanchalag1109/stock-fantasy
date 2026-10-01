@@ -1,0 +1,50 @@
+<div class="container-fluid py-4">
+    <h3 class="mb-4"><i class="bi bi-cash-coin text-warning me-2"></i>Withdrawal Requests (USDT)</h3>
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>User</th>
+                            <th>Amount</th>
+                            <th>Network</th>
+                            <th>USDT Address</th>
+                            <th>Status</th>
+                            <th>Requested</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% requests.forEach(request => {
+                            const sc = { pending: 'warning', accepted: 'success', approved: 'success', rejected: 'danger' };
+                            const addr = request.usdt_wallet_address || (request.user_id && request.user_id.payment_details && request.user_id.payment_details.usdt_wallet_address) || '';
+                            const network = request.usdt_network || (request.user_id && request.user_id.payment_details && request.user_id.payment_details.usdt_network) || '-';
+                            const statusLabel = request.status ? request.status.charAt(0).toUpperCase() + request.status.slice(1) : '';
+                            const when = request.created_at ? new Date(request.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+                        %>
+                        <tr>
+                            <td><%= request.old_id || String(request._id).slice(-6) %></td>
+                            <td><%= request.user_id && request.user_id.name ? request.user_id.name : 'N/A' %></td>
+                            <td class="fw-bold"><%= Number(request.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 }) %></td>
+                            <td><span class="badge bg-info"><%= network %></span></td>
+                            <td><small class="font-monospace"><%= addr ? String(addr).slice(0, 18) : '-' %></small></td>
+                            <td><span class="badge bg-<%= sc[request.status] || 'secondary' %>"><%= statusLabel === 'Approved' ? 'Accepted' : statusLabel %></span></td>
+                            <td><small><%= when %></small></td>
+                            <td>
+                                <a href="/withdrawal_requests/<%= request._id %>" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-eye"></i> View
+                                </a>
+                            </td>
+                        </tr>
+                        <% }) %>
+                        <% if (!requests.length) { %>
+                        <tr><td colspan="8" class="text-center py-4 text-muted">No withdrawal requests yet.</td></tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,32 @@
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1"><%= session.name %></h1>
+            <p class="text-muted mb-0"><%= session.market_type %> · <%= session.status %></p>
+        </div>
+        <a href="/performance" class="btn btn-outline-secondary">Back</a>
+    </div>
+    <div class="card shadow-sm">
+        <div class="card-header">Contests in this session</div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>Category</th><th>Entry Fee</th><th>Participants</th><th>Prize Pool</th><th>Status</th><th></th></tr>
+                </thead>
+                <tbody>
+                    <% contests.forEach(c => { %>
+                    <tr>
+                        <td><%= c.category %></td>
+                        <td>₹<%= Number(c.entry_fee || 0).toLocaleString('en-IN') %></td>
+                        <td><%= c.participants || 0 %></td>
+                        <td>₹<%= Number(c.prize_pool || 0).toLocaleString('en-IN') %></td>
+                        <td><span class="badge bg-secondary"><%= c.status %></span></td>
+                        <td><a class="btn btn-sm btn-outline-primary" href="/contests/<%= c._id %>">Open</a></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!contests.length) { %><tr><td colspan="6" class="text-center py-4 text-muted">No contests</td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

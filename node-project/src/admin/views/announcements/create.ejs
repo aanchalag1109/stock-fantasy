@@ -1,0 +1,17 @@
+<div class="card" style="max-width:550px;">
+  <div class="card-header"><div class="card-title">Create Announcement</div><a href="/announcements" class="btn btn-secondary btn-sm">← Back</a></div>
+  <form method="POST" action="/announcements">
+    <div class="form-group"><label class="form-label">Title</label><input type="text" name="title" class="form-control" placeholder="Announcement title" required/></div>
+    <div class="form-group"><label class="form-label">Message</label><textarea name="message" class="form-control" rows="4" placeholder="Announcement content..."></textarea></div>
+    <div class="form-grid">
+      <div class="form-group"><label class="form-label">Type</label>
+        <select name="type" class="form-control">
+          <option value="info">Info</option><option value="warning">Warning</option><option value="success">Success</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Start Date</label><input type="date" name="start_date" class="form-control"/></div>
+      <div class="form-group"><label class="form-label">End Date</label><input type="date" name="end_date" class="form-control"/></div>
+    </div>
+    <div class="form-actions"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Create</button><a href="/announcements" class="btn btn-secondary">Cancel</a></div>
+  </form>
+</div>

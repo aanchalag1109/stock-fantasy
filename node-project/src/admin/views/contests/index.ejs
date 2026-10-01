@@ -1,0 +1,349 @@
+<%
+  const pageCount = contests.length;
+  const liveCount = contests.filter((contest) => contest.status === 'live').length;
+  const upcomingCount = contests.filter((contest) => contest.status === 'upcoming').length;
+  const completedCount = contests.filter((contest) => contest.status === 'completed').length;
+  const pool = contests.reduce((sum, contest) => sum + (Number(contest.prize_pool) || 0), 0);
+  function money0(n) { return Math.round(Number(n) || 0).toLocaleString('en-US'); }
+  const catColors = { mega: 'primary', equal: 'success', practice: 'info', guaranteed: 'danger' };
+  const statusColors = { active: 'success', cancelled: 'danger' };
+  const sessionStatusColors = { upcoming: 'info', live: 'warning', completed: 'secondary' };
+  const fromItem = total ? ((page - 1) * 8) + 1 : 0;
+  const toItem = Math.min(page * 8, total);
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-trophy-fill text-warning me-2"></i>Contest Management</h1>
+            <p class="text-muted mb-0">Manage trading contests and competitions</p>
+        </div>
+        <a href="/contests/create" class="btn btn-warning btn-lg">
+            <i class="bi bi-plus-circle me-2"></i>Create Contest
+        </a>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="bg-warning bg-opacity-10 rounded-circle p-3">
+                                <i class="bi bi-trophy text-warning" style="font-size: 1.5rem;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="small text-muted">Total Contests</div>
+                            <div class="h4 mb-0"><%= pageCount %></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="bg-success bg-opacity-10 rounded-circle p-3">
+                                <i class="bi bi-broadcast text-success" style="font-size: 1.5rem;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="small text-muted">Live Contests</div>
+                            <div class="h4 mb-0"><%= liveCount %></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="bg-info bg-opacity-10 rounded-circle p-3">
+                                <i class="bi bi-clock text-info" style="font-size: 1.5rem;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="small text-muted">Upcoming</div>
+                            <div class="h4 mb-0"><%= upcomingCount %></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="bg-primary bg-opacity-10 rounded-circle p-3">
+                                <i class="bi bi-coin text-primary" style="font-size: 1.5rem;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="small text-muted">Total Pool</div>
+                            <div class="h4 mb-0"><%= money0(pool) %> probcoins</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-gradient-warning text-white">
+            <h6 class="mb-0"><i class="bi bi-funnel me-2"></i>Filter Contests</h6>
+        </div>
+        <div class="card-body">
+            <div class="btn-group" role="group">
+                <a href="?status=live" class="btn <%= status === 'live' ? 'btn-success' : 'btn-outline-success' %>">
+                    <i class="bi bi-broadcast me-1"></i>Live <span class="badge bg-light text-dark ms-1"><%= liveCount %></span>
+                </a>
+                <a href="?status=upcoming" class="btn <%= status === 'upcoming' ? 'btn-info' : 'btn-outline-info' %>">
+                    <i class="bi bi-clock me-1"></i>Upcoming <span class="badge bg-light text-dark ms-1"><%= upcomingCount %></span>
+                </a>
+                <a href="?status=completed" class="btn <%= status === 'completed' ? 'btn-warning' : 'btn-outline-warning' %>">
+                    <i class="bi bi-check-circle me-1"></i>Completed <span class="badge bg-light text-dark ms-1"><%= completedCount %></span>
+                </a>
+                <a href="/contests" class="btn <%= !status ? 'btn-dark' : 'btn-outline-dark' %>">
+                    <i class="bi bi-list me-1"></i>All <span class="badge bg-light text-dark ms-1"><%= pageCount %></span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-gradient-warning text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <input type="checkbox" id="selectAll" class="me-3">
+                    <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>All Contests</h5>
+                </div>
+                <button onclick="bulkDelete()" id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display:none;">
+                    <i class="bi bi-trash me-1"></i>Delete Selected
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="fw-semibold">☑</th>
+                            <th class="fw-semibold">#</th>
+                            <th class="fw-semibold"><i class="bi bi-trophy me-1"></i>Contest Details</th>
+                            <th class="fw-semibold"><i class="bi bi-tag me-1"></i>Category</th>
+                            <th class="fw-semibold"><i class="bi bi-coin me-1"></i>Entry Fee</th>
+                            <th class="fw-semibold"><i class="bi bi-gift me-1"></i>Pool Details</th>
+                            <th class="fw-semibold"><i class="bi bi-people me-1"></i>Participants</th>
+                            <th class="fw-semibold"><i class="bi bi-calendar me-1"></i>Schedule</th>
+                            <th class="fw-semibold text-center"><i class="bi bi-gear me-1"></i>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (!contests.length) { %>
+                        <tr>
+                            <td colspan="9" class="text-center py-5">
+                                <div class="text-muted">
+                                    <i class="bi bi-trophy display-1 d-block mb-3"></i>
+                                    <h5>No contests found</h5>
+                                    <p>Create your first contest to get started.</p>
+                                    <a href="/contests/create" class="btn btn-warning">
+                                        <i class="bi bi-plus-circle me-1"></i>Create Contest
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        <% } %>
+                        <% contests.forEach(function (contest) {
+                          const winningPercent = contest.winning_percentage == null ? 30 : Number(contest.winning_percentage);
+                          const totalWinners = Math.round((Number(contest.participants) || 0) * winningPercent / 100);
+                          const contestName = contest.name ? contest.name : ('Contest #' + contest.display_id);
+                        %>
+                        <tr class="<%= contest.status === 'cancelled' ? 'table-danger' : '' %>">
+                            <td>
+                                <% if (contest.status !== 'live') { %>
+                                    <input type="checkbox" class="contest-checkbox" value="<%= contest.display_id %>">
+                                <% } %>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-warning rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                        <i class="bi bi-trophy text-white"></i>
+                                    </div>
+                                    <span class="ms-2 fw-semibold"><%= contest.display_id %></span>
+                                </div>
+                            </td>
+                            <td>
+                                <div>
+                                    <% if (contest.session_name) { %>
+                                        <div class="fw-semibold text-primary">Session: <%= contest.session_name %></div>
+                                    <% } %>
+                                    <div class="fw-semibold text-dark">Contest: <%= contestName %></div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge bg-<%= catColors[contest.category] || 'secondary' %>"><%= contest.category ? contest.category.charAt(0).toUpperCase() + contest.category.slice(1) : '' %></span>
+                                <% if (contest.is_pinned) { %>
+                                    <span class="badge bg-dark mt-1"><i class="bi bi-pin-angle-fill"></i> Pinned</span>
+                                <% } %>
+                                <br>
+                                <span class="badge bg-<%= statusColors[contest.status] || 'secondary' %> mt-1"><%= contest.status ? contest.status.charAt(0).toUpperCase() + contest.status.slice(1) : '' %></span>
+                                <br>
+                                <small class="badge bg-<%= sessionStatusColors[contest.session_status] || 'secondary' %> mt-1">Session: <%= contest.session_status ? contest.session_status.charAt(0).toUpperCase() + contest.session_status.slice(1) : 'Upcoming' %></small>
+                            </td>
+                            <td><span class="fw-bold text-success"><%= money0(contest.entry_fee) %> probcoins</span></td>
+                            <td>
+                                <div class="small">
+                                    <div><strong>Prize Pool:</strong> <%= money0(contest.prize_pool) %> probcoins</div>
+                                    <div><strong>Total Winners:</strong> <%= totalWinners %></div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="progress me-2" style="width: 60px; height: 8px;">
+                                        <div class="progress-bar bg-success" style="width: <%= Math.min(contest.progress_percentage, 100) %>%"></div>
+                                    </div>
+                                    <small class="text-muted"><%= contest.participants_count %>/<%= contest.participants == null ? 100 : contest.participants %></small>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="small">
+                                    <% if (contest.start_label) { %>
+                                        <div><i class="bi bi-play-circle text-success me-1"></i><%= contest.start_label %></div>
+                                    <% } %>
+                                    <% if (contest.end_label) { %>
+                                        <div><i class="bi bi-stop-circle text-danger me-1"></i><%= contest.end_label %></div>
+                                    <% } %>
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="/contests/<%= contest.display_id %>" class="btn btn-outline-info" title="View Details">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <button onclick="togglePin('<%= contest.display_id %>')" class="btn btn-outline-dark" title="<%= contest.is_pinned ? 'Unpin' : 'Pin to top' %>">
+                                        <i class="bi <%= contest.is_pinned ? 'bi-pin-angle-fill' : 'bi-pin-angle' %>"></i>
+                                    </button>
+                                    <% if (contest.status !== 'cancelled') { %>
+                                    <a href="/contests/<%= contest.display_id %>/edit" class="btn btn-outline-primary" title="Edit Contest">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <button onclick="cancelContest('<%= contest.display_id %>')" class="btn btn-outline-warning" title="Cancel Contest">
+                                        <i class="bi bi-x-circle"></i>
+                                    </button>
+                                    <% } %>
+                                    <form action="/contests/<%= contest.display_id %>?_method=DELETE" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-danger" title="Delete Contest" onclick="return confirm('Delete this contest?')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <% if (pages > 1) { %>
+        <div class="card-footer bg-light">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="text-muted small">
+                    Showing <%= fromItem %> to <%= toItem %> of <%= total %> contests
+                </div>
+                <div>
+                    <%- include('../partials/pagination', { pages, page, extraQuery: status ? 'status=' + encodeURIComponent(status) : '' }) %>
+                </div>
+            </div>
+        </div>
+        <% } %>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const contestCheckboxes = document.querySelectorAll('.contest-checkbox');
+    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+
+    selectAllCheckbox?.addEventListener('change', function() {
+        contestCheckboxes.forEach(checkbox => { checkbox.checked = this.checked; });
+        toggleBulkDeleteButton();
+    });
+    contestCheckboxes.forEach(checkbox => checkbox.addEventListener('change', toggleBulkDeleteButton));
+
+    function toggleBulkDeleteButton() {
+        const checkedBoxes = document.querySelectorAll('.contest-checkbox:checked');
+        bulkDeleteBtn.style.display = checkedBoxes.length > 0 ? 'inline-block' : 'none';
+    }
+});
+
+function bulkDelete() {
+    const checkedBoxes = document.querySelectorAll('.contest-checkbox:checked');
+    if (checkedBoxes.length === 0) {
+        alert('Please select contests to delete.');
+        return;
+    }
+    if (!confirm('Are you sure you want to delete ' + checkedBoxes.length + ' selected contests?')) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/contests/bulk-delete';
+    checkedBoxes.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'contest_ids[]';
+        input.value = cb.value;
+        form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function cancelContest(contestId) {
+    if (!confirm('Are you sure you want to cancel this contest? All users will be refunded.')) return;
+    fetch('/contests/' + contestId + '/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(() => alert('Error cancelling contest'));
+}
+
+function togglePin(contestId) {
+    fetch('/contests/' + contestId + '/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) location.reload();
+        else alert('Error: ' + (data.message || 'Failed to pin'));
+    })
+    .catch(() => alert('Error toggling pin'));
+}
+</script>
+
+<style>
+.bg-gradient-warning { background: linear-gradient(135deg, #ffc107 0%, #ff8c00 100%); }
+.card { border-radius: 15px; transition: all 0.3s ease; }
+.btn { border-radius: 8px; font-weight: 500; transition: all 0.3s ease; }
+.btn-warning { background: linear-gradient(135deg, #ffc107 0%, #ff8c00 100%); border: none; color: white; }
+.btn-warning:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(255, 193, 7, 0.4); color: white; }
+.table tbody tr:hover { background-color: #f8f9fa; transform: scale(1.01); transition: all 0.2s ease; }
+.table-danger { background-color: #f8d7da !important; }
+.table-danger:hover { background-color: #f5c2c7 !important; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.card { animation: fadeIn 0.5s ease-out; }
+</style>

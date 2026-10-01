@@ -1,0 +1,184 @@
+<%
+  const fixedCategory = ['guaranteed', 'practice'].includes(contest.category) || contest.is_fixed_prize;
+%>
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-pencil-square text-warning me-2"></i>Edit Contest #<%= displayId %></h1>
+            <p class="text-muted mb-0">Category: <strong><%= contest.category ? contest.category.charAt(0).toUpperCase() + contest.category.slice(1) : '' %></strong> | <%= fixedCategory ? '🔒 Fixed Pool' : '📈 Dynamic Pool' %></p>
+        </div>
+        <a href="/contests" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+    </div>
+
+    <% if (errors && errors.length) { %>
+        <div class="alert alert-danger border-0 shadow-sm">
+            <strong><i class="bi bi-exclamation-triangle-fill me-2"></i>Errors:</strong>
+            <ul class="mb-0 mt-2"><% errors.forEach(function (error) { %><li><%= error %></li><% }) %></ul>
+        </div>
+    <% } %>
+
+    <form id="editContestForm" method="POST" action="/contests/<%= displayId %>?_method=PUT">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-warning text-white"><i class="bi bi-gear-fill me-2"></i>Contest Parameters</div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Session</label>
+                                <select name="league_session_id" class="form-select" required>
+                                    <% sessions.forEach(function (session) { %>
+                                        <option value="<%= session.id %>" <%= (String(session.id) === String(selectedSession) || session._id === String(selectedSession)) ? 'selected' : '' %>><%= session.display_name %></option>
+                                    <% }) %>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Category</label>
+                                <select id="category" name="category" class="form-select" required onchange="onCategoryChange()">
+                                    <option value="mega" <%= contest.category === 'mega' ? 'selected' : '' %>>🏆 Mega (Dynamic)</option>
+                                    <option value="equal" <%= contest.category === 'equal' ? 'selected' : '' %>>⚖️ Equal (Dynamic)</option>
+                                    <option value="guaranteed" <%= contest.category === 'guaranteed' ? 'selected' : '' %>>🎯 Guaranteed (Fixed)</option>
+                                    <option value="practice" <%= contest.category === 'practice' ? 'selected' : '' %>>🎓 Practice (Fixed)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Max Entries / User</label>
+                                <input type="number" name="max_entries_per_user" class="form-control" value="<%= contest.max_entries_per_user == null ? 1 : contest.max_entries_per_user %>" min="1" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Total Spots</label>
+                                <input type="number" id="participants" name="participants" class="form-control" value="<%= contest.participants %>" min="2" required oninput="recalc()">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Entry Fee</label>
+                                <input type="number" id="entry_fee" name="entry_fee" class="form-control" value="<%= contest.entry_fee %>" min="0" step="0.01" oninput="recalc()">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Platform Fee %</label>
+                                <input type="number" id="platform_fee" name="platform_fee" class="form-control" value="<%= contest.platform_fee %>" min="0" max="100" step="0.1" required oninput="recalc()">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Winning %</label>
+                                <input type="number" id="winning_percentage" name="winning_percentage" class="form-control" value="<%= contest.winning_percentage %>" min="0" max="100" step="0.1" required oninput="recalc()">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#fff3cd,#ffeaa7);">
+                    <div class="card-body py-3">
+                        <h6 class="text-warning mb-2"><i class="bi bi-calculator me-2"></i>Live Calculation</h6>
+                        <div class="row text-center g-2">
+                            <div class="col-md-3"><div class="p-2 bg-white rounded"><small class="text-muted d-block">Total Pool</small><strong class="text-success" id="o_totalPool">0</strong></div></div>
+                            <div class="col-md-3"><div class="p-2 bg-white rounded"><small class="text-muted d-block">Platform Fee</small><strong class="text-danger" id="o_platformFee">0</strong></div></div>
+                            <div class="col-md-3"><div class="p-2 bg-white rounded"><small class="text-muted d-block">Prize Pool</small><strong class="text-primary" id="o_prizePool">0</strong></div></div>
+                            <div class="col-md-3"><div class="p-2 bg-white rounded"><small class="text-muted d-block">Winners</small><strong class="text-warning" id="o_winners">0</strong></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="autoStructureBox" class="card border-0 shadow-sm mb-4 <%= fixedCategory ? 'd-none' : '' %>">
+                    <div class="card-header bg-warning text-white d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-award me-2"></i>Prize Structure (Auto-generated)</span>
+                        <button type="button" class="btn btn-light btn-sm" onclick="regenerateAutoTiers()"><i class="bi bi-arrow-clockwise me-1"></i>Regenerate</button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light"><tr><th>Rank Range</th><th>Winners</th><th>% of Pool</th><th>Per Winner</th><th>Subtotal</th></tr></thead>
+                                <tbody id="autoTiersBody"></tbody>
+                                <tfoot><tr class="fw-bold bg-light"><td colspan="3" class="text-end">Total:</td><td colspan="2" id="autoTotal">0</td></tr></tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="treeStructureBox" class="card border-0 shadow-sm mb-4 <%= fixedCategory ? '' : 'd-none' %>">
+                    <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-diagram-3 me-2"></i>Prize Tree (Fixed — total = prize pool)</span>
+                        <button type="button" class="btn btn-light btn-sm" onclick="addTreeRow()"><i class="bi bi-plus-lg"></i> Add Row</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead class="table-light"><tr><th>Rank Start</th><th>Rank End</th><th>Winners</th><th>Per Winner</th><th>Subtotal</th><th></th></tr></thead>
+                                <tbody id="treeBody"></tbody>
+                                <tfoot><tr class="fw-bold bg-warning bg-opacity-25"><td colspan="4" class="text-end">Fixed Prize Pool =</td><td id="treeTotal" class="text-danger fw-bold fs-5">0</td><td></td></tr></tfoot>
+                            </table>
+                        </div>
+                        <div id="treeWarning" class="text-danger small fw-bold"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-dark text-white"><i class="bi bi-pin-angle me-2"></i>Pin & Display</div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="is_pinned" id="is_pinned" value="1" <%= contest.is_pinned ? 'checked' : '' %>>
+                            <label class="form-check-label fw-semibold" for="is_pinned">Pin to top</label>
+                        </div>
+                        <label class="form-label small">Pin Order</label>
+                        <input type="number" name="pin_order" class="form-control form-control-sm" value="<%= contest.pin_order == null ? 0 : contest.pin_order %>" min="0">
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-info text-white"><i class="bi bi-robot me-2"></i>Bot Auto-Join</div>
+                    <div class="card-body">
+                        <label class="form-label small fw-semibold">Number of bots</label>
+                        <input type="number" name="bot_count" class="form-control form-control-sm mb-3" value="<%= contest.bot_count == null ? 0 : contest.bot_count %>" min="0">
+                        <label class="form-label small fw-semibold">Joining Time</label>
+                        <div class="mb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="bot_time_type" id="botTimeAuto" value="auto" <%= contest.bot_join_at ? '' : 'checked' %> onchange="toggleBotTime()">
+                                <label class="form-check-label small" for="botTimeAuto">X minutes before start</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="bot_time_type" id="botTimeExact" value="exact" <%= contest.bot_join_at ? 'checked' : '' %> onchange="toggleBotTime()">
+                                <label class="form-check-label small" for="botTimeExact">Exact date & time</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="bot_time_type" id="botTimeJoining" value="joining" onchange="toggleBotTime()">
+                                <label class="form-check-label small" for="botTimeJoining">Session joining start time</label>
+                            </div>
+                        </div>
+                        <div id="botMinutesBox" class="<%= contest.bot_join_at ? 'd-none' : '' %>">
+                            <input type="number" name="bot_join_minutes_before" class="form-control form-control-sm" value="<%= contest.bot_join_minutes_before == null ? 30 : contest.bot_join_minutes_before %>" min="1">
+                        </div>
+                        <div id="botExactBox" class="<%= contest.bot_join_at ? '' : 'd-none' %>">
+                            <input type="datetime-local" name="bot_join_at" class="form-control form-control-sm" value="<%= botJoinAtLocal %>">
+                        </div>
+                        <div id="botJoiningBox" class="d-none">
+                            <small class="text-success"><i class="bi bi-info-circle"></i> Bots join when session joining window opens</small>
+                        </div>
+                        <% if (contest.bots_joined) { %>
+                            <small class="text-success d-block mt-2"><i class="bi bi-check-circle"></i> Bots already joined</small>
+                        <% } %>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <input type="hidden" name="prize_distribution" id="prize_distribution_hidden" value="<%= typeof contest.prize_distribution === 'string' ? contest.prize_distribution : JSON.stringify(contest.prize_distribution || []) %>">
+        <input type="hidden" name="fixed_prize_pool" id="fixed_prize_pool_hidden" value="<%= contest.prize_pool == null ? 0 : contest.prize_pool %>">
+        <div class="text-center mt-3 mb-5">
+            <button type="submit" class="btn btn-warning btn-lg px-5"><i class="bi bi-check-circle-fill me-2"></i>Update Contest</button>
+        </div>
+    </form>
+</div>
+<script id="existingTreeData" type="application/json"><%- existingTree %></script>
+<%- include('prize-script') %>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    onCategoryChange();
+    try {
+        const existing = JSON.parse(document.getElementById('existingTreeData').textContent);
+        if (Array.isArray(existing) && existing.length && isFixed()) {
+            existing.forEach(r => addTreeRow(r.rank_start == null ? '' : r.rank_start, r.rank_end == null ? '' : r.rank_end, r.per_winner != null ? r.per_winner : (r.perWinner != null ? r.perWinner : '')));
+        }
+    } catch (e) {}
+    recalc();
+});
+</script>

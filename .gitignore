@@ -1,0 +1,71 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+auth.json
+
+# Dependencies
+node_modules/
+vendor/
+
+# Node
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# Laravel (admin, cron, cron/app_extracted)
+**/storage/*.key
+**/storage/pail/
+**/storage/logs/*
+**/storage/framework/cache/data/*
+**/storage/framework/sessions/*
+**/storage/framework/testing/*
+**/storage/framework/views/*
+!**/storage/**/.gitignore
+**/bootstrap/cache/*.php
+**/public/hot
+**/public/build/
+**/public/storage
+.phpunit.result.cache
+.phpunit.cache/
+.phpactor.json
+Homestead.json
+Homestead.yaml
+
+# User uploads
+uploads/
+node-project/public/uploads/
+
+# Databases, dumps, archives, logs
+*.sqlite
+*.sqlite3
+*.sql
+*.sql.gz
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+*.log
+logs/
+
+# Hosting / cPanel files
+.ftpquota
+cgi-bin/
+.well-known/
+error_log
+
+# Backups
+backup/
+
+# Editors and OS
+.vscode/
+.idea/
+.fleet/
+.nova/
+.zed/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

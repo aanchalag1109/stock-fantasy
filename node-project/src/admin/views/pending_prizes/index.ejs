@@ -1,0 +1,152 @@
+<%
+  function badgeFor(category) {
+    if (category === 'mega') return 'bg-primary';
+    if (category === 'practice') return 'bg-info';
+    if (category === 'guaranteed') return 'bg-success';
+    return 'bg-secondary';
+  }
+  function clock(d) {
+    if (!d) return '';
+    return new Date(d).toLocaleString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+  function hm(d) {
+    if (!d) return '';
+    return new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+%>
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-1"><i class="bi bi-trophy text-warning"></i> Prize Distribution</h3>
+            <p class="text-muted mb-0">Manually distribute prizes to contest winners</p>
+        </div>
+    </div>
+    <div class="card mb-4">
+        <div class="card-body py-2">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <strong>Filter:</strong>
+                <a href="?filter=pending&days=<%= days %>" class="btn btn-sm <%= filter === 'pending' ? 'btn-warning' : 'btn-outline-warning' %>"><i class="bi bi-clock"></i> Pending Only</a>
+                <a href="?filter=paid&days=<%= days %>" class="btn btn-sm <%= filter === 'paid' ? 'btn-success' : 'btn-outline-success' %>"><i class="bi bi-check-circle"></i> Paid Only</a>
+                <a href="?filter=all&days=<%= days %>" class="btn btn-sm <%= filter === 'all' ? 'btn-primary' : 'btn-outline-primary' %>"><i class="bi bi-list"></i> All</a>
+                <span class="ms-3"><strong>Days:</strong></span>
+                <a href="?filter=<%= filter %>&days=1" class="btn btn-sm <%= Number(days) === 1 ? 'btn-dark' : 'btn-outline-dark' %>">Today</a>
+                <a href="?filter=<%= filter %>&days=3" class="btn btn-sm <%= Number(days) === 3 ? 'btn-dark' : 'btn-outline-dark' %>">3 Days</a>
+                <a href="?filter=<%= filter %>&days=7" class="btn btn-sm <%= Number(days) === 7 ? 'btn-dark' : 'btn-outline-dark' %>">7 Days</a>
+                <a href="?filter=<%= filter %>&days=30" class="btn btn-sm <%= Number(days) === 30 ? 'btn-dark' : 'btn-outline-dark' %>">30 Days</a>
+            </div>
+        </div>
+    </div>
+    <% if (!groups.length) { %>
+        <div class="alert alert-info text-center py-4">
+            <i class="bi bi-info-circle display-6 d-block mb-2"></i>
+            <h5>No contests found for this filter</h5>
+            <p class="mb-0">Try changing the filter or date range.</p>
+        </div>
+    <% } %>
+    <% groups.forEach(data => { %>
+        <div class="card mb-3 shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <div>
+                    <h6 class="mb-0">
+                        <%= data.session.name || 'Session' %>
+                        <small class="text-muted ms-2">
+                            <%= clock(data.session.start_time) %><% if (data.session.end_time) { %> - <%= hm(data.session.end_time) %><% } %>
+                            | <%= data.session.market_type || 'stock' %>
+                        </small>
+                    </h6>
+                </div>
+                <% if (data.has_pending) { %>
+                <button class="btn btn-warning btn-sm" onclick="distributeSession('<%= data.session._id %>', this)">
+                    <i class="bi bi-lightning-charge"></i> Distribute All
+                </button>
+                <% } %>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Type</th>
+                            <th>Entry</th>
+                            <th>Pool</th>
+                            <th>Players</th>
+                            <th>Paid</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% data.contests.forEach(c => { const paid = !!c.prizes_distributed; %>
+                        <tr id="row-<%= c._id %>">
+                            <td><strong>#<%= c.old_id || String(c._id).slice(-6) %></strong></td>
+                            <td><span class="badge <%= badgeFor(c.category) %>"><%= String(c.category || '').toUpperCase() %></span></td>
+                            <td>₹<%= c.entry_fee %></td>
+                            <td class="fw-bold text-success">₹<%= Number(c.prize_pool || 0).toLocaleString('en-IN') %></td>
+                            <td><%= c.participants || c.total_participants || 0 %></td>
+                            <td>
+                                <% if (paid) { %>
+                                    <span class="text-success fw-bold">₹<%= Number(c.total_winnings_paid || c.prize_pool || 0).toLocaleString('en-IN') %></span>
+                                <% } else { %><span class="text-muted">—</span><% } %>
+                            </td>
+                            <td>
+                                <% if (paid) { %><span class="badge bg-success"><i class="bi bi-check"></i> Paid</span>
+                                <% } else { %><span class="badge bg-warning text-dark"><i class="bi bi-clock"></i> Pending</span><% } %>
+                            </td>
+                            <td>
+                                <% if (!paid) { %>
+                                <button class="btn btn-sm btn-outline-success" onclick="distributeContest('<%= c._id %>', this)"><i class="bi bi-wallet2"></i> Pay</button>
+                                <% } else { %><span class="text-success"><i class="bi bi-check-lg"></i></span><% } %>
+                            </td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    <% }) %>
+</div>
+<div class="modal fade" id="resultModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resultModalTitle"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="resultModalBody"></div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+        </div>
+    </div>
+</div>
+<script>
+function showResult(title, message) {
+    document.getElementById('resultModalTitle').textContent = title;
+    document.getElementById('resultModalBody').textContent = message;
+    new bootstrap.Modal(document.getElementById('resultModal')).show();
+}
+function distributeContest(id, btn) {
+    if (!confirm('Contest #' + id + ' ke winners ko prize distribute karna hai?')) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    fetch('/pending-prizes/distribute-contest/' + id, { method: 'POST', headers: { 'Accept': 'application/json' } })
+        .then(r => r.json())
+        .then(data => {
+            showResult(data.success ? '✅ Done' : '⚠️ Info', data.message);
+            if (data.success) setTimeout(() => location.reload(), 800);
+            else { btn.disabled = false; btn.innerHTML = '<i class="bi bi-wallet2"></i> Pay'; }
+        })
+        .catch(e => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-wallet2"></i> Pay'; showResult('❌ Error', e.message); });
+}
+function distributeSession(id, btn) {
+    if (!confirm('Session ke SABHI pending contests distribute karna hai?')) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...';
+    fetch('/pending-prizes/distribute-session/' + id, { method: 'POST', headers: { 'Accept': 'application/json' } })
+        .then(r => r.json())
+        .then(data => {
+            showResult(data.success ? '✅ Done' : '⚠️ Info', data.message);
+            if (data.success) setTimeout(() => location.reload(), 1500);
+            else { btn.disabled = false; btn.innerHTML = '<i class="bi bi-lightning-charge"></i> Distribute All'; }
+        })
+        .catch(e => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-lightning-charge"></i> Distribute All'; showResult('❌ Error', e.message); });
+}
+</script>

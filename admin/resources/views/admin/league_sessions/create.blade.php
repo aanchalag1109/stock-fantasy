@@ -1,0 +1,1164 @@
+@extends('admin.layouts.app')
+
+@section('content')
+<div class="container-fluid">
+    <!-- Header Section -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-plus-circle-fill text-primary me-2"></i>Create New Session</h1>
+            <p class="text-muted mb-0">Set up a new trading league session with custom parameters</p>
+        </div>
+        <a href="{{ route('admin.league_sessions.index') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Sessions
+        </a>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-gear-fill me-2"></i>Session Configuration</h5>
+                </div>
+                <div class="card-body p-4">
+                    <form action="{{ route('admin.league_sessions.store') }}" method="POST" enctype="multipart/form-data">
+                        @csrf
+                        
+                        <!-- Template Section -->
+                        @if(count($templates) > 0)
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-3"><i class="bi bi-bookmark me-2"></i>Load from Template</h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="template_select" class="form-label fw-semibold">Select Template</label>
+                                    <select class="form-select form-select-lg" id="template_select" onchange="loadTemplate()">
+                                        <option value="">Choose a template...</option>
+                                        @foreach($templates as $template)
+                                        <option value="{{ $template->id }}">{{ $template->template_name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        @endif
+
+                        <!-- Basic Information Section -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-3"><i class="bi bi-info-circle me-2"></i>Basic Information</h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="name" class="form-label fw-semibold">Session Name <span class="text-danger">*</span></label>
+                                    <input type="text" name="name" id="name" class="form-control form-control-lg" placeholder="Enter session name" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="session_image" class="form-label fw-semibold">Session Image</label>
+                                    <input type="file" name="session_image" id="session_image" class="form-control form-control-lg" accept="image/*">
+                                    <div class="form-text">Upload an image for this session (optional)</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="market_type" class="form-label fw-semibold">Market Type <span class="text-danger">*</span></label>
+                                    <select class="form-select form-select-lg" id="market_type" name="market_type" required onchange="loadCapSizes()">
+                                        <option value="">Choose market type</option>
+                                        <option value="stock"><i class="bi bi-graph-up"></i> Stock Market</option>
+                                        <option value="crypto"><i class="bi bi-currency-bitcoin"></i> Cryptocurrency</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6" id="country-section" style="display:none;">
+                                <div class="mb-3">
+                                    <label for="country" class="form-label fw-semibold">Country <span class="text-danger">*</span></label>
+                                    <select class="form-select form-select-lg" id="country" name="country" onchange="loadCapSizeTabs()">
+                                        <option value="">Choose country</option>
+                                        <option value="Indian">Indian</option>
+                                        <option value="US">USA</option>
+                                        <option value="UK">UK</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Assets Selection Section -->
+                        <div id="category-tabs-section" style="display:none;" class="mb-4">
+                            <div class="row">
+                                <div class="col-12">
+                                    <h6 class="text-primary mb-3"><i class="bi bi-collection me-2"></i>Asset Selection</h6>
+                                </div>
+                            </div>
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <ul class="nav nav-pills nav-fill mb-3" id="categoryTabs" role="tablist"></ul>
+                                    <div class="tab-content" id="categoryTabContent"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live Prices Section -->
+                        <div id="live-prices-section" style="display:none;" class="mb-4">
+                            <div class="row">
+                                <div class="col-12">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6 class="text-primary mb-0"><i class="bi bi-currency-exchange me-2"></i>Live Asset Prices</h6>
+                                        <div>
+                                            <span id="price-update-time" class="badge bg-light text-dark me-2">Last Updated: --:--</span>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="refreshSelectedAssetPrices()">
+                                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <div class="row" id="live-prices-container">
+                                        <div class="col-12 text-center py-4">
+                                            <div class="text-muted">Select assets to see live prices</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Portfolio Settings -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-3"><i class="bi bi-briefcase me-2"></i>Portfolio Settings</h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="max_stocks" class="form-label fw-semibold">Max Assets in Portfolio <span class="text-danger">*</span></label>
+                                    <input type="number" name="max_stocks" id="max_stocks" class="form-control form-control-lg" placeholder="e.g., 10" min="1" max="50" required>
+                                    <div class="form-text">Maximum number of assets a user can hold in their portfolio</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Schedule Settings -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-3"><i class="bi bi-calendar-event me-2"></i>Schedule Settings</h6>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="user_joining_start_time" class="form-label fw-semibold">Registration Opens</label>
+                                    <input type="datetime-local" name="user_joining_start_time" id="user_joining_start_time" class="form-control form-control-lg" required>
+                                    <div class="form-text">When users can start joining this session</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="start_time" class="form-label fw-semibold">Session Starts <span class="text-danger">*</span></label>
+                                    <input type="datetime-local" name="start_time" id="start_time" class="form-control form-control-lg" required onchange="validateDateTime()">
+                                    <div class="form-text">Trading session start time</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="end_time" class="form-label fw-semibold">Session Ends <span class="text-danger">*</span></label>
+                                    <input type="datetime-local" name="end_time" id="end_time" class="form-control form-control-lg" required onchange="validateDateTime()">
+                                    <div id="datetime-error" class="text-danger mt-2" style="display:none;"><i class="bi bi-exclamation-triangle me-1"></i>End date must be after start date</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status & Activation -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-3"><i class="bi bi-toggles me-2"></i>Status & Activation</h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="status" class="form-label fw-semibold">Session Status <span class="text-danger">*</span></label>
+                                    <select name="status" id="status" class="form-select form-select-lg">
+                                        <option value="draft" selected>📝 Draft</option>
+                                        <option value="upcoming">⏰ Upcoming</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="active" class="form-label fw-semibold">Activation Status</label>
+                                    <select name="active" id="active" class="form-select form-select-lg">
+                                        <option value="1" selected>🟢 Active</option>
+                                        <option value="0">🔴 Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Save as Template Section -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary mb-3"><i class="bi bi-bookmark-plus me-2"></i>Save as Template</h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="save_as_template" name="save_as_template" onchange="toggleTemplateField()">
+                                    <label class="form-check-label fw-semibold" for="save_as_template">
+                                        Save this session as a template
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <input type="text" name="template_name" id="template_name" class="form-control form-control-lg" placeholder="Enter template name" disabled>
+                                    <div class="form-text">This template can be reused for future sessions</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="d-flex gap-3 justify-content-end">
+                                    <a href="{{ route('admin.league_sessions.index') }}" class="btn btn-outline-secondary btn-lg px-4">
+                                        <i class="bi bi-x-circle me-2"></i>Cancel
+                                    </a>
+                                    <button type="submit" class="btn btn-primary btn-lg px-4">
+                                        <i class="bi bi-check-circle me-2"></i>Create Session
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.card {
+    border-radius: 15px;
+    transition: all 0.3s ease;
+}
+
+.form-control, .form-select {
+    border-radius: 10px;
+    border: 2px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.nav-pills .nav-link {
+    border-radius: 25px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.nav-pills .nav-link.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.btn {
+    border-radius: 10px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.text-primary {
+    color: #667eea !important;
+}
+
+.table-responsive {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.table th {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-weight: 600;
+    border: none;
+}
+
+.table td {
+    vertical-align: middle;
+    border-color: #f8f9fa;
+}
+
+.table tbody tr:hover {
+    background-color: #f8f9fa;
+    transform: scale(1.01);
+    transition: all 0.2s ease;
+}
+
+.form-check-input:checked {
+    background-color: #667eea;
+    border-color: #667eea;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.card {
+    animation: fadeIn 0.5s ease-out;
+}
+</style>
+
+<script>
+    function loadCapSizes() {
+        var marketType = document.getElementById('market_type').value;
+        var capSizeSection = document.getElementById('cap-size-section');
+        var tabsSection = document.getElementById('category-tabs-section');
+        
+        if (!marketType) {
+            capSizeSection.style.display = 'none';
+            tabsSection.style.display = 'none';
+            return;
+        }
+        
+        if (marketType === 'crypto') {
+            // For crypto, directly load categories (no country selection)
+            document.getElementById('country-section').style.display = 'none';
+            loadCategoriesForCrypto();
+        } else {
+            // For stocks, show country dropdown
+            document.getElementById('country-section').style.display = 'block';
+            tabsSection.style.display = 'none';
+        }
+    }
+    
+    function loadCapSizeTabs() {
+        var country = document.getElementById('country').value;
+        var tabsSection = document.getElementById('category-tabs-section');
+        
+        if (!country) {
+            tabsSection.style.display = 'none';
+            return;
+        }
+        
+        // Fetch actual categories from API
+        fetch(`{{ url('admin/api/categories/stock') }}`)
+            .then(response => response.json())
+            .then(categories => {
+                var filteredCategories = categories.filter(cat => 
+                    cat.name.includes(country)
+                );
+                
+                if (filteredCategories.length > 0) {
+                    createCategoryTabs(filteredCategories, 'stock');
+                    tabsSection.style.display = 'block';
+                } else {
+                    console.error('No categories found for country:', country);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading categories:', error);
+            });
+    }
+    
+    function createCapSizeTabs(marketType) {
+        var capSizes = [
+            {id: 'small', name: 'Small Cap'},
+            {id: 'mid', name: 'Mid Cap'},
+            {id: 'large', name: 'Large Cap'}
+        ];
+        
+        var tabsHtml = '';
+        var contentHtml = '';
+        
+        capSizes.forEach((capSize, index) => {
+            var isActive = index === 0 ? 'active' : '';
+            var isShow = index === 0 ? 'show active' : '';
+            
+            tabsHtml += `<li class="nav-item" role="presentation">
+                <button class="nav-link ${isActive}" id="tab-${capSize.id}" data-bs-toggle="tab" data-bs-target="#content-${capSize.id}" type="button" role="tab" onclick="loadCountriesForCap('${capSize.id}')">${capSize.name}</button>
+            </li>`;
+            
+            contentHtml += `<div class="tab-pane fade ${isShow}" id="content-${capSize.id}" role="tabpanel">
+                <div class="p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <div>
+                            <h6 class="mb-1 text-primary">Select ${capSize.name} Countries</h6>
+                            <small class="text-muted">Choose countries for ${capSize.name} stocks</small>
+                        </div>
+                    </div>
+                    <div id="countries-${capSize.id}"></div>
+                </div>
+            </div>`;
+        });
+        
+        document.getElementById('categoryTabs').innerHTML = tabsHtml;
+        document.getElementById('categoryTabContent').innerHTML = contentHtml;
+        
+        setTimeout(() => {
+            loadCountriesForCap('small');
+        }, 100);
+    }
+    
+    function loadCountriesForCap(capSize) {
+        var countries = [
+            {id: `${capSize}-indian`, name: `${capSize.charAt(0).toUpperCase() + capSize.slice(1)} Cap Indian`},
+            {id: `${capSize}-us`, name: `${capSize.charAt(0).toUpperCase() + capSize.slice(1)} Cap US`},
+            {id: `${capSize}-uk`, name: `${capSize.charAt(0).toUpperCase() + capSize.slice(1)} Cap UK`}
+        ];
+        
+        var html = '<div class="row">';
+        countries.forEach(country => {
+            html += `<div class="col-md-4 mb-3">
+                <div class="card border-primary">
+                    <div class="card-body text-center">
+                        <h6 class="card-title">${country.name}</h6>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="loadAssetsForCountry('${country.id}', '${country.name}')">
+                            Select Assets
+                        </button>
+                        <div class="mt-2">
+                            <span class="badge bg-success" id="selected-${country.id}">0 selected</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        });
+        html += '</div>';
+        
+        document.getElementById(`countries-${capSize}`).innerHTML = html;
+    }
+    
+    function loadCategoriesForCrypto() {
+        // Fetch crypto category from API
+        fetch(`{{ url('admin/api/categories/crypto') }}`)
+            .then(response => response.json())
+            .then(categories => {
+                if (categories.length > 0) {
+                    createCategoryTabs(categories, 'crypto');
+                    document.getElementById('category-tabs-section').style.display = 'block';
+                } else {
+                    console.error('No crypto categories found');
+                }
+            })
+            .catch(error => {
+                console.error('Error loading crypto categories:', error);
+            });
+    }
+    
+    function createCategoryTabs(categories, marketType) {
+        var tabsHtml = '';
+        var contentHtml = '';
+        
+        categories.forEach((category, index) => {
+            var isActive = index === 0 ? 'active' : '';
+            var isShow = index === 0 ? 'show active' : '';
+            
+            tabsHtml += `<li class="nav-item" role="presentation">
+                <button class="nav-link ${isActive}" id="tab-${category.id}" data-bs-toggle="tab" data-bs-target="#content-${category.id}" type="button" role="tab" data-category-name="${category.name}" data-category-id="${category.id}">${category.name}</button>
+            </li>`;
+            
+            contentHtml += `<div class="tab-pane fade ${isShow}" id="content-${category.id}" role="tabpanel">
+                <div class="p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <div>
+                            <h6 class="mb-1 text-primary">Select ${category.name}</h6>
+                            <small class="text-muted">Choose assets for this category</small>
+                        </div>
+                        <div class="badge bg-primary fs-6" id="selected-count-${category.id}">0 selected</div>
+                    </div>
+                    <div class="mb-3">
+                        <input type="text" class="form-control" id="search-${category.id}" placeholder="Search assets..." onkeyup="filterAssets(${category.id})">
+                    </div>
+                    <div class="table-responsive" style="max-height:500px;overflow-y:auto;border-radius:10px;">
+                        <div id="loader-${category.id}" class="text-center py-5" style="display:none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <div class="mt-2 text-muted">Loading assets...</div>
+                        </div>
+                        <table class="table table-hover mb-0" id="table-${category.id}">
+                            <thead class="sticky-top">
+                                <tr>
+                                    <th width="60" class="text-center">Select</th>
+                                    <th>Asset Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assets-${category.id}"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+        });
+        
+        document.getElementById('categoryTabs').innerHTML = tabsHtml;
+        document.getElementById('categoryTabContent').innerHTML = contentHtml;
+        
+        categories.forEach((category, index) => {
+            setTimeout(() => {
+                loadAssetsForCategory(category.id, marketType);
+                updateSelectedCount(category.id, marketType);
+            }, 100 * (index + 1));
+        });
+    }
+    
+    function loadAssetsForCategory(categoryId, marketType) {
+        var container = document.getElementById(`assets-${categoryId}`);
+        var loader = document.getElementById(`loader-${categoryId}`);
+        var table = document.getElementById(`table-${categoryId}`);
+        
+        if (!container) return;
+        
+        // Show loader
+        if (loader) loader.style.display = 'block';
+        if (table) table.style.display = 'none';
+        
+        // API call to get assets
+        fetch(`{{ url('admin/api/assets') }}/${categoryId}`)
+            .then(response => response.json())
+            .then(assets => {
+                var fieldName = marketType === 'stock' ? 'stocks' : 'cryptos';
+                
+                var html = '';
+                assets.forEach(asset => {
+                    var value = asset.symbol;
+                    var name = asset.name;
+                    var imageUrl = asset.image_url || getAssetImage(asset.symbol, marketType);
+                    var rowId = `row_${marketType}_${categoryId}_${value.replace('-', '_')}`;
+                    
+                    var isSelected = isAssetSelectedInOtherCategory(value, categoryId, marketType);
+                    if (isSelected) return;
+                    
+                    var isCurrentlySelected = isAssetSelectedInCurrentCategory(value, categoryId, marketType);
+                    var checkedAttr = isCurrentlySelected ? 'checked' : '';
+                    
+                    html += `<tr id="${rowId}" class="asset-row">
+                        <td class="text-center">
+                            <input class='form-check-input form-check-input-lg' type='checkbox' name='${fieldName}[${categoryId}][]' value='${value}' id='${marketType}_${categoryId}_${value}' ${checkedAttr} onchange='handleAssetSelection("${value}", "${categoryId}", "${marketType}")'>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <img src="${imageUrl}" alt="${value}" class="rounded-circle shadow-sm" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${value}&size=40&background=667eea&color=fff&bold=true';">
+                                </div>
+                                <div>
+                                    <div class="fw-bold text-dark">${value}</div>
+                                    <small class="text-muted">${name}</small>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>`;
+                });
+                
+                container.innerHTML = html;
+                
+                // Hide loader, show table
+                if (loader) loader.style.display = 'none';
+                if (table) table.style.display = 'table';
+            })
+            .catch(error => {
+                console.error('Error loading assets:', error);
+                container.innerHTML = '<tr><td colspan="2" class="text-center text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Error loading assets</td></tr>';
+                
+                // Hide loader, show table
+                if (loader) loader.style.display = 'none';
+                if (table) table.style.display = 'table';
+            });
+    }
+    
+    function isAssetSelectedInOtherCategory(assetValue, currentCategoryId, marketType) {
+        var fieldName = marketType === 'stock' ? 'stocks' : 'cryptos';
+        var allCheckboxes = document.querySelectorAll(`input[name^="${fieldName}["][value="${assetValue}"]:checked`);
+        
+        for (var i = 0; i < allCheckboxes.length; i++) {
+            var checkbox = allCheckboxes[i];
+            var checkboxCategoryId = checkbox.name.match(/\[(\d+)\]/)[1];
+            if (checkboxCategoryId !== currentCategoryId) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    function isAssetSelectedInCurrentCategory(assetValue, categoryId, marketType) {
+        var fieldName = marketType === 'stock' ? 'stocks' : 'cryptos';
+        var checkbox = document.querySelector(`input[name="${fieldName}[${categoryId}][]"][value="${assetValue}"]`);
+        return checkbox && checkbox.checked;
+    }
+    
+    function handleAssetSelection(assetValue, categoryId, marketType) {
+        // Update selected count
+        updateSelectedCount(categoryId, marketType);
+        
+        // Update live prices
+        updateLivePricesSection();
+        
+        // Small delay to ensure checkbox state is updated
+        setTimeout(function() {
+            // Refresh all category tabs to hide/show assets based on selection
+            var categories = document.querySelectorAll('[id^="content-"]');
+            categories.forEach(function(categoryDiv) {
+                var catId = categoryDiv.id.replace('content-', '');
+                if (catId !== categoryId) {
+                    loadAssetsForCategory(catId, marketType);
+                }
+            });
+        }, 50);
+    }
+    
+    function updateSelectedCount(categoryId, marketType) {
+        var fieldName = marketType === 'stock' ? 'stocks' : 'cryptos';
+        var selectedCount = document.querySelectorAll(`input[name="${fieldName}[${categoryId}][]"]:checked`).length;
+        var countBadge = document.getElementById(`selected-count-${categoryId}`);
+        if (countBadge) {
+            countBadge.textContent = `${selectedCount} selected`;
+            countBadge.className = selectedCount > 0 ? 'badge bg-success fs-6' : 'badge bg-primary fs-6';
+        }
+    }
+    
+    function validateDateTime() {
+        var startTime = document.getElementById('start_time').value;
+        var endTime = document.getElementById('end_time').value;
+        var errorDiv = document.getElementById('datetime-error');
+        var submitBtn = document.querySelector('button[type="submit"]');
+        
+        if (startTime && endTime) {
+            var startDate = new Date(startTime);
+            var endDate = new Date(endTime);
+            
+            if (endDate <= startDate) {
+                errorDiv.style.display = 'block';
+                submitBtn.disabled = true;
+                submitBtn.classList.add('btn-secondary');
+                submitBtn.classList.remove('btn-success');
+                return false;
+            } else {
+                errorDiv.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('btn-secondary');
+                submitBtn.classList.add('btn-success');
+                return true;
+            }
+        }
+        return true;
+    }
+
+    function getStocks() {
+        return [
+            {symbol: "RELIANCE", name: "Reliance Industries"},
+            {symbol: "TCS", name: "Tata Consultancy Services"},
+            {symbol: "INFY", name: "Infosys"},
+            {symbol: "HDFCBANK", name: "HDFC Bank"},
+            {symbol: "ICICIBANK", name: "ICICI Bank"},
+            {symbol: "KOTAKBANK", name: "Kotak Mahindra Bank"},
+            {symbol: "SBIN", name: "State Bank of India"},
+            {symbol: "AXISBANK", name: "Axis Bank"},
+            {symbol: "INDUSINDBK", name: "IndusInd Bank"},
+            {symbol: "YESBANK", name: "Yes Bank"},
+            {symbol: "ITC", name: "ITC Limited"},
+            {symbol: "HINDUNILVR", name: "Hindustan Unilever"},
+            {symbol: "NESTLEIND", name: "Nestle India"},
+            {symbol: "MARICO", name: "Marico Limited"},
+            {symbol: "BRITANNIA", name: "Britannia Industries"},
+            {symbol: "DABUR", name: "Dabur India"},
+            {symbol: "GODREJCP", name: "Godrej Consumer Products"},
+            {symbol: "COLPAL", name: "Colgate Palmolive"},
+            {symbol: "HCLTECH", name: "HCL Technologies"},
+            {symbol: "TECHM", name: "Tech Mahindra"},
+            {symbol: "WIPRO", name: "Wipro Limited"},
+            {symbol: "LTIM", name: "LTIMindtree"},
+            {symbol: "MPHASIS", name: "Mphasis Limited"},
+            {symbol: "PERSISTENT", name: "Persistent Systems"},
+            {symbol: "LTI", name: "L&T Infotech"},
+            {symbol: "SUNPHARMA", name: "Sun Pharmaceutical"},
+            {symbol: "CIPLA", name: "Cipla Limited"},
+            {symbol: "DRREDDY", name: "Dr. Reddy's Laboratories"},
+            {symbol: "DIVISLAB", name: "Divi's Laboratories"},
+            {symbol: "AUROPHARMA", name: "Aurobindo Pharma"},
+            {symbol: "BIOCON", name: "Biocon Limited"},
+            {symbol: "LUPIN", name: "Lupin Limited"},
+            {symbol: "CADILAHC", name: "Cadila Healthcare"},
+            {symbol: "APOLLOHOSP", name: "Apollo Hospitals"},
+            {symbol: "ICICIPRULI", name: "ICICI Prudential Life"},
+            {symbol: "HDFCLIFE", name: "HDFC Life Insurance"},
+            {symbol: "SBILIFE", name: "SBI Life Insurance"},
+            {symbol: "ICICIGI", name: "ICICI Lombard General"},
+            {symbol: "MAXHEALTH", name: "Max Healthcare"},
+            {symbol: "TATAMOTORS", name: "Tata Motors"},
+            {symbol: "M&M", name: "Mahindra & Mahindra"},
+            {symbol: "MARUTI", name: "Maruti Suzuki"},
+            {symbol: "BAJAJ-AUTO", name: "Bajaj Auto"},
+            {symbol: "HERO", name: "Hero MotoCorp"},
+            {symbol: "EICHERMOT", name: "Eicher Motors"},
+            {symbol: "ASHOKLEY", name: "Ashok Leyland"},
+            {symbol: "ESCORTS", name: "Escorts Limited"},
+            {symbol: "TVSMOTOR", name: "TVS Motor Company"},
+            {symbol: "BHARTIARTL", name: "Bharti Airtel"},
+            {symbol: "IDEA", name: "Vodafone Idea"},
+            {symbol: "VODAFONE", name: "Vodafone Idea"},
+            {symbol: "JIOFIN", name: "Jio Financial Services"},
+            {symbol: "ADANIGREEN", name: "Adani Green Energy"},
+            {symbol: "ADANIPORTS", name: "Adani Ports"},
+            {symbol: "ADANIENT", name: "Adani Enterprises"},
+            {symbol: "ADANIPOWER", name: "Adani Power"},
+            {symbol: "ADANITRANS", name: "Adani Transmission"},
+            {symbol: "NTPC", name: "NTPC Limited"},
+            {symbol: "POWERGRID", name: "Power Grid Corporation"},
+            {symbol: "TATASTEEL", name: "Tata Steel"},
+            {symbol: "JSWSTEEL", name: "JSW Steel"},
+            {symbol: "HINDALCO", name: "Hindalco Industries"},
+            {symbol: "COALINDIA", name: "Coal India"},
+            {symbol: "NMDC", name: "NMDC Limited"},
+            {symbol: "NATIONALALUM", name: "National Aluminium"},
+            {symbol: "SAIL", name: "Steel Authority of India"},
+            {symbol: "IOC", name: "Indian Oil Corporation"},
+            {symbol: "BPCL", name: "Bharat Petroleum"},
+            {symbol: "HPCL", name: "Hindustan Petroleum"},
+            {symbol: "ONGC", name: "Oil & Natural Gas Corp"},
+            {symbol: "GAIL", name: "GAIL India"},
+            {symbol: "PETRONET", name: "Petronet LNG"},
+            {symbol: "ULTRACEMCO", name: "UltraTech Cement"},
+            {symbol: "SHREECEM", name: "Shree Cement"},
+            {symbol: "ACC", name: "ACC Limited"},
+            {symbol: "AMBUJACEM", name: "Ambuja Cements"},
+            {symbol: "GRASIM", name: "Grasim Industries"},
+            {symbol: "DLF", name: "DLF Limited"},
+            {symbol: "GODREJPROP", name: "Godrej Properties"},
+            {symbol: "OBEROIRLTY", name: "Oberoi Realty"},
+            {symbol: "PRESTIGE", name: "Prestige Estates"},
+            {symbol: "PHOENIXLTD", name: "Phoenix Mills"},
+            {symbol: "HAVELLS", name: "Havells India"},
+            {symbol: "CROMPTON", name: "Crompton Greaves"},
+            {symbol: "VGUARD", name: "V-Guard Industries"},
+            {symbol: "FINCABLES", name: "Finolex Cables"},
+            {symbol: "TATAPOWER", name: "Tata Power"},
+            {symbol: "JSWENERGY", name: "JSW Energy"},
+            {symbol: "NHPC", name: "NHPC Limited"},
+            {symbol: "PFC", name: "Power Finance Corporation"},
+            {symbol: "REC", name: "REC Limited"},
+            {symbol: "IRCTC", name: "Indian Railway Catering"},
+            {symbol: "CONCOR", name: "Container Corporation"},
+            {symbol: "GMRINFRA", name: "GMR Infrastructure"},
+            {symbol: "L&T", name: "Larsen & Toubro"},
+            {symbol: "BEL", name: "Bharat Electronics"},
+            {symbol: "BHEL", name: "Bharat Heavy Electricals"},
+            {symbol: "HAL", name: "Hindustan Aeronautics"},
+            {symbol: "COFORGE", name: "Coforge Limited"},
+            {symbol: "POLYCAB", name: "Polycab India"}
+        ];
+    }
+    
+    function getAssetImage(symbol, marketType) {
+        if (marketType === 'stock') {
+            return `https://financialmodelingprep.com/image-stock/${symbol}.png`;
+        } else {
+            const cryptoSymbol = symbol.replace('-USD', '').toLowerCase();
+            return `https://assets.coincap.io/assets/icons/${cryptoSymbol}@2x.png`;
+        }
+    }
+    
+    function getCryptoLogoName(symbol) {
+        const logoNames = {
+            'btc': 'bitcoin',
+            'eth': 'ethereum', 
+            'usdt': 'tether',
+            'bnb': 'bnb',
+            'sol': 'solana',
+            'xrp': 'xrp',
+            'usdc': 'usd-coin',
+            'ada': 'cardano',
+            'doge': 'dogecoin',
+            'avax': 'avalanche'
+        };
+        return logoNames[symbol] || symbol;
+    }
+
+    function toggleTemplateField() {
+        const checkbox = document.getElementById('save_as_template');
+        const templateName = document.getElementById('template_name');
+        
+        if (checkbox.checked) {
+            templateName.disabled = false;
+            templateName.required = true;
+        } else {
+            templateName.disabled = true;
+            templateName.required = false;
+            templateName.value = '';
+        }
+    }
+    
+    function loadTemplate() {
+        const templateId = document.getElementById('template_select').value;
+        if (!templateId) return;
+        
+        fetch(`{{ url('admin/league_sessions/template') }}/${templateId}`)
+            .then(response => response.json())
+            .then(template => {
+                console.log('Template loaded:', template);
+                
+                // Fill basic fields
+                document.getElementById('name').value = template.name || '';
+                document.getElementById('market_type').value = template.market_type || '';
+                document.getElementById('max_stocks').value = template.max_stocks || '';
+                
+                // Handle image - show preview if exists
+                if (template.image_url) {
+                    const imageInput = document.getElementById('session_image');
+                    const imagePreview = document.createElement('div');
+                    imagePreview.className = 'mt-2';
+                    imagePreview.innerHTML = `
+                        <img src="{{ url('/') }}/${template.image_url}" alt="Template Image" class="img-thumbnail" style="max-width: 200px;">
+                        <input type="hidden" name="existing_image" value="${template.image_url}">
+                        <p class="text-muted small mt-1">Template image loaded. Upload new image to replace.</p>
+                    `;
+                    imageInput.parentElement.appendChild(imagePreview);
+                }
+                
+                // Fill time fields if available
+                if (template.user_joining_start_time) {
+                    document.getElementById('user_joining_start_time').value = template.user_joining_start_time.replace(' ', 'T').substring(0, 16);
+                }
+                if (template.start_time) {
+                    document.getElementById('start_time').value = template.start_time.replace(' ', 'T').substring(0, 16);
+                }
+                if (template.end_time) {
+                    document.getElementById('end_time').value = template.end_time.replace(' ', 'T').substring(0, 16);
+                }
+                if (template.status) {
+                    document.getElementById('status').value = template.status;
+                }
+                if (template.active !== undefined) {
+                    document.getElementById('active').value = template.active ? '1' : '0';
+                }
+                
+                // Trigger market type change to load categories
+                if (template.market_type === 'stock') {
+                    document.getElementById('country-section').style.display = 'block';
+                    // Auto-select country based on first category
+                    if (template.assets_data) {
+                        const firstCategory = Object.keys(template.assets_data)[0];
+                        if (firstCategory && firstCategory.includes('Indian')) {
+                            document.getElementById('country').value = 'Indian';
+                        } else if (firstCategory && firstCategory.includes('US')) {
+                            document.getElementById('country').value = 'US';
+                        } else if (firstCategory && firstCategory.includes('UK')) {
+                            document.getElementById('country').value = 'UK';
+                        }
+                        loadCapSizeTabs();
+                    }
+                } else if (template.market_type === 'crypto') {
+                    loadCategoriesForCrypto();
+                }
+                
+                // Wait for categories to load, then select assets
+                setTimeout(() => {
+                    if (template.assets_data) {
+                        console.log('Loading assets:', template.assets_data);
+                        selectTemplateAssets(template.assets_data, template.market_type);
+                    }
+                }, 2000);
+            })
+            .catch(error => {
+                console.error('Error loading template:', error);
+                alert('Error loading template: ' + error.message);
+            });
+    }
+    
+    function selectTemplateAssets(assetsData, marketType) {
+        const fieldName = marketType === 'stock' ? 'stocks' : 'cryptos';
+        
+        // Wait for assets to load, then select them
+        setTimeout(() => {
+            // assetsData is now grouped by category_name
+            Object.keys(assetsData).forEach(categoryName => {
+                const categoryAssets = assetsData[categoryName];
+                
+                // Find category ID by name
+                const categoryElement = document.querySelector(`[data-category-name="${categoryName}"]`);
+                if (categoryElement) {
+                    const categoryId = categoryElement.dataset.categoryId;
+                    
+                    categoryAssets.forEach(assetData => {
+                        const assetSymbol = assetData.asset_symbol;
+                        const checkbox = document.querySelector(`input[name="${fieldName}[${categoryId}][]"][value="${assetSymbol}"]`);
+                        if (checkbox) {
+                            checkbox.checked = true;
+                            updateSelectedCount(categoryId, marketType);
+                        }
+                    });
+                }
+            });
+        }, 2000); // Wait 2 seconds for all assets to load
+    }
+
+    function loadAssetsForCountry(countryId, countryName) {
+        // Show modal or expand section to show assets
+        var modalHtml = `
+            <div class="modal fade" id="assetsModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">${countryName} Assets</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="table-responsive" style="max-height:400px;overflow-y:auto;">
+                                <table class="table table-hover">
+                                    <thead class="sticky-top">
+                                        <tr>
+                                            <th width="60" class="text-center">Select</th>
+                                            <th>Asset Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="modal-assets-list"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Remove existing modal
+        var existingModal = document.getElementById('assetsModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // Add modal to body
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Load assets for this category
+        fetch(`{{ url('admin/api/categories/stock') }}`)
+            .then(response => response.json())
+            .then(categories => {
+                var category = categories.find(cat => cat.name === countryName);
+                if (category) {
+                    loadAssetsInModal(category.id, countryName, countryId);
+                }
+            });
+        
+        // Show modal
+        var modal = new bootstrap.Modal(document.getElementById('assetsModal'));
+        modal.show();
+    }
+    
+    function loadAssetsInModal(categoryId, countryName, countryId) {
+        var container = document.getElementById('modal-assets-list');
+        
+        fetch(`{{ url('admin/api/assets') }}/${categoryId}`)
+            .then(response => response.json())
+            .then(assets => {
+                var html = '';
+                assets.forEach(asset => {
+                    var value = asset.symbol;
+                    var name = asset.name;
+                    var imageUrl = asset.image_url || getAssetImage(asset.symbol, 'stock');
+                    
+                    html += `<tr>
+                        <td class="text-center">
+                            <input class='form-check-input' type='checkbox' name='stocks[${categoryId}][]' value='${value}' id='stock_${categoryId}_${value}' onchange='updateCountryCount("${countryId}", ${categoryId})'>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <img src="${imageUrl}" alt="${value}" class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${value}&size=32&background=667eea&color=fff&bold=true';">
+                                </div>
+                                <div>
+                                    <div class="fw-bold">${value}</div>
+                                    <small class="text-muted">${name}</small>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>`;
+                });
+                
+                container.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Error loading assets:', error);
+                container.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error loading assets</td></tr>';
+            });
+    }
+    
+    function updateCountryCount(countryId, categoryId) {
+        var selectedCount = document.querySelectorAll(`input[name="stocks[${categoryId}][]"]:checked`).length;
+        var badge = document.getElementById(`selected-${countryId}`);
+        if (badge) {
+            badge.textContent = `${selectedCount} selected`;
+            badge.className = selectedCount > 0 ? 'badge bg-success' : 'badge bg-secondary';
+        }
+    }
+
+    // Auto-load template if URL parameter exists
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const templateId = urlParams.get('template');
+        if (templateId) {
+            document.getElementById('template_select').value = templateId;
+            loadTemplate();
+        }
+    });
+
+    function filterAssets(categoryId) {
+        const searchInput = document.getElementById(`search-${categoryId}`);
+        const searchTerm = searchInput.value.toLowerCase();
+        const rows = document.querySelectorAll(`#assets-${categoryId} tr`);
+        
+        rows.forEach(row => {
+            const symbol = row.querySelector('td:nth-child(2) .fw-bold')?.textContent.toLowerCase() || '';
+            const name = row.querySelector('td:nth-child(2) small')?.textContent.toLowerCase() || '';
+            
+            if (symbol.includes(searchTerm) || name.includes(searchTerm)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+
+    // Live Prices Functions
+    function updateLivePricesSection() {
+        const selectedAssets = getSelectedAssets();
+        const livePricesSection = document.getElementById('live-prices-section');
+        
+        if (selectedAssets.length > 0) {
+            livePricesSection.style.display = 'block';
+            loadLivePricesForAssets(selectedAssets);
+        } else {
+            livePricesSection.style.display = 'none';
+        }
+    }
+    
+    function getSelectedAssets() {
+        const assets = [];
+        const marketType = document.getElementById('market_type').value;
+        const fieldName = marketType === 'stock' ? 'stocks' : 'cryptos';
+        
+        const checkboxes = document.querySelectorAll(`input[name^="${fieldName}["]:checked`);
+        checkboxes.forEach(checkbox => {
+            assets.push({
+                symbol: checkbox.value,
+                type: marketType
+            });
+        });
+        
+        return assets;
+    }
+    
+    function loadLivePricesForAssets(assets) {
+        const container = document.getElementById('live-prices-container');
+        
+        if (assets.length === 0) {
+            container.innerHTML = '<div class="col-12 text-center py-4"><div class="text-muted">Select assets to see live prices</div></div>';
+            return;
+        }
+        
+        container.innerHTML = '<div class="col-12 text-center py-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2 text-muted">Loading live prices...</p></div>';
+        
+        // Get live prices based on asset type
+        const stockSymbols = assets.filter(a => a.type === 'stock').map(a => a.symbol);
+        const cryptoSymbols = assets.filter(a => a.type === 'crypto').map(a => a.symbol.replace('-USD', ''));
+        
+        Promise.all([
+            stockSymbols.length > 0 ? fetchStockPrices(stockSymbols) : Promise.resolve([]),
+            cryptoSymbols.length > 0 ? fetchCryptoPrices(cryptoSymbols) : Promise.resolve([])
+        ]).then(([stockData, cryptoData]) => {
+            displayLivePricesInCreate([...stockData, ...cryptoData]);
+            document.getElementById('price-update-time').textContent = 'Last Updated: ' + new Date().toLocaleTimeString();
+        }).catch(error => {
+            console.error('Error loading live prices:', error);
+            container.innerHTML = '<div class="col-12 text-center py-4"><div class="alert alert-danger">Error loading live prices</div></div>';
+        });
+    }
+    
+    function fetchStockPrices(symbols) {
+        if (symbols.length === 0) return Promise.resolve([]);
+        
+        // Fetch from external API for each stock
+        const promises = symbols.map(symbol => 
+            fetch(`{{ url('/api/v1/stock-live-price') }}?symbol=${symbol}`)
+                .then(response => response.json())
+                .then(data => data.success ? data : null)
+                .catch(() => null)
+        );
+        
+        return Promise.all(promises).then(results => results.filter(r => r !== null));
+    }
+    
+    function fetchCryptoPrices(symbols) {
+        if (symbols.length === 0) return Promise.resolve([]);
+        
+        // Fetch all crypto prices from external API
+        return fetch('{{ url('/api/v1/crypto-live-price') }}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.data) {
+                    return data.data.filter(crypto => 
+                        symbols.includes(crypto.symbol)
+                    );
+                }
+                return [];
+            })
+            .catch(() => []);
+    }
+    
+    function displayLivePricesInCreate(pricesData) {
+        const container = document.getElementById('live-prices-container');
+        
+        if (pricesData.length === 0) {
+            container.innerHTML = '<div class="col-12 text-center py-4"><div class="text-muted">No price data available</div></div>';
+            return;
+        }
+        
+        let html = '';
+        pricesData.forEach(price => {
+            const hasValidPrice = price.price && price.price > 0;
+            const changePercent = price.change_percent || 0;
+            const changeClass = changePercent >= 0 ? 'text-success' : 'text-danger';
+            const changeIcon = changePercent >= 0 ? '↗' : '↘';
+            const currency = price.symbol && (price.symbol.includes('BTC') || price.symbol.includes('ETH') || price.symbol.includes('USD')) ? '$' : '₹';
+            
+            html += `
+                <div class="col-md-4 col-lg-3 mb-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body p-3 text-center">
+                            <h6 class="fw-bold mb-1">${price.symbol}</h6>
+                            <small class="text-muted d-block mb-2">${price.name || price.symbol}</small>
+                            <div class="h5 mb-2">${hasValidPrice ? currency + parseFloat(price.price).toFixed(2) : '<span class="text-muted">N/A</span>'}</div>
+                            <div class="${hasValidPrice ? changeClass : 'text-muted'} fw-bold">
+                                ${hasValidPrice ? changeIcon + ' ' + (changePercent >= 0 ? '+' : '') + parseFloat(changePercent).toFixed(2) + '%' : 'Not Available'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+    }
+    
+    function refreshSelectedAssetPrices() {
+        const selectedAssets = getSelectedAssets();
+        if (selectedAssets.length > 0) {
+            loadLivePricesForAssets(selectedAssets);
+        }
+    }
+
+</script>
+@endsection

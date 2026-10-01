@@ -1,0 +1,51 @@
+{
+  "name": "probtrade-node-backend",
+  "version": "1.0.0",
+  "description": "ProbTrade Backend Migrated from Laravel to Node.js, Express, and MongoDB",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "admin:start": "node admin-server.js",
+    "admin:dev": "nodemon admin-server.js",
+    "start:all": "node server.js & node admin-server.js",
+    "migrate:data": "node scripts/migration/migrate.js",
+    "migrate:fresh": "node scripts/migration/migrate-fresh.js",
+    "migrate:admins": "node scripts/migration/import-admins.js",
+    "db:init": "node scripts/database/init-db.js",
+    "db:seed": "node scripts/seed/seed.js",
+    "test": "node --test tests/**/*.test.js"
+  },
+  "keywords": [
+    "probtrade",
+    "express",
+    "mongodb",
+    "mongoose",
+    "trading",
+    "fantasy-contests"
+  ],
+  "author": "ProbTrade Migration",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "connect-flash": "^0.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "ejs": "^6.0.1",
+    "express": "^4.21.2",
+    "express-session": "^1.19.0",
+    "jsonwebtoken": "^9.0.2",
+    "method-override": "^3.0.0",
+    "mongoose": "^8.9.5",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.12.0",
+    "node-cron": "^3.0.3",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9",
+    "supertest": "^7.0.0"
+  }
+}

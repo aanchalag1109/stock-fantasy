@@ -1,0 +1,15 @@
+'use strict';
+const router = require('express').Router();
+const { requireAdmin } = require('../middleware/auth');
+const ctrl = require('../controllers/contests.controller');
+router.get('/', requireAdmin, ctrl.index);
+router.get('/create', requireAdmin, ctrl.create);
+router.post('/', requireAdmin, ctrl.store);
+router.post('/bulk-delete', requireAdmin, ctrl.bulkDelete);
+router.post('/:id/cancel', requireAdmin, ctrl.cancel);
+router.post('/:id/pin', requireAdmin, ctrl.togglePin);
+router.get('/:id', requireAdmin, ctrl.show);
+router.get('/:id/edit', requireAdmin, ctrl.edit);
+router.put('/:id', requireAdmin, ctrl.update);
+router.delete('/:id', requireAdmin, ctrl.destroy);
+module.exports = router;

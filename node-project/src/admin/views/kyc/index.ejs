@@ -1,0 +1,68 @@
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-2">KYC Submissions</h1>
+            <p class="mb-0">Review and manage user KYC submissions</p>
+        </div>
+    </div>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-bold">KYC Submissions</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>User</th>
+                            <th>Document Type</th>
+                            <th>Document Number</th>
+                            <th>Status</th>
+                            <th>Submitted At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% submissions.forEach(s => {
+                            const created = s.created_at ? new Date(s.created_at) : null;
+                            const createdText = created ? created.getFullYear() + '-' + String(created.getMonth()+1).padStart(2,'0') + '-' + String(created.getDate()).padStart(2,'0') + ' ' + String(created.getHours()).padStart(2,'0') + ':' + String(created.getMinutes()).padStart(2,'0') : '—';
+                            const docType = s.document_type || (s.aadhar_number || s.aadhar ? 'Aadhar' : (s.pan_number || s.pan ? 'PAN' : '—'));
+                            const docNumber = s.document_number || s.aadhar_number || s.aadhar || s.pan_number || s.pan || '—';
+                        %>
+                        <tr>
+                            <td><%= s.old_id || String(s._id).slice(-6) %></td>
+                            <td><%= (s.user_id && s.user_id.name) || '—' %></td>
+                            <td><%= docType %></td>
+                            <td><%= docNumber %></td>
+                            <td>
+                                <% if (s.status === 'pending') { %><span class="badge bg-warning text-dark">Pending</span>
+                                <% } else if (s.status === 'approved') { %><span class="badge bg-success">Approved</span>
+                                <% } else { %><span class="badge bg-danger">Rejected</span><% } %>
+                            </td>
+                            <td><%= createdText %></td>
+                            <td>
+                                <a href="/kyc/<%= s._id %>" class="btn btn-sm btn-outline-primary me-1"><i class="bi bi-eye"></i> View</a>
+                                <% if (s.status === 'pending') { %>
+                                    <form action="/kyc/<%= s._id %>/approve" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Approve this KYC?')"><i class="bi bi-check-circle"></i> Approve</button>
+                                    </form>
+                                    <form action="/kyc/<%= s._id %>/reject" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Reject this KYC?')"><i class="bi bi-x-circle"></i> Reject</button>
+                                    </form>
+                                <% } %>
+                            </td>
+                        </tr>
+                        <% }) %>
+                        <% if (!submissions.length) { %>
+                        <tr><td colspan="7" class="text-center text-muted">No KYC submissions found.</td></tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+            <% if (pages > 1) { %>
+            <div class="card-footer bg-white py-3">
+                <%- include('../partials/pagination', { pages, page, extraQuery: status ? 'status=' + status : '' }) %>
+            </div>
+            <% } %>
+        </div>
+    </div>
+</div>

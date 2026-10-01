@@ -1,0 +1,47 @@
+<%
+  function stamp(d) {
+    if (!d) return '—';
+    const dt = new Date(d);
+    const p = n => String(n).padStart(2, '0');
+    return dt.getFullYear() + '-' + p(dt.getMonth() + 1) + '-' + p(dt.getDate()) + ' ' + p(dt.getHours()) + ':' + p(dt.getMinutes()) + ':' + p(dt.getSeconds());
+  }
+%>
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header fw-bold">Announcement Details</div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-sm-3"><strong>Title:</strong></div>
+                        <div class="col-sm-9"><%= announcement.title %></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3"><strong>Type:</strong></div>
+                        <div class="col-sm-9">
+                            <% if (announcement.type === 'update') { %><span class="badge bg-info text-dark">Update</span>
+                            <% } else if (announcement.type === 'alert') { %><span class="badge bg-danger">Alert</span>
+                            <% } else if (announcement.type === 'promo') { %><span class="badge bg-success">Promo</span>
+                            <% } else { %><span class="badge bg-secondary">Other</span><% } %>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3"><strong>Description:</strong></div>
+                        <div class="col-sm-9"><%= announcement.description || announcement.message || '' %></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3"><strong>Created:</strong></div>
+                        <div class="col-sm-9"><%= stamp(announcement.created_at) %></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3"><strong>Updated:</strong></div>
+                        <div class="col-sm-9"><%= stamp(announcement.updated_at) %></div>
+                    </div>
+                    <div class="d-flex gap-2 mt-4">
+                        <a href="/announcements" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to List</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

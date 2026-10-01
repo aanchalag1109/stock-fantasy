@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contest Testing Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .card { background: white; padding: 20px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn { padding: 10px 20px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-warning { background: #ffc107; color: black; }
+        .response { background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 10px 0; font-family: monospace; white-space: pre-wrap; }
+        .status { padding: 5px 10px; border-radius: 4px; font-weight: bold; }
+        .status.live { background: #d4edda; color: #155724; }
+        .status.upcoming { background: #fff3cd; color: #856404; }
+        .status.completed { background: #f8d7da; color: #721c24; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; }
+        .loading { display: none; color: #007bff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏆 Contest Testing Dashboard</h1>
+        
+        <!-- Contest Control Panel -->
+        <div class="card">
+            <h3>Contest Control Panel</h3>
+            <button class="btn btn-success" onclick="startContest()">🚀 Start Contest</button>
+            <button class="btn btn-warning" onclick="saveStartPrices()">💰 Save Start Prices</button>
+            <button class="btn btn-primary" onclick="updateScores()">📊 Update Scores</button>
+            <button class="btn btn-danger" onclick="endContest()">🏁 End Contest</button>
+            <button class="btn btn-warning" onclick="saveEndPrices()">💸 Save End Prices</button>
+            <div class="loading" id="loading">⏳ Processing...</div>
+        </div>
+
+        <!-- Contest Status -->
+        <div class="card">
+            <h3>Contest Status</h3>
+            <button class="btn btn-primary" onclick="getContestStatus()">🔄 Refresh Status</button>
+            <div id="contestStatus"></div>
+        </div>
+
+        <!-- Database Data -->
+        <div class="card">
+            <h3>Database Data</h3>
+            <button class="btn btn-primary" onclick="getStartPrices()">📈 View Start Prices</button>
+            <button class="btn btn-primary" onclick="getEndPrices()">📉 View End Prices</button>
+            <button class="btn btn-primary" onclick="getContestResults()">🏆 View Results</button>
+            <div id="databaseData"></div>
+        </div>
+
+        <!-- API Response -->
+        <div class="card">
+            <h3>API Response</h3>
+            <div class="response" id="apiResponse">Click any button to see API response...</div>
+        </div>
+    </div>
+
+    <script>
+        const baseUrl = 'https://herohosting.online/prob/public/api';
+        
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function displayResponse(data) {
+            document.getElementById('apiResponse').textContent = JSON.stringify(data, null, 2);
+        }
+        
+        async function apiCall(url, method = 'GET', body = null) {
+            showLoading();
+            try {
+                const options = {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' }
+                };
+                if (body) options.body = JSON.stringify(body);
+                
+                const response = await fetch(url, options);
+                const data = await response.json();
+                displayResponse(data);
+                return data;
+            } catch (error) {
+                displayResponse({ error: error.message });
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        async function startContest() {
+            const data = await apiCall(`${baseUrl}/cron/start-contests`);
+            if (data.success) {
+                alert(`✅ Started ${data.contests_started} contests and ${data.sessions_started} sessions`);
+                getContestStatus();
+            }
+        }
+        
+        async function saveStartPrices() {
+            const data = await apiCall(`${baseUrl}/save-contest-start-prices`, 'POST', {
+                contest_id: 87,
+                timestamp: new Date().toISOString()
+            });
+            if (data.success) {
+                alert(`✅ Saved ${data.prices_saved} start prices`);
+                getStartPrices();
+            }
+        }
+        
+        async function updateScores() {
+            const data = await apiCall(`${baseUrl}/cron/update-scores`);
+            if (data.success) {
+                alert('✅ Scores updated successfully');
+            }
+        }
+        
+        async function endContest() {
+            const data = await apiCall(`${baseUrl}/cron/end-contests`);
+            if (data.success) {
+                alert(`✅ Ended ${data.contests_ended} contests`);
+                getContestStatus();
+            }
+        }
+        
+        async function saveEndPrices() {
+            const data = await apiCall(`${baseUrl}/save-contest-end-prices`, 'POST', {
+                contest_id: 87,
+                timestamp: new Date().toISOString()
+            });
+            if (data.success) {
+                alert(`✅ Saved ${data.prices_saved} end prices`);
+                getEndPrices();
+            }
+        }
+        
+        async function getContestStatus() {
+            const data = await apiCall(`${baseUrl}/contests/87`);
+            if (data.success) {
+                const contest = data.contest;
+                const statusClass = contest.status.toLowerCase();
+                document.getElementById('contestStatus').innerHTML = `
+                    <h4>Contest #87</h4>
+                    <p><strong>Status:</strong> <span class="status ${statusClass}">${contest.status.toUpperCase()}</span></p>
+                    <p><strong>Prize Pool:</strong> ₹${contest.prize_pool}</p>
+                    <p><strong>Participants:</strong> ${contest.joined_count}/${contest.max_participants}</p>
+                    <p><strong>Start Time:</strong> ${contest.start_time}</p>
+                    <p><strong>End Time:</strong> ${contest.end_time}</p>
+                `;
+            }
+        }
+        
+        async function getStartPrices() {
+            const data = await apiCall(`${baseUrl}/contest-start-prices/87`);
+            displayPricesTable(data, 'Start Prices', 'start_price');
+        }
+        
+        async function getEndPrices() {
+            const data = await apiCall(`${baseUrl}/contest-end-prices/87`);
+            displayPricesTable(data, 'End Prices', 'end_price');
+        }
+        
+        async function getContestResults() {
+            const data = await apiCall(`${baseUrl}/contest-results/87`);
+            if (data.success) {
+                let html = '<h4>Contest Results</h4><table><tr><th>Rank</th><th>User</th><th>Score</th><th>Prize</th></tr>';
+                data.results.forEach(result => {
+                    html += `<tr><td>${result.rank}</td><td>${result.user_name}</td><td>${result.total_score}</td><td>₹${result.prize || 0}</td></tr>`;
+                });
+                html += '</table>';
+                document.getElementById('databaseData').innerHTML = html;
+            }
+        }
+        
+        function displayPricesTable(data, title, priceField) {
+            if (data.success && data.prices) {
+                let html = `<h4>${title}</h4><table><tr><th>Symbol</th><th>Price</th><th>Timestamp</th></tr>`;
+                data.prices.forEach(price => {
+                    html += `<tr><td>${price.symbol}</td><td>$${price[priceField]}</td><td>${price.timestamp}</td></tr>`;
+                });
+                html += '</table>';
+                document.getElementById('databaseData').innerHTML = html;
+            }
+        }
+        
+        // Auto-refresh status every 30 seconds
+        setInterval(getContestStatus, 30000);
+        
+        // Load initial status
+        getContestStatus();
+    </script>
+</body>
+</html>

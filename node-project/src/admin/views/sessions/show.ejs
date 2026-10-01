@@ -1,0 +1,234 @@
+<%
+  function sched(d) {
+    if (!d) return '';
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(d));
+    const get = (type) => (parts.find((part) => part.type === type) || {}).value || '';
+    return get('month') + ' ' + get('day') + ', ' + get('year') + ' ' + get('hour') + ':' + get('minute');
+  }
+  const statusColors = { live: 'success', upcoming: 'info', completed: 'warning', draft: 'secondary' };
+  const statusIcons = { live: 'broadcast', upcoming: 'clock', completed: 'check-circle', draft: 'file-earmark' };
+  const st = session.status || 'upcoming';
+  const active = session.active !== false;
+  function countryOf(name) {
+    if (!name) return 'Unknown';
+    if (name.includes('Indian')) return '🇮🇳 Indian';
+    if (name.includes('US')) return '🇺🇸 US';
+    if (name.includes('UK')) return '🇬🇧 UK';
+    if (name.includes('Crypto')) return '💰 Crypto';
+    return 'Unknown';
+  }
+  function capOf(name) {
+    if (!name) return '';
+    if (name.includes('Small')) return 'Small Cap';
+    if (name.includes('Mid')) return 'Mid Cap';
+    if (name.includes('Large')) return 'Large Cap';
+    return '';
+  }
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-eye text-success me-2"></i>View Session</h1>
+            <p class="text-muted mb-0"><%= session.name %></p>
+        </div>
+        <div>
+            <a href="/league_sessions" class="btn btn-outline-secondary me-2">
+                <i class="bi bi-arrow-left me-1"></i>Back to Sessions
+            </a>
+            <% if (st === 'upcoming') { %>
+            <a href="/league_sessions/<%= session._id %>/edit" class="btn btn-primary">
+                <i class="bi bi-pencil me-1"></i>Edit Session
+            </a>
+            <% } %>
+        </div>
+    </div>
+
+    <div class="alert alert-<%= st === 'upcoming' ? 'info' : 'warning' %> border-0 shadow-sm mb-4">
+        <i class="bi bi-<%= st === 'upcoming' ? 'clock' : 'check-circle' %>-fill me-2"></i>
+        <strong><%= st.charAt(0).toUpperCase() + st.slice(1) %> Session:</strong>
+        <% if (st === 'upcoming') { %>
+            This session is scheduled to start at <%= sched(session.start_time) %>
+        <% } else { %>
+            This session has been completed
+        <% } %>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header text-white" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+                    <h5 class="mb-0"><i class="bi bi-info-circle-fill me-2"></i>Session Details</h5>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold text-muted">Session Name</label>
+                            <div class="fs-5 fw-bold text-dark"><%= session.name %></div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold text-muted">Market Type</label>
+                            <div>
+                                <span class="badge <%= session.market_type === 'stock' ? 'bg-primary' : 'bg-warning' %> fs-6">
+                                    <i class="bi bi-<%= session.market_type === 'stock' ? 'graph-up' : 'currency-bitcoin' %> me-1"></i>
+                                    <%= (session.market_type || 'stock').charAt(0).toUpperCase() + (session.market_type || 'stock').slice(1) %>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold text-muted">Max Assets in Portfolio</label>
+                            <div class="fs-5 fw-bold text-dark"><%= session.max_stocks || 0 %></div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold text-muted">Status</label>
+                            <div>
+                                <span class="badge bg-<%= statusColors[st] || 'secondary' %> fs-6">
+                                    <i class="bi bi-<%= statusIcons[st] || 'circle' %> me-1"></i>
+                                    <%= st.charAt(0).toUpperCase() + st.slice(1) %>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold text-muted">Start Time</label>
+                            <div class="fs-6 text-dark"><i class="bi bi-play-circle text-success me-1"></i><%= sched(session.start_time) %></div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold text-muted">End Time</label>
+                            <div class="fs-6 text-dark"><i class="bi bi-stop-circle text-danger me-1"></i><%= sched(session.end_time) %></div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold text-muted">Active Status</label>
+                            <div>
+                                <span class="badge <%= active ? 'bg-success' : 'bg-danger' %> fs-6">
+                                    <i class="bi bi-<%= active ? 'check' : 'x' %>-circle me-1"></i>
+                                    <%= active ? 'Active' : 'Inactive' %>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-semibold text-muted">Created</label>
+                            <div class="fs-6 text-dark"><%= sched(session.created_at) %></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header text-white" style="background: linear-gradient(135deg, #17a2b8 0%, #6f42c1 100%);">
+                    <h5 class="mb-0"><i class="bi bi-bar-chart-fill me-2"></i>Statistics</h5>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row text-center">
+                        <div class="col-12 mb-3">
+                            <div class="bg-light rounded p-3">
+                                <div class="fs-2 fw-bold text-primary"><%= contestsCount %></div>
+                                <div class="text-muted">Total Contests</div>
+                            </div>
+                        </div>
+                        <div class="col-12 mb-3">
+                            <div class="bg-light rounded p-3">
+                                <div class="fs-2 fw-bold text-success"><%= uniqueAssets.length %></div>
+                                <div class="text-muted">Available Assets</div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="bg-light rounded p-3">
+                                <div class="fs-2 fw-bold text-warning"><%= totalParticipants %></div>
+                                <div class="text-muted">Total Participants</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header text-white" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+            <h5 class="mb-0"><i class="bi bi-check-circle-fill me-2"></i>Selected Assets by Category</h5>
+        </div>
+        <div class="card-body p-4">
+            <% if (!assetsByCategory.length) { %>
+            <div class="text-center py-4">
+                <i class="bi bi-exclamation-triangle display-4 text-warning"></i>
+                <h5 class="mt-3">No Assets Found</h5>
+                <p class="text-muted">This session has no saved assets.</p>
+            </div>
+            <% } %>
+            <% assetsByCategory.forEach(group => {
+                const cap = capOf(group.name);
+            %>
+            <div class="mb-4">
+                <h6 class="text-primary mb-3">
+                    <i class="bi bi-tag me-1"></i><%= group.name %>
+                    <span class="badge bg-primary ms-2"><%= group.assets.length %> assets</span>
+                    <span class="badge bg-info ms-1"><%= countryOf(group.name) %></span>
+                    <% if (cap) { %><span class="badge bg-warning ms-1"><%= cap %></span><% } %>
+                </h6>
+                <div class="row">
+                    <% group.assets.forEach(asset => { %>
+                    <div class="col-md-4 mb-3">
+                        <div class="d-flex align-items-center p-3 bg-light rounded">
+                            <div class="me-3">
+                                <img src="https://financialmodelingprep.com/image-stock/<%= asset.asset_symbol %>.png"
+                                     alt="<%= asset.asset_symbol %>" class="rounded-circle"
+                                     style="width: 40px; height: 40px; object-fit: cover;"
+                                     onerror="this.src='https://ui-avatars.com/api/?name=<%= asset.asset_symbol %>&size=40&background=28a745&color=fff';">
+                            </div>
+                            <div>
+                                <div class="fw-bold text-success"><%= asset.asset_symbol %></div>
+                                <small class="text-muted"><%= asset.asset_name || 'Asset Name' %></small>
+                            </div>
+                        </div>
+                    </div>
+                    <% }) %>
+                </div>
+            </div>
+            <% }) %>
+        </div>
+    </div>
+
+    <% if (contests.length) { %>
+    <div class="card shadow-sm border-0">
+        <div class="card-header text-white" style="background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);">
+            <h5 class="mb-0"><i class="bi bi-trophy-fill me-2"></i>Related Contests (<%= contests.length %>)</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Contest Name</th>
+                            <th>Category</th>
+                            <th>Prize Pool</th>
+                            <th>Entry Fee</th>
+                            <th>Participants</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% contests.forEach(contest => { %>
+                        <tr>
+                            <td class="fw-semibold"><%= contest.name || ('Contest #' + (contest.old_id || '')) %></td>
+                            <td><span class="badge bg-secondary"><%= contest.category %></span></td>
+                            <td class="text-success fw-bold"><%= Number(contest.prize_pool || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }) %> probcoins</td>
+                            <td class="text-primary"><%= Number(contest.entry_fee || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }) %> probcoins</td>
+                            <td><span class="badge bg-info"><%= contest.participants || 0 %></span></td>
+                            <td>
+                                <span class="badge bg-<%= contest.status === 'upcoming' ? 'info' : 'success' %>">
+                                    <%= contest.status ? contest.status.charAt(0).toUpperCase() + contest.status.slice(1) : '' %>
+                                </span>
+                            </td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <% } %>
+</div>

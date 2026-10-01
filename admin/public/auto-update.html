@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>League Session Auto Update</title>
+    <meta http-equiv="refresh" content="60">
+</head>
+<body>
+    <h3>League Session Status Auto-Updater</h3>
+    <p>This page automatically updates league session statuses every minute.</p>
+    <p>Current time: <span id="time"></span></p>
+    <p>Last update: <span id="lastUpdate">Loading...</span></p>
+    
+    <script>
+        function updateTime() {
+            document.getElementById('time').textContent = new Date().toLocaleString();
+        }
+        
+        function updateSessions() {
+            fetch('/prob/public/update-sessions')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('lastUpdate').textContent = 
+                        `${data.current_time} - Live: ${data.updated_to_live}, Completed: ${data.updated_to_completed}`;
+                })
+                .catch(error => {
+                    document.getElementById('lastUpdate').textContent = 'Error: ' + error.message;
+                });
+        }
+        
+        // Update immediately and then every 10 seconds
+        updateTime();
+        updateSessions();
+        setInterval(updateTime, 1000);
+        setInterval(updateSessions, 10000);
+    </script>
+</body>
+</html>

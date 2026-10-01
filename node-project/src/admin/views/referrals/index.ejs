@@ -1,0 +1,36 @@
+<div class="container-fluid">
+    <h4 class="mb-4">Referral Management</h4>
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card"><div class="card-body"><h5 class="card-title">Total Referrals</h5><h3 class="text-primary"><%= stats.total_referrals %></h3></div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card"><div class="card-body"><h5 class="card-title">Active Referrers</h5><h3 class="text-success"><%= stats.total_referrers %></h3></div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card"><div class="card-body"><h5 class="card-title">Total Bonus Paid</h5><h3 class="text-warning">₹<%= Number(stats.total_bonus_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></h3></div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card"><div class="card-body"><h5 class="card-title">Deposits from Referrals</h5><h3 class="text-info">₹<%= Number(stats.total_deposits_from_referrals || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></h3></div></div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">Referral transactions</div>
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead><tr><th>User</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+                <tbody>
+                    <% transactions.forEach(t => { %>
+                    <tr>
+                        <td><%= t.user_id && t.user_id.name ? t.user_id.name : '—' %></td>
+                        <td>₹<%= Number(t.amount || 0).toFixed(2) %></td>
+                        <td><%= t.status %></td>
+                        <td><%= t.created_at ? new Date(t.created_at).toLocaleString('en-IN') : '' %></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!transactions.length) { %><tr><td colspan="4" class="text-center py-4 text-muted">No referral transactions</td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

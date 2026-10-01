@@ -1,0 +1,16 @@
+'use strict';
+const router = require('express').Router();
+const { requireAdmin } = require('../middleware/auth');
+const ctrl = require('../controllers/users.controller');
+router.get('/', requireAdmin, ctrl.index);
+router.get('/create', requireAdmin, ctrl.create);
+router.post('/', requireAdmin, ctrl.store);
+router.post('/bulk-delete', requireAdmin, ctrl.bulkDelete);
+router.get('/:id', requireAdmin, ctrl.show);
+router.get('/:id/edit', requireAdmin, ctrl.edit);
+router.put('/:id', requireAdmin, ctrl.update);
+router.delete('/:id', requireAdmin, ctrl.destroy);
+router.post('/:id/wallet', requireAdmin, ctrl.adjustWallet);
+router.post('/:id/wallet/add', requireAdmin, (req, res, next) => { req.body.type = req.body.type || 'add_deposit'; next(); }, ctrl.adjustWallet);
+router.post('/:id/wallet/remove', requireAdmin, (req, res, next) => { req.body.type = 'deduct_deposit'; next(); }, ctrl.adjustWallet);
+module.exports = router;

@@ -1,0 +1,223 @@
+<%
+  const editing = !!category;
+  const accent = editing ? 'warning' : 'success';
+  function stamp(date) {
+    if (!date) return '';
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      month: 'short', day: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(date));
+    const get = (kind) => (parts.find((part) => part.type === kind) || {}).value || '';
+    return get('month') + ' ' + get('day') + ', ' + get('year') + ' ' + get('hour') + ':' + get('minute');
+  }
+  const typeLabel = category && category.category_type === 'crypto' ? 'Crypto Market' : (category ? 'Stock Market' : 'Market Type');
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1">
+                <i class="bi bi-<%= editing ? 'pencil-square text-warning' : 'plus-circle-fill text-success' %> me-2"></i>
+                <%= editing ? 'Edit Market Category' : 'Create Market Category' %>
+            </h1>
+            <p class="text-muted mb-0"><%= editing ? 'Modify category settings and information' : 'Add a new category for stock or crypto markets' %></p>
+        </div>
+        <a href="/market_type_categories" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Categories
+        </a>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-header text-white" style="background: <%= editing ? 'linear-gradient(135deg, #ffc107 0%, #ff8c00 100%)' : 'linear-gradient(135deg, #28a745 0%, #20c997 100%)' %>;">
+                    <h5 class="mb-0"><i class="bi bi-gear-fill me-2"></i>Category Configuration</h5>
+                </div>
+                <div class="card-body p-4">
+                    <form action="<%= editing ? '/market_type_categories/' + category._id + '?_method=PUT' : '/market_type_categories' %>" method="POST">
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-<%= accent %> mb-3"><i class="bi bi-info-circle me-2"></i>Basic Information</h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="category_type" class="form-label fw-semibold">Market Type <span class="text-danger">*</span></label>
+                                    <select name="category_type" id="category_type" class="form-select form-select-lg" required onchange="updatePreview()">
+                                        <option value="">Choose market type</option>
+                                        <option value="stock" <%= category && category.category_type === 'stock' ? 'selected' : '' %>>📈 Stock Market</option>
+                                        <option value="crypto" <%= category && category.category_type === 'crypto' ? 'selected' : '' %>>🪙 Cryptocurrency</option>
+                                    </select>
+                                    <div class="form-text">Select the type of market this category belongs to</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="status" class="form-label fw-semibold">Status</label>
+                                    <select name="status" id="status" class="form-select form-select-lg">
+                                        <option value="active" <%= !category || category.status === 'active' ? 'selected' : '' %>>🟢 Active</option>
+                                        <option value="inactive" <%= category && category.status === 'inactive' ? 'selected' : '' %>>🔴 Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-<%= accent %> mb-3"><i class="bi bi-tag me-2"></i>Category Details</h6>
+                            </div>
+                            <div class="col-12">
+                                <div class="mb-3">
+                                    <label for="name" class="form-label fw-semibold">Category Name <span class="text-danger">*</span></label>
+                                    <input type="text" name="name" id="name" class="form-control form-control-lg" value="<%= category ? category.name : '' %>" placeholder="e.g., Banking, Technology, DeFi" required oninput="updatePreview()">
+                                    <div class="form-text">Enter a descriptive name for this category</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <div class="mb-3">
+                                    <label for="description" class="form-label fw-semibold">Description</label>
+                                    <textarea name="description" id="description" class="form-control" rows="3" placeholder="Brief description of this category (optional)"><%= category && category.description ? category.description : '' %></textarea>
+                                    <div class="form-text">Provide additional details about this category</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-3 justify-content-end">
+                            <a href="/market_type_categories" class="btn btn-outline-secondary btn-lg px-4">
+                                <i class="bi bi-x-circle me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-<%= accent %> btn-lg px-4">
+                                <i class="bi bi-check-circle me-2"></i><%= editing ? 'Update Category' : 'Create Category' %>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-eye text-info me-2"></i><%= editing ? 'Current Preview' : 'Preview' %></h6>
+                </div>
+                <div class="card-body">
+                    <div id="categoryPreview" class="text-center py-3">
+                        <div id="previewCircle" class="<%= category ? (category.category_type === 'stock' ? 'bg-success' : 'bg-warning') + ' bg-opacity-10' : 'bg-light' %> rounded-circle d-inline-flex align-items-center justify-content-center mb-2" style="width: 60px; height: 60px;">
+                            <i id="previewIcon" class="bi bi-<%= category ? (category.category_type === 'stock' ? 'graph-up text-success' : 'currency-bitcoin text-warning') : 'tag text-muted' %>" style="font-size: 24px;"></i>
+                        </div>
+                        <div id="previewName" class="fw-bold <%= category ? 'text-dark' : 'text-muted' %>"><%= category ? category.name : 'Category Name' %></div>
+                        <div id="previewType" class="small text-muted"><%= typeLabel %></div>
+                    </div>
+                </div>
+            </div>
+
+            <% if (editing) { %>
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-info-circle text-info me-2"></i>Category Information</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h6 class="text-primary">Current Status</h6>
+                        <span class="badge <%= category.status === 'active' ? 'bg-success' : 'bg-secondary' %> fs-6">
+                            <%= category.status ? category.status.charAt(0).toUpperCase() + category.status.slice(1) : '' %>
+                        </span>
+                    </div>
+                    <% if (category.created_at) { %>
+                    <div class="mb-3">
+                        <h6 class="text-primary">Created</h6>
+                        <small class="text-muted"><%= stamp(category.created_at) %></small>
+                    </div>
+                    <% } %>
+                    <% if (category.updated_at) { %>
+                    <div class="mb-3">
+                        <h6 class="text-primary">Last Updated</h6>
+                        <small class="text-muted"><%= stamp(category.updated_at) %></small>
+                    </div>
+                    <% } %>
+                    <div class="mb-3">
+                        <h6 class="text-primary">Category ID</h6>
+                        <small class="text-muted">#<%= category.old_id || category._id %></small>
+                    </div>
+                </div>
+            </div>
+            <% } else { %>
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-lightbulb text-warning me-2"></i>Guidelines</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h6 class="text-primary">Naming Convention</h6>
+                        <ul class="small text-muted mb-0">
+                            <li>Use clear, descriptive names</li>
+                            <li>Keep names concise (2-3 words max)</li>
+                            <li>Use title case (e.g., "Banking Sector")</li>
+                            <li>Avoid special characters</li>
+                        </ul>
+                    </div>
+                    <div class="mb-3">
+                        <h6 class="text-primary">Examples</h6>
+                        <div class="small text-muted">
+                            <strong>Stock:</strong> Banking, Technology, Healthcare<br>
+                            <strong>Crypto:</strong> DeFi, Gaming, Layer 1
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <% } %>
+
+            <% if (editing) { %>
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-lightbulb text-warning me-2"></i>Guidelines</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h6 class="text-primary">Naming Convention</h6>
+                        <ul class="small text-muted mb-0">
+                            <li>Use clear, descriptive names</li>
+                            <li>Keep names concise (2-3 words max)</li>
+                            <li>Use title case (e.g., "Banking Sector")</li>
+                            <li>Avoid special characters</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <% } %>
+        </div>
+    </div>
+</div>
+<style>
+.card { border-radius: 15px; }
+.form-control, .form-select { border-radius: 10px; border: 2px solid #e9ecef; }
+.btn { border-radius: 10px; font-weight: 500; }
+.btn-warning { background: linear-gradient(135deg, #ffc107 0%, #ff8c00 100%); border: none; color: white; }
+.btn-success { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border: none; }
+</style>
+<script>
+function updatePreview() {
+    const categoryType = document.getElementById('category_type').value;
+    const categoryName = document.getElementById('name').value || '<%= category ? category.name.replace(/'/g, "\\'") : 'Category Name' %>';
+    const previewIcon = document.getElementById('previewIcon');
+    const previewName = document.getElementById('previewName');
+    const previewType = document.getElementById('previewType');
+    const circle = document.getElementById('previewCircle');
+    if (categoryType === 'stock') {
+        previewIcon.className = 'bi bi-graph-up text-success';
+        previewType.textContent = 'Stock Market';
+        circle.className = 'bg-success bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-2';
+    } else if (categoryType === 'crypto') {
+        previewIcon.className = 'bi bi-currency-bitcoin text-warning';
+        previewType.textContent = 'Cryptocurrency';
+        circle.className = 'bg-warning bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-2';
+    } else {
+        previewIcon.className = 'bi bi-tag text-muted';
+        previewType.textContent = 'Market Type';
+        circle.className = 'bg-light rounded-circle d-inline-flex align-items-center justify-content-center mb-2';
+    }
+    previewName.textContent = categoryName;
+}
+</script>

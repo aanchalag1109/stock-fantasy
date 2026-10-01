@@ -1,0 +1,9 @@
+<% if (pages > 1) { %>
+<div class="pagination">
+  <% if (page > 1) { %><a class="page-link" href="?page=<%= page - 1 %>&<%= typeof extraQuery !== 'undefined' ? extraQuery : '' %>"><i class="fas fa-chevron-left"></i></a><% } %>
+  <% for (let i = Math.max(1, page - 2); i <= Math.min(pages, page + 2); i++) { %>
+    <a class="page-link <%= i === page ? 'active' : '' %>" href="?page=<%= i %>&<%= typeof extraQuery !== 'undefined' ? extraQuery : '' %>"><%= i %></a>
+  <% } %>
+  <% if (page < pages) { %><a class="page-link" href="?page=<%= page + 1 %>&<%= typeof extraQuery !== 'undefined' ? extraQuery : '' %>"><i class="fas fa-chevron-right"></i></a><% } %>
+</div>
+<% } %>

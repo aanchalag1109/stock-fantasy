@@ -1,0 +1,11 @@
+'use strict';
+const router = require('express').Router();
+const { requireAdmin } = require('../middleware/auth');
+const { announcements } = require('../controllers/misc.controller');
+router.get('/', requireAdmin, announcements.index);
+router.get('/create', requireAdmin, announcements.create);
+router.post('/', requireAdmin, announcements.store);
+router.post('/bulk-delete', requireAdmin, announcements.bulkDelete);
+router.get('/:id', requireAdmin, announcements.show);
+router.delete('/:id', requireAdmin, announcements.destroy);
+module.exports = router;

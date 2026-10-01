@@ -1,0 +1,90 @@
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-2">Announcements</h1>
+            <p class="mb-0">View and manage all system announcements</p>
+        </div>
+        <div>
+            <button id="bulkDeleteBtn" class="btn btn-danger me-2" style="display:none;" onclick="bulkDelete()">
+                <i class="bi bi-trash me-2"></i> Delete Selected
+            </button>
+            <a href="/announcements/create" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-2"></i> Create New Announcement
+            </a>
+        </div>
+    </div>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-bold">Announcements</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="selectAll"></th>
+                            <th>ID</th>
+                            <th>Title</th>
+                            <th>Type</th>
+                            <th>Created At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% items.forEach(announcement => {
+                            const created = announcement.created_at ? new Date(announcement.created_at) : null;
+                            const createdText = created ? created.getFullYear() + '-' + String(created.getMonth()+1).padStart(2,'0') + '-' + String(created.getDate()).padStart(2,'0') + ' ' + String(created.getHours()).padStart(2,'0') + ':' + String(created.getMinutes()).padStart(2,'0') : '—';
+                        %>
+                        <tr>
+                            <td><input type="checkbox" class="announcement-checkbox" value="<%= announcement._id %>"></td>
+                            <td><%= announcement.old_id || String(announcement._id).slice(-6) %></td>
+                            <td><%= announcement.title %></td>
+                            <td>
+                                <% if (announcement.type === 'update') { %><span class="badge bg-info text-dark">Update</span>
+                                <% } else if (announcement.type === 'alert') { %><span class="badge bg-danger">Alert</span>
+                                <% } else if (announcement.type === 'promo') { %><span class="badge bg-success">Promo</span>
+                                <% } else { %><span class="badge bg-secondary">Other</span><% } %>
+                            </td>
+                            <td><%= createdText %></td>
+                            <td>
+                                <a href="/announcements/<%= announcement._id %>" class="btn btn-sm btn-outline-info me-1"><i class="bi bi-eye"></i> View</a>
+                                <form action="/announcements/<%= announcement._id %>?_method=DELETE" method="POST" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')"><i class="bi bi-trash"></i> Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        <% }) %>
+                        <% if (!items.length) { %>
+                        <tr><td colspan="6" class="text-center text-muted">No announcements found.</td></tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('selectAll')?.addEventListener('change', function() {
+    document.querySelectorAll('.announcement-checkbox').forEach(cb => { cb.checked = this.checked; });
+    toggleBulkDeleteBtn();
+});
+document.querySelectorAll('.announcement-checkbox').forEach(cb => cb.addEventListener('change', toggleBulkDeleteBtn));
+function toggleBulkDeleteBtn() {
+    const checked = document.querySelectorAll('.announcement-checkbox:checked').length;
+    const btn = document.getElementById('bulkDeleteBtn');
+    if (btn) btn.style.display = checked > 0 ? 'inline-block' : 'none';
+}
+function bulkDelete() {
+    const selected = Array.from(document.querySelectorAll('.announcement-checkbox:checked')).map(cb => cb.value);
+    if (!selected.length) return;
+    if (!confirm('Delete ' + selected.length + ' announcement(s)?')) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/announcements/bulk-delete';
+    selected.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'ids'; input.value = id;
+        form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>

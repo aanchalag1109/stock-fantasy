@@ -1,0 +1,10 @@
+<div class="card" style="max-width:500px;">
+  <div class="card-header"><div class="card-title">Add Banner</div><a href="/banners" class="btn btn-secondary btn-sm">← Back</a></div>
+  <form method="POST" action="/banners" enctype="multipart/form-data">
+    <div class="form-group"><label class="form-label">Title</label><input type="text" name="title" class="form-control" placeholder="Banner title"/></div>
+    <div class="form-group"><label class="form-label">Upload Image</label><input type="file" name="image" class="form-control" accept="image/*"/></div>
+    <div class="form-group"><label class="form-label">Or Image URL</label><input type="text" name="image_url" class="form-control" placeholder="https://..."/></div>
+    <div class="form-group"><label class="form-label">Link (optional)</label><input type="text" name="link" class="form-control" placeholder="https://..."/></div>
+    <div class="form-actions"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Banner</button><a href="/banners" class="btn btn-secondary">Cancel</a></div>
+  </form>
+</div>

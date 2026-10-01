@@ -1,0 +1,52 @@
+<a href="/kyc" class="btn btn-secondary btn-sm" style="margin-bottom:16px;">← Back</a>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+  <div class="card">
+    <div class="card-title" style="margin-bottom:16px;">KYC Details</div>
+    <div style="display:flex;flex-direction:column;gap:10px;font-size:14px;">
+      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">User:</span><a href="/users/<%= submission.user_id?._id %>" style="color:var(--accent)"><%= submission.user_id?.name %></a></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Mobile:</span><%= submission.user_id?.mobile || '—' %></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Aadhar No.:</span><code><%= submission.aadhar_number || '—' %></code></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">PAN No.:</span><code><%= submission.pan_number || '—' %></code></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Status:</span>
+        <% if (submission.status === 'approved') { %><span class="badge badge-success">Approved</span>
+        <% } else if (submission.status === 'rejected') { %><span class="badge badge-danger">Rejected</span>
+        <% } else { %><span class="badge badge-warning">Pending Review</span><% } %></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Submitted:</span><%= submission.created_at ? new Date(submission.created_at).toLocaleString() : '—' %></div>
+      <% if (submission.rejection_reason) { %>
+      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Rejection:</span><span style="color:var(--danger)"><%= submission.rejection_reason %></span></div>
+      <% } %>
+    </div>
+    <% if (submission.status === 'pending') { %>
+    <div class="form-actions" style="flex-direction:column;gap:12px;">
+      <form method="POST" action="/kyc/<%= submission._id %>/approve">
+        <button class="btn btn-success" style="width:100%"><i class="fas fa-check"></i> Approve KYC</button>
+      </form>
+      <form method="POST" action="/kyc/<%= submission._id %>/reject">
+        <div class="form-group"><input type="text" name="reason" class="form-control" placeholder="Rejection reason..."/></div>
+        <button class="btn btn-danger" style="width:100%"><i class="fas fa-times"></i> Reject KYC</button>
+      </form>
+    </div>
+    <% } %>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:16px;">Documents</div>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <% const docs = [
+        { label: 'Aadhar Front', key: 'aadhar_front' },
+        { label: 'Aadhar Back', key: 'aadhar_back' },
+        { label: 'PAN Card', key: 'pan_image' },
+        { label: 'Selfie', key: 'selfie' },
+      ]; %>
+      <% docs.forEach(d => { %>
+      <div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;"><%= d.label %></div>
+        <% if (submission[d.key]) { %>
+        <img src="/<%= submission[d.key] %>" style="max-width:100%;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'"/>
+        <% } else { %>
+        <div style="background:var(--bg);border-radius:8px;padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Not uploaded</div>
+        <% } %>
+      </div>
+      <% }) %>
+    </div>
+  </div>
+</div>

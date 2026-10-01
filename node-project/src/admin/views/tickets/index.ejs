@@ -1,0 +1,62 @@
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-2">Support Tickets</h1>
+            <p class="mb-0">View and manage all user support tickets</p>
+        </div>
+    </div>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-bold">Support Tickets</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Ticket ID</th>
+                            <th>User</th>
+                            <th>Subject</th>
+                            <th>Status</th>
+                            <th>Submitted Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% tickets.forEach(t => {
+                            const created = t.created_at ? new Date(t.created_at) : null;
+                            const createdText = created ? created.getFullYear() + '-' + String(created.getMonth()+1).padStart(2,'0') + '-' + String(created.getDate()).padStart(2,'0') + ' ' + String(created.getHours()).padStart(2,'0') + ':' + String(created.getMinutes()).padStart(2,'0') : '—';
+                        %>
+                        <tr>
+                            <td><%= t.old_id || String(t._id).slice(-6) %></td>
+                            <td><%= (t.user_id && t.user_id.name) || '—' %></td>
+                            <td><%= t.subject %></td>
+                            <td>
+                                <% if (t.status === 'open') { %><span class="badge bg-warning text-dark">Open</span>
+                                <% } else if (t.status === 'in_progress') { %><span class="badge bg-info text-dark">In Progress</span>
+                                <% } else if (t.status === 'resolved') { %><span class="badge bg-success">Resolved</span>
+                                <% } else { %><span class="badge bg-secondary">Closed</span><% } %>
+                            </td>
+                            <td><%= createdText %></td>
+                            <td>
+                                <a href="/tickets/<%= t._id %>" class="btn btn-sm btn-outline-primary me-1"><i class="bi bi-eye"></i> View</a>
+                                <% if (t.status !== 'closed') { %>
+                                    <form action="/tickets/<%= t._id %>/close" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Close this ticket?')"><i class="bi bi-x-circle"></i> Close</button>
+                                    </form>
+                                <% } %>
+                            </td>
+                        </tr>
+                        <% }) %>
+                        <% if (!tickets.length) { %>
+                        <tr><td colspan="6" class="text-center text-muted">No support tickets found.</td></tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+            <% if (pages > 1) { %>
+            <div class="card-footer bg-white py-3">
+                <%- include('../partials/pagination', { pages, page, extraQuery: '' }) %>
+            </div>
+            <% } %>
+        </div>
+    </div>
+</div>

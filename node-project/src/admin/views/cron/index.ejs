@@ -1,0 +1,73 @@
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <h4 class="mb-0">
+                <i class="bi bi-clock-history me-2"></i>Cron Check Logs
+                <span id="updateIndicator" class="ms-2 badge bg-success d-none" style="font-size: 0.6rem;">Updating...</span>
+            </h4>
+            <p class="text-muted small">
+                Live Status: <span id="lastUpdated" class="fw-bold text-dark"></span>
+                <span class="ms-2 text-info small"><i class="bi bi-broadcast"></i> Auto-refreshing via AJAX</span>
+            </p>
+        </div>
+        <div class="col-md-6 text-end">
+            <div class="d-flex justify-content-end gap-2">
+                <button onclick="location.reload()" class="btn btn-outline-primary btn-sm" type="button">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh Now
+                </button>
+                <form action="/cron-logs/clear?_method=DELETE" method="POST" onsubmit="return confirm('Are you sure you want to clear all logs?');" class="d-inline">
+                    <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash me-2"></i>Clear All Logs</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">Run Time</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Output</th>
+                            <th class="pe-4 text-end">Diff</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% logs.forEach(log => { %>
+                        <tr>
+                            <td class="ps-4"><%= (log.run_time || log.created_at) ? new Date(log.run_time || log.created_at).toLocaleString('en-IN') : '—' %></td>
+                            <td><%= log.type || log.job_name || 'api' %></td>
+                            <td>
+                                <% if (log.success !== false && log.status !== 'failed') { %><span class="badge bg-success">Success</span>
+                                <% } else { %><span class="badge bg-danger">Failed</span><% } %>
+                            </td>
+                            <td class="text-truncate" style="max-width:320px;"><%= log.response || (typeof log.output === 'string' ? log.output : '') || '—' %></td>
+                            <td class="pe-4 text-end"><%= log.duration_ms ? log.duration_ms + 'ms' : '—' %></td>
+                        </tr>
+                        <% }) %>
+                        <% if (!logs.length) { %>
+                        <tr>
+                            <td colspan="5" class="text-center py-5 text-muted">
+                                <div class="mb-3"><i class="bi bi-clock-history display-4 opacity-25"></i></div>
+                                <h5>No processed logs found</h5>
+                                <p class="small mb-0">The system is waiting for the next cron cycle.</p>
+                            </td>
+                        </tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer bg-white border-0 py-3">
+            <%- include('../partials/pagination', { pages, page, extraQuery: '' }) %>
+        </div>
+    </div>
+</div>
+<script>
+(function tick() {
+    const el = document.getElementById('lastUpdated');
+    if (el) el.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+})();
+</script>

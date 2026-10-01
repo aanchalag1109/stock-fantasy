@@ -1,0 +1,14 @@
+<div class="container-fluid" style="max-width:720px;">
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <h2 class="h4 mb-3"><%= user.name %></h2>
+            <p class="mb-1"><strong>Mobile:</strong> <%= user.mobile || '—' %></p>
+            <p class="mb-1"><strong>Email:</strong> <%= user.email || '—' %></p>
+            <p class="mb-1"><strong>Deposit:</strong> ₹<%= user.deposit_balance || 0 %></p>
+            <p class="mb-1"><strong>Winnings:</strong> ₹<%= user.winnings_balance || 0 %></p>
+            <p class="mb-3"><strong>Test user:</strong> <%= user.is_test_user ? 'Yes' : 'No' %></p>
+            <a href="/testing" class="btn btn-secondary">Back</a>
+            <a href="/users/<%= user._id %>" class="btn btn-primary">Open player</a>
+        </div>
+    </div>
+</div>

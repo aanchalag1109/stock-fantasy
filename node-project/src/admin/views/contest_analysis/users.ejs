@@ -1,0 +1,74 @@
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>👥 Users Analysis</h2>
+        <a href="/contest-analysis" class="btn btn-secondary">← Back to Sessions</a>
+    </div>
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item"><a class="nav-link" href="/contest-analysis">📅 Sessions</a></li>
+        <li class="nav-item"><a class="nav-link active" href="/contest-analysis/users">👥 Users</a></li>
+    </ul>
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="/contest-analysis/users" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Search (Name/Mobile/Email)</label>
+                    <input type="text" name="search" class="form-control" placeholder="Search users..." value="<%= search || '' %>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">From Date</label>
+                    <input type="date" name="from_date" class="form-control" value="<%= from_date || '' %>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">To Date</label>
+                    <input type="date" name="to_date" class="form-control" value="<%= to_date || '' %>">
+                </div>
+                <div class="col-md-2 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Filter</button>
+                    <a href="/contest-analysis/users" class="btn btn-secondary"><i class="bi bi-x-circle"></i> Clear</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5>All Users</h5>
+            <span class="badge bg-primary"><%= users.length %> Users</span>
+        </div>
+        <div class="card-body">
+            <% if (!users.length) { %>
+                <div class="alert alert-info">No users found. Try adjusting your filters.</div>
+            <% } else { %>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Mobile</th>
+                                <th>Email</th>
+                                <th>Total Contests</th>
+                                <th>Total Winnings</th>
+                                <th>Joined</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% users.forEach(user => { %>
+                            <tr>
+                                <td><%= user.old_id %></td>
+                                <td><strong><%= user.name %></strong></td>
+                                <td><%= user.mobile || '' %></td>
+                                <td><%= user.email || '' %></td>
+                                <td><span class="badge bg-info"><%= user.total_contests || 0 %></span></td>
+                                <td><strong class="text-success">₹<%= money2(user.total_winnings) %></strong></td>
+                                <td><%= formatIst(user.created_at, 'date') %></td>
+                                <td><a href="/contest-analysis/user/<%= user.old_id || user._id %>" class="btn btn-sm btn-primary">View Details</a></td>
+                            </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            <% } %>
+        </div>
+    </div>
+</div>

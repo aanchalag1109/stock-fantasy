@@ -1,0 +1,39 @@
+<a href="/tickets" class="btn btn-secondary btn-sm" style="margin-bottom:16px;">← Tickets</a>
+<div class="card" style="max-width:700px;">
+  <div class="card-header">
+    <div>
+      <div class="card-title"><%= ticket.subject %></div>
+      <div class="card-subtitle">From: <%= ticket.user_id?.name %> (<%= ticket.user_id?.mobile %>)</div>
+    </div>
+    <% if (ticket.status !== 'closed') { %>
+    <form method="POST" action="/tickets/<%= ticket._id %>/close">
+      <button class="btn btn-danger btn-sm"><i class="fas fa-lock"></i> Close Ticket</button>
+    </form>
+    <% } %>
+  </div>
+  <div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:20px;font-size:14px;">
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;"><%= ticket.created_at ? new Date(ticket.created_at).toLocaleString() : '' %></div>
+    <%= ticket.message %>
+  </div>
+
+  <% if (ticket.replies && ticket.replies.length) { %>
+  <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+    <% ticket.replies.forEach(r => { %>
+    <div style="background:<%= r.admin_id ? 'rgba(108,99,255,0.08)' : 'var(--bg)' %>;border-radius:8px;padding:12px;border-left:3px solid <%= r.admin_id ? 'var(--accent)' : 'var(--border)' %>;">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;"><%= r.admin_id ? '👑 Admin' : '👤 User' %> · <%= r.created_at ? new Date(r.created_at).toLocaleString() : '' %></div>
+      <div style="font-size:13px;"><%= r.message %></div>
+    </div>
+    <% }) %>
+  </div>
+  <% } %>
+
+  <% if (ticket.status !== 'closed') { %>
+  <form method="POST" action="/tickets/<%= ticket._id %>/reply">
+    <div class="form-group">
+      <label class="form-label">Admin Reply</label>
+      <textarea name="message" class="form-control" rows="4" placeholder="Type your reply..." required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary"><i class="fas fa-reply"></i> Send Reply</button>
+  </form>
+  <% } %>
+</div>
