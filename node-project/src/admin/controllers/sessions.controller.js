@@ -42,13 +42,23 @@ function istSql(value) {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 }
 
-function postedAssetMap(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+function postedAssetMap(input, body = {}, fieldName = '') {
   const out = {};
-  Object.entries(input).forEach(([categoryId, assets]) => {
-    const list = (Array.isArray(assets) ? assets : [assets]).map((asset) => String(asset || '').trim()).filter(Boolean);
-    if (list.length) out[categoryId] = list;
-  });
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    Object.entries(input).forEach(([categoryId, assets]) => {
+      const list = (Array.isArray(assets) ? assets : [assets]).map((asset) => String(asset || '').trim()).filter(Boolean);
+      if (list.length) out[categoryId] = list;
+    });
+  }
+  if (fieldName) {
+    const pattern = new RegExp(`^${fieldName}\\[([^\\]]+)\\](?:\\[\\])?$`);
+    Object.entries(body).forEach(([key, assets]) => {
+      const match = key.match(pattern);
+      if (!match) return;
+      const list = (Array.isArray(assets) ? assets : [assets]).map((asset) => String(asset || '').trim()).filter(Boolean);
+      if (list.length) out[match[1]] = [...(out[match[1]] || []), ...list];
+    });
+  }
   return out;
 }
 
@@ -260,8 +270,8 @@ const store = async (req, res) => {
       if (existing.startsWith('uploads/sessions/') && !existing.includes('..')) imageUrl = existing;
     }
 
-    const stocks = postedAssetMap(body.stocks);
-    const cryptos = postedAssetMap(body.cryptos);
+    const stocks = postedAssetMap(body.stocks, body, 'stocks');
+    const cryptos = postedAssetMap(body.cryptos, body, 'cryptos');
     const assets = await buildSessionAssets(stocks, cryptos);
     const active = activeRaw === true || activeRaw === 1 || activeRaw === '1' || activeRaw === 'true';
 
