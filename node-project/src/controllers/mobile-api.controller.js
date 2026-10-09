@@ -978,6 +978,19 @@ const bulkJoinContest = async (req, res) => {
   }
 };
 
+function basketAssets(assets) {
+  return (Array.isArray(assets) ? assets : []).map((asset) => {
+    const symbol = asset.symbol || asset.name || '';
+    const name = asset.name || asset.symbol || '';
+    return {
+      ...asset,
+      symbol,
+      name,
+      prediction: asset.prediction || 'UP',
+    };
+  });
+}
+
 async function nextSerial(user, session) {
   const baskets = await SavedBasket.find({
     user_id: { $in: keysOf(user) },
@@ -997,7 +1010,7 @@ const saveBasket = async (req, res) => {
     const session = await findByPublicId(LeagueSession, req.body.session_id);
     if (!user || !session) return res.status(400).json({ success: false, message: 'User ID and Session ID required' });
     const multipliers = selectedMultipliers(req.body.multipliers || []);
-    const assets = req.body.assets || [];
+    const assets = basketAssets(req.body.assets);
     if (req.body.basket_id) {
       const basket = await findByPublicId(SavedBasket, req.body.basket_id);
       if (!basket || !keysOf(user).map(String).includes(String(basket.user_id))) {
@@ -1041,7 +1054,7 @@ const storeStandalone = async (req, res) => {
       contest_id: null,
       session_id: session ? (session.old_id != null ? session.old_id : session._id) : req.body.session_id,
       serial_no: serial,
-      assets: req.body.assets,
+      assets: basketAssets(req.body.assets),
       multipliers: selectedMultipliers(req.body.multipliers || []),
       total_score: 0,
       is_standalone: true,
@@ -1138,7 +1151,7 @@ const editBasket = async (req, res) => {
     if (!user || !basket || !keysOf(user).map(String).includes(String(basket.user_id))) {
       return res.status(404).json({ success: false, message: 'Basket not found or unauthorized' });
     }
-    basket.assets = req.body.assets || [];
+    basket.assets = basketAssets(req.body.assets);
     basket.multipliers = selectedMultipliers(req.body.multipliers || []);
     await basket.save();
     return res.json({ success: true, message: 'Basket updated successfully' });

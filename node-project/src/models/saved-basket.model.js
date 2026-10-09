@@ -2,11 +2,16 @@ const mongoose = require('mongoose');
 
 const basketAssetSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  symbol: { type: String, required: true },
+  symbol: { type: String, default: '' },
   sector: { type: String, default: 'Other' },
   category_id: { type: mongoose.Schema.Types.Mixed, default: null },
   prediction: { type: String, enum: ['UP', 'DOWN', 'NONE'], default: 'UP' }
 }, { _id: false });
+
+basketAssetSchema.pre('validate', function setSymbolFromName() {
+  if (!this.symbol && this.name) this.symbol = this.name;
+  if (!this.name && this.symbol) this.name = this.symbol;
+});
 
 const basketMultiplierSchema = new mongoose.Schema({
   index: { type: Number, default: 0 },
