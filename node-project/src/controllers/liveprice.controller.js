@@ -12,13 +12,14 @@ const CACHE_DURATION_MS = (config.PRICE_CACHE_DURATION || 60) * 1000;
 async function fetchStockPrice(symbol) {
   try {
     const response = await axios.get(
-      `https://indian-stock-exchange-api2.p.rapidapi.com/stock?name=${symbol}`,
+      'https://indian-stock-market-data-nse-bse-bcd-mcx-cds-nfo.p.rapidapi.com/v1/rapidapi/stock/quote',
       {
         headers: {
-          'X-RapidAPI-Key': config.RAPIDAPI_KEY,
-          'X-RapidAPI-Host': 'indian-stock-exchange-api2.p.rapidapi.com',
+          'x-rapidapi-key': config.RAPIDAPI_KEY,
+          'x-rapidapi-host': 'indian-stock-market-data-nse-bse-bcd-mcx-cds-nfo.p.rapidapi.com',
         },
-        timeout: config.PRICE_FETCH_TIMEOUT * 1000,
+        params: { tradingSymbol: symbol, exchange: 'NSE' },
+        timeout: 30000,
       }
     );
     return response.data;
@@ -109,8 +110,22 @@ const getCryptoLivePrice = async (req, res) => {
   try {
     const cryptos = await fetchCryptoListings(100);
     if (!cryptos.length) return res.status(404).json({ success: false, error: 'No crypto data' });
-
-    return res.json({ success: true, data: cryptos, timestamp: new Date().toISOString() });
+    const data = cryptos.map((crypto) => {
+      const quote = (crypto.quote && crypto.quote.USD) || {};
+      return {
+        symbol: crypto.symbol || '',
+        name: crypto.name || '',
+        price: quote.price || 0,
+        change: quote.price_change_24h || 0,
+        change_percent: quote.percent_change_24h || 0,
+        volume: quote.volume_24h || 0,
+        market_cap: quote.market_cap || 0,
+        rank: crypto.cmc_rank || 0,
+        status: 'success',
+        last_updated: new Date().toISOString(),
+      };
+    });
+    return res.json({ success: true, data, timestamp: new Date().toISOString() });
   } catch (err) {
     logger.error('getCryptoLivePrice error:', err.message);
     res.status(500).json({ success: false, error: err.message });

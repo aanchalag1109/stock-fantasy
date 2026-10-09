@@ -165,13 +165,45 @@ const lgpayCallback = async (req, res) => {
  * GET /api/v1/payment/return?order_id=
  */
 const paymentReturn = async (req, res) => {
-  const { order_id } = req.query;
-  const order = await Payment.findOne({ order_id }).lean();
-  return res.json({
-    success: !!order,
-    order_id,
-    status: order ? (order.payment_status === 1 ? 'success' : 'pending') : 'not_found',
-  });
+  const orderId = req.query.order_id;
+  if (!orderId) return res.redirect('probtrade://payment-failed?error=no_order_id');
+  const payment = await Payment.findOne({ order_id: orderId });
+  if (!payment) return res.redirect('probtrade://payment-failed?error=payment_not_found');
+  if (Number(payment.payment_status) === 1) {
+    return res.redirect(`probtrade://payment-success?order_id=${orderId}`);
+  }
+  try {
+    const params = { app_id: LGPAY.appId, order_sn: orderId };
+    const sign = generateSignature(params);
+    const response = await axios.get(`${LGPAY.baseUrl}/api/order/query`, {
+      params: { ...params, sign },
+      timeout: 10000,
+      validateStatus: () => true,
+    });
+    const result = response.status === 200 ? response.data : null;
+    if (result && Number(result.status) === 1 && result.data && Number(result.data.status) === 1) {
+      payment.payment_status = 1;
+      await payment.save();
+      const user = await User.findById(payment.user_id);
+      if (user) {
+        user.deposit_balance = (user.deposit_balance || 0) + payment.amount;
+        await user.save();
+      }
+      await Transaction.create({
+        user_id: payment.user_id,
+        type: 'deposit',
+        amount: payment.amount,
+        status: 'success',
+        transaction_id: orderId,
+        description: 'Deposit via LG Pay',
+      });
+      return res.redirect(`probtrade://payment-success?order_id=${orderId}`);
+    }
+  } catch (err) {
+    logger.error('Payment return failed:', err.message);
+    return res.redirect('probtrade://payment-failed?error=wallet_update_failed');
+  }
+  return res.redirect(`probtrade://payment-pending?order_id=${orderId}`);
 };
 
 module.exports = { createOrder, lgpayCallback, paymentReturn };
