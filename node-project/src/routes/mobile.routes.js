@@ -5,6 +5,7 @@ const path = require('path');
 const multer = require('multer');
 const router = require('express').Router();
 const api = require('../controllers/mobile-api.controller');
+const legacy = require('../controllers/mobile-legacy.controller');
 const payment = require('../controllers/payment.controller');
 
 const profileDir = path.join(__dirname, '../../public/uploads/profiles');
@@ -28,6 +29,7 @@ router.get('/payment-return', payment.paymentReturn);
 router.post('/login', api.login);
 router.post('/register', api.register);
 router.post('/password-login', api.passwordLogin);
+router.get('/check-user', api.checkUser);
 router.post('/check-user', api.checkUser);
 
 router.get('/banners', api.banners);
@@ -78,5 +80,17 @@ router.get('/live-prices', api.getLivePrices);
 router.get('/stock-live-price', api.getStockLivePrice);
 router.get('/crypto-live-price', api.getCryptoLivePrice);
 router.get('/session-stats/:sessionId', api.sessionStats);
+
+router.get('/debug-payment', legacy.debugPayment);
+router.get('/check-wallet', legacy.checkWallet);
+router.get('/check-latest-payment', legacy.checkLatestPayment);
+router.get('/test-payment-add', legacy.testPaymentAdd);
+router.get('/trigger-callback', legacy.triggerCallback);
+router.post('/save-start-prices', legacy.saveStartPrices);
+router.post('/save-end-prices', legacy.saveEndPrices);
+router.post('/calculate-results', legacy.calculateResults);
+router.get('/test-calculate-contest', legacy.testCalculateContest);
+router.get('/debug-calculate-contest', legacy.debugCalculateContest);
+router.post('/save-api-structure', legacy.saveApiStructure);
 
 module.exports = router;

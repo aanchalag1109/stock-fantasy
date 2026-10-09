@@ -146,8 +146,8 @@ const passwordLogin = async (req, res) => {
 
 const checkUser = async (req, res) => {
   try {
-    const mobile = req.body.mobile || req.query.mobile;
-    if (!mobile || String(mobile).length < 10) {
+    const mobile = req.body.mobile || req.query.mobile || req.body.username || req.query.username;
+    if (!mobile || String(mobile).length < 10 || String(mobile).length > 20) {
       return res.status(500).json({ success: false, message: 'Something went wrong' });
     }
     const user = await findUserByMobile(mobile);
