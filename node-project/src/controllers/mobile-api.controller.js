@@ -1159,6 +1159,82 @@ const cleanupEmptyBaskets = async (req, res) => {
   return res.json({ success: true, message: 'Empty baskets cleaned up', deleted: result.deletedCount || 0 });
 };
 
+const getUserContestBaskets = async (req, res) => {
+  try {
+    const user = await findByPublicId(User, req.query.user_id);
+    if (!user) return res.status(400).json({ success: false, error: 'user_id is required' });
+
+    const entryFilter = { user_id: { $in: keysOf(user) } };
+    if (req.query.contest_id) {
+      const contest = await findByPublicId(Contest, req.query.contest_id);
+      if (contest) entryFilter.contest_id = { $in: keysOf(contest.toObject()) };
+    }
+    if (req.query.session_id) {
+      const session = await findByPublicId(LeagueSession, req.query.session_id);
+      if (session) entryFilter.session_id = { $in: keysOf(session.toObject()) };
+    }
+    const entries = await ContestEntry.find(entryFilter).lean();
+    const basketKeys = [];
+    entries.forEach((entry) => {
+      if (entry.basket_id != null) basketKeys.push(entry.basket_id);
+    });
+    const objectIds = basketKeys.filter((id) => /^[a-f0-9]{24}$/i.test(String(id)));
+    const oldIds = basketKeys.map((id) => Number(id)).filter((id) => Number.isInteger(id));
+    const baskets = await SavedBasket.find({
+      $or: [
+        { _id: { $in: objectIds } },
+        { old_id: { $in: oldIds } },
+        { user_id: { $in: keysOf(user) }, contest_id: { $ne: null }, is_standalone: { $ne: true } },
+      ],
+    }).sort({ created_at: -1 }).lean();
+
+    const entryByBasket = new Map();
+    entries.forEach((entry) => entryByBasket.set(String(entry.basket_id), entry));
+
+    const data = [];
+    for (const basket of baskets) {
+      const entry = entryByBasket.get(String(basket._id)) || entryByBasket.get(String(basket.old_id));
+      const contest = await findByPublicId(Contest, (entry && entry.contest_id) || basket.contest_id);
+      const session = await findByPublicId(LeagueSession, (entry && entry.session_id) || basket.session_id || (contest && contest.league_session_id));
+      const scored = scoreAssets(basket.assets || [], basket.multipliers || [], priceMaps(session && session.toObject()));
+      const grouped = { lc: [], mc: [], sc: [] };
+      scored.rows.forEach((asset) => {
+        const sector = String(asset.sector || '').toLowerCase();
+        if (sector.includes('large cap')) grouped.lc.push(asset);
+        else if (sector.includes('mid cap')) grouped.mc.push(asset);
+        else if (sector.includes('small cap')) grouped.sc.push(asset);
+      });
+      data.push({
+        id: publicId(basket),
+        basket_id: publicId(basket),
+        user_id: publicId(user),
+        session_id: session ? publicId(session) : basket.session_id,
+        league_session_id: session ? publicId(session) : basket.session_id,
+        contest_id: contest ? publicId(contest) : (basket.contest_id || null),
+        serial_no: basket.serial_no || null,
+        multipliers: basket.multipliers || [],
+        starting_prices: basket.starting_prices || [],
+        total_points: round2(scored.total),
+        total_score: entry ? num(entry.total_score) : num(basket.total_score),
+        rank: entry ? entry.rank : basket.rank,
+        entry_fee: contest ? num(contest.entry_fee) : 0,
+        prize_pool: contest ? num(contest.prize_pool) : 0,
+        category: contest ? contest.category : null,
+        is_standalone: !!basket.is_standalone,
+        assets_by_category: grouped,
+        lc_count: grouped.lc.length,
+        mc_count: grouped.mc.length,
+        sc_count: grouped.sc.length,
+        created_at: sqlDate(basket.created_at),
+        updated_at: sqlDate(basket.updated_at),
+      });
+    }
+    return res.json({ success: true, data });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch baskets' });
+  }
+};
+
 const getContestBaskets = async (req, res) => {
   const contest = await findByPublicId(Contest, req.query.contest_id);
   const user = await findByPublicId(User, req.query.user_id);
@@ -1455,7 +1531,7 @@ module.exports = {
   getPaymentDetails, updatePaymentDetails, banners, upcomingSessions, getSession,
   getUserSessions, getActiveSession, getSessionAssets, getSessionAssetsGrouped, getUserJoinedSessions,
   contestsBySession, myContestsBySession, getContest, getUserContests, bulkJoinContest,
-  saveBasket, storeStandalone, savedBaskets, deleteBasket, editBasket, destroyBasket, cleanupEmptyBaskets, getContestBaskets,
+  saveBasket, storeStandalone, savedBaskets, deleteBasket, editBasket, destroyBasket, cleanupEmptyBaskets, getContestBaskets, getUserContestBaskets,
   getWalletAmount, getUserTransactions, userTransactionsEmpty, clearUserTransactions, depositAmount, withdrawAmount,
   getUserNotifications, markAsRead, markAllAsRead, getAnnouncements, sessionStats,
   getLivePrices, getStockLivePrice, getCryptoLivePrice, lgpayCallback,

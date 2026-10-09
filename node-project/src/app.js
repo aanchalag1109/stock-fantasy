@@ -73,11 +73,13 @@ app.get('/', (req, res) => {
 // ─────────────────────────────────────────────
 const API = '/api/v1';
 const mobileRoutes = require('./routes/mobile.routes');
+const mobileApi = require('./controllers/mobile-api.controller');
 const paymentController = require('./controllers/payment.controller');
 
 // PHP mobile paths. These are registered before the nested routers so
 // /api/v1/login, /api/v1/sessions and /api/v1/contests/:id keep the PHP contract.
 app.use(API, mobileRoutes);
+app.get('/api/user-contest-baskets', mobileApi.getUserContestBaskets);
 app.get('/payment/create-order', paymentController.createOrder);
 app.post('/payment/lgpay-callback', paymentController.lgpayCallback);
 app.get('/payment-return', paymentController.paymentReturn);

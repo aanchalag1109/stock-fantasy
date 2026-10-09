@@ -51,6 +51,7 @@ router.delete('/saved-baskets/:id', api.destroyBasket);
 router.post('/cleanup-empty-baskets', api.cleanupEmptyBaskets);
 router.get('/saved-baskets', api.savedBaskets);
 router.get('/contest-baskets', api.getContestBaskets);
+router.get('/api/user-contest-baskets', api.getUserContestBaskets);
 router.post('/delete-basket', api.deleteBasket);
 router.post('/edit-basket', api.editBasket);
 router.post('/update-basket', api.editBasket);
