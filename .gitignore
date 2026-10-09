@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 auth.json
+# Google Cloud / Firebase service account keys
+admin/public/probtrade-*.json
+**/*-firebase-adminsdk-*.json
+**/*service*account*.json
 
 # Dependencies
 node_modules/
