@@ -27,6 +27,10 @@ const userSchema = new mongoose.Schema({
   fcm_token: { type: String, default: null },
   portfolio_score: { type: Number, default: 0 },
   is_admin: { type: Boolean, default: false },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (only meaningful when is_admin is true)
+  is_super_admin: { type: Boolean, default: false },
+  admin_role_id: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminRole', default: null },
+  admin_status: { type: String, enum: ['active', 'disabled'], default: 'active' },
   is_test_user: { type: Boolean, default: false, index: true },
   age: { type: Number, default: null },
   gender: { type: String, default: null },

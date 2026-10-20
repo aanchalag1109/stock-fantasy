@@ -28,6 +28,11 @@ adminApp.use(session({
 
 adminApp.use(flash());
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control.
+// Resolves the logged-in admin's role/permissions on every request (exposes `can()` to views).
+const { attachAdminAccess } = require('./middleware/permission');
+adminApp.use(attachAdminAccess);
+
 // Global locals for all views
 adminApp.use((req, res, next) => {
   res.locals.success = req.flash('success');
@@ -57,6 +62,9 @@ const apiRoutes = require('./routes/api.routes');
 const pagesRoutes = require('./routes/pages.routes');
 // NEW IMPLEMENTATION (node-project only, not converted from PHP): Deposit and Withdrawal Settings Module
 const depositWithdrawalSettingsRoutes = require('./routes/deposit-withdrawal-settings.routes');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (super admin only)
+const adminUserRoutes = require('./routes/admin-users.routes');
+const adminRoleRoutes = require('./routes/admin-roles.routes');
 
 adminApp.use('/', authRoutes);
 adminApp.use('/dashboard', dashboardRoutes);
@@ -78,6 +86,9 @@ adminApp.use('/cron-logs', cronRoutes);
 adminApp.use('/api', apiRoutes);
 // NEW IMPLEMENTATION (node-project only, not converted from PHP): Deposit and Withdrawal Settings Module
 adminApp.use('/deposit-withdrawal-settings', depositWithdrawalSettingsRoutes);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (super admin only)
+adminApp.use('/admin-users', adminUserRoutes);
+adminApp.use('/admin-roles', adminRoleRoutes);
 adminApp.use('/', pagesRoutes);
 
 // Root redirect

@@ -108,13 +108,18 @@
                             <div class="col-12">
                                 <div class="card bg-light border-0">
                                     <div class="card-body">
+                                        <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control — only super admins can grant admin access %>
+                                        <% if (isSuperAdmin) { %>
                                         <div class="form-check form-switch">
                                             <input type="checkbox" id="is_admin" name="is_admin" value="1" class="form-check-input" <%= user.is_admin ? 'checked' : '' %>>
                                             <label for="is_admin" class="form-check-label fw-semibold">
                                                 <i class="bi bi-shield-fill text-warning me-2"></i>Admin Role
                                             </label>
-                                            <div class="form-text">Grant administrative privileges to this user</div>
+                                            <div class="form-text">Grant administrative privileges to this user. Assign their role and permissions under <a href="/admin-users">Admin Users</a>.</div>
                                         </div>
+                                        <% } else { %>
+                                        <div class="form-text"><i class="bi bi-lock me-1"></i>Only super admins can grant or change admin access.</div>
+                                        <% } %>
                                     </div>
                                 </div>
                             </div>

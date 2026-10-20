@@ -18,6 +18,10 @@ async function main() {
     await connectDB();
     logger.info('MongoDB connected for admin panel');
 
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control.
+    // First deploy only: if no super admin exists yet, existing admins keep full access.
+    await require('./src/services/admin-access.service').bootstrapSuperAdmins();
+
     // Load admin Express app AFTER DB is ready
     const adminApp = require('./src/admin/app');
 

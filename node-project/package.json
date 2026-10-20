@@ -12,6 +12,7 @@
     "migrate:data": "node scripts/migration/migrate.js",
     "migrate:fresh": "node scripts/migration/migrate-fresh.js",
     "migrate:admins": "node scripts/migration/import-admins.js",
+    "admin:promote-super": "node scripts/admin-access/promote-super-admin.js",
     "db:init": "node scripts/database/init-db.js",
     "db:seed": "node scripts/seed/seed.js",
     "test": "node --test tests/"

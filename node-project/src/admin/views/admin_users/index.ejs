@@ -1,0 +1,91 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT
+
+  Feature: Admin User Access Control
+  Purpose: Manage admin users, roles, and feature-level permissions
+  Origin: Newly implemented in node-project; not directly converted
+           from the original PHP implementation.
+
+  Important: Keep this implementation distinguishable from the
+  original PHP project when comparing functionality in the future.
+%>
+<%
+  function joined(d) {
+    return d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  }
+%>
+<div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-person-badge text-primary me-2"></i>Admin Users</h1>
+            <p class="text-muted mb-0">Admins can open only the modules and actions granted by their role. Super admins have full access.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/admin-roles" class="btn btn-outline-primary"><i class="bi bi-shield-lock me-1"></i>Roles &amp; Permissions</a>
+            <a href="/admin-users/create" class="btn btn-primary"><i class="bi bi-person-plus me-1"></i>Add Admin User</a>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Access</th>
+                        <th>Status</th>
+                        <th>Added</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% if (!admins.length) { %>
+                    <tr><td colspan="5" class="text-center text-muted py-4">No admin users yet.</td></tr>
+                    <% } %>
+                    <% admins.forEach(a => {
+                         const isSelf = String(a._id) === currentAdminId;
+                         const disabled = a.admin_status === 'disabled';
+                         const roleName = a.admin_role_id ? roleNames[String(a.admin_role_id)] : null; %>
+                    <tr class="<%= disabled ? 'table-secondary' : '' %>">
+                        <td>
+                            <div class="fw-semibold"><%= a.name %> <% if (isSelf) { %><span class="badge bg-light text-dark border ms-1">You</span><% } %></div>
+                            <div class="small text-muted"><%= a.email || '—' %><%= a.mobile ? ' · ' + a.mobile : '' %></div>
+                        </td>
+                        <td>
+                            <% if (a.is_super_admin) { %>
+                                <span class="badge bg-warning text-dark"><i class="bi bi-shield-fill-check me-1"></i>Super Admin</span>
+                            <% } else if (roleName) { %>
+                                <span class="badge bg-primary"><%= roleName %></span>
+                            <% } else { %>
+                                <span class="badge bg-danger" title="This admin cannot open any module until a role is assigned">No role — no access</span>
+                            <% } %>
+                        </td>
+                        <td>
+                            <span class="badge <%= disabled ? 'bg-secondary' : 'bg-success' %>"><%= disabled ? 'Disabled' : 'Active' %></span>
+                        </td>
+                        <td class="small text-muted"><%= joined(a.created_at) %></td>
+                        <td class="text-end text-nowrap">
+                            <a href="/admin-users/<%= a._id %>/edit" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
+                            <% if (!isSelf) { %>
+                            <form action="/admin-users/<%= a._id %>/status" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm <%= disabled ? 'btn-outline-success' : 'btn-outline-warning' %>"
+                                        title="<%= disabled ? 'Enable' : 'Disable' %>"
+                                        data-confirm="<%= disabled ? 'Enable' : 'Disable' %> admin access for <%= a.name %>?">
+                                    <i class="bi bi-<%= disabled ? 'play-circle' : 'pause-circle' %>"></i>
+                                </button>
+                            </form>
+                            <form action="/admin-users/<%= a._id %>?_method=DELETE" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove admin access"
+                                        data-confirm="Remove admin access from <%= a.name %>? Their account is kept but they can no longer log in to the admin panel.">
+                                    <i class="bi bi-person-x"></i>
+                                </button>
+                            </form>
+                            <% } %>
+                        </td>
+                    </tr>
+                    <% }) %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

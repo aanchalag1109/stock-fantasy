@@ -4,6 +4,8 @@ const path = require('path');
 const multer = require('multer');
 const router = require('express').Router();
 const { requireAdmin } = require('../middleware/auth');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (feature-level permissions)
+const { requirePermission } = require('../middleware/permission');
 const s = require('../controllers/sessions.controller');
 
 const sessionUploadDir = path.join(__dirname, '../../../public/uploads/sessions');
@@ -40,14 +42,14 @@ function withSessionImage(req, res, next) {
 }
 
 // Sessions
-router.get('/', requireAdmin, s.index);
-router.get('/create', requireAdmin, s.create);
-router.get('/template/:id', requireAdmin, s.getTemplate);
-router.post('/', requireAdmin, withSessionImage, s.store);
-router.post('/update-status', requireAdmin, s.updateStatus);
-router.post('/bulk-delete', requireAdmin, s.bulkDelete);
-router.get('/:id', requireAdmin, s.show);
-router.get('/:id/edit', requireAdmin, s.edit);
-router.put('/:id', requireAdmin, s.update);
-router.delete('/:id', requireAdmin, s.destroy);
+router.get('/', requireAdmin, requirePermission('sessions.view'), s.index);
+router.get('/create', requireAdmin, requirePermission('sessions.create'), s.create);
+router.get('/template/:id', requireAdmin, requirePermission('sessions.create'), s.getTemplate);
+router.post('/', requireAdmin, requirePermission('sessions.create'), withSessionImage, s.store);
+router.post('/update-status', requireAdmin, requirePermission('sessions.edit'), s.updateStatus);
+router.post('/bulk-delete', requireAdmin, requirePermission('sessions.delete'), s.bulkDelete);
+router.get('/:id', requireAdmin, requirePermission('sessions.view'), s.show);
+router.get('/:id/edit', requireAdmin, requirePermission('sessions.edit'), s.edit);
+router.put('/:id', requireAdmin, requirePermission('sessions.edit'), s.update);
+router.delete('/:id', requireAdmin, requirePermission('sessions.delete'), s.destroy);
 module.exports = router;
