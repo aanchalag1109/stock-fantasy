@@ -15,6 +15,8 @@ const {
 } = require('../helpers/mobile-compat');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit limits
 const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../services/notifications/notification.service');
 
 function input(req, name) {
   if (req.body && req.body[name] != null && req.body[name] !== '') return req.body[name];
@@ -257,6 +259,13 @@ const calculateResults = async (req, res) => {
             transaction_id: txId,
             description: `Prize for ${String(contest.category || '').toUpperCase()} contest ${publicId(contest)}, entry ${winner.old_id != null ? winner.old_id : winner._id}`,
           });
+          // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — only after the prize is credited; keyed on the unique prize transaction id
+          notify('winnings_credited', {
+            user: user || winner.user_id,
+            dedupeKey: `winnings:${txId}`,
+            params: { amount, contestLabel: `${String(contest.category || '').toUpperCase()} contest #${publicId(contest)}`, sessionName: session && session.name },
+            data: { screen: 'contest', contest_id: publicId(contest), session_id: session ? publicId(session) : null, transaction_id: txId },
+          });
         }
       }
       await Contest.updateOne({ _id: contest._id }, { $set: { is_calculated: true } });
@@ -480,6 +489,8 @@ const triggerCallback = async (req, res) => {
       description: 'Deposit via LG Pay',
       status: 'success',
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — same key as the real LG Pay callback
+    if (user) notify('deposit_success', { user, dedupeKey: `deposit_success:payment:${orderId}`, params: { amount: num(order.amount), reference: orderId }, data: { order_id: orderId } });
     return res.json({ success: true, message: 'Callback processed' });
   } catch (err) {
     return res.json({ error: err.message });

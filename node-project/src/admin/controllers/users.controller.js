@@ -6,6 +6,8 @@ const bcrypt = require('bcryptjs');
 const { render } = require('../helpers/render');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control
 const { checkAdminAccountChange } = require('../../services/admin-access.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../../services/notifications/notification.service');
 
 /**
  * NEW IMPLEMENTATION — NODE.JS PROJECT
@@ -252,13 +254,22 @@ const adjustWallet = async (req, res) => {
     else if (type === 'deduct_winnings') user.winnings_balance = Math.max(0, (user.winnings_balance || 0) - amt);
     await user.save();
 
-    await Transaction.create({
+    const adjustmentTxn = await Transaction.create({
       user_id: user._id,
       type: type.startsWith('add') ? 'deposit' : 'withdrawal',
       amount: amt,
       status: 'success',
       description: reason || `Manual ${type} by admin`,
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — the admin's free-text reason stays internal
+    if (amt > 0) {
+      notify('wallet_adjusted', {
+        user,
+        dedupeKey: `wallet_adjusted:txn:${adjustmentTxn._id}`,
+        params: { amount: amt, credit: type.startsWith('add'), balance: type.endsWith('winnings') ? 'winnings' : 'deposit' },
+        data: { screen: 'wallet', transaction_id: String(adjustmentTxn._id) },
+      });
+    }
 
     req.flash('success', `Wallet adjusted: ${type} ₹${amt}`);
     res.redirect('/users/' + req.params.id);

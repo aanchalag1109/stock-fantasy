@@ -35,7 +35,14 @@ const userSchema = new mongoose.Schema({
   age: { type: Number, default: null },
   gender: { type: String, default: null },
   remember_token: { type: String, default: null },
-  payment_details: { type: paymentDetailsSchema, default: () => ({}) }
+  payment_details: { type: paymentDetailsSchema, default: () => ({}) },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — per-user opt-outs (missing = enabled)
+  notification_preferences: {
+    session_reminders: { type: Boolean, default: true },
+    winnings: { type: Boolean, default: true },
+    transactions: { type: Boolean, default: true },
+    account: { type: Boolean, default: true },
+  }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   toJSON: { virtuals: true },

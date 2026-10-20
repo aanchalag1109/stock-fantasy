@@ -32,6 +32,12 @@ module.exports = {
     baseUrl: process.env.LGPAY_BASE_URL || 'https://www.lg-pay.com'
   },
   
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — Firebase Cloud Messaging (same project as the PHP FCMService)
+  FCM: {
+    serviceAccountPath: process.env.FCM_SERVICE_ACCOUNT_PATH || null,
+    serviceAccountJson: process.env.FCM_SERVICE_ACCOUNT_JSON || null,
+  },
+
   PRICE_CACHE_DURATION: parseInt(process.env.PRICE_CACHE_DURATION, 10) || 60,
   PRICE_FETCH_TIMEOUT: parseInt(process.env.PRICE_FETCH_TIMEOUT, 10) || 10
 };

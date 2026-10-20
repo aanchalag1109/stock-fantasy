@@ -141,6 +141,14 @@
         </a>
       </li>
       <% } %>
+      <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications and Notification Management %>
+      <% if (can('notification_settings.view')) { %>
+      <li class="nav-item">
+        <a href="/notification-settings" class="sidebar-link <%= on('/notification-settings') ? 'active' : '' %>">
+          <i class="bi bi-bell"></i> Notification Settings
+        </a>
+      </li>
+      <% } %>
       <% if (can('live_price_feeds.view')) { %>
       <li class="nav-item">
         <a href="/live-price-feeds" class="sidebar-link <%= on('/live-price-feeds') ? 'active' : '' %>">

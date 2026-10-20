@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const Transaction = require('../../models/transaction.model');
 const User = require('../../models/user.model');
 const { render } = require('../helpers/render');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../../services/notifications/notification.service');
 
 const PAGE_SIZE = 15;
 
@@ -217,6 +219,11 @@ const approve = async (req, res) => {
         await user.save();
       }
     }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — pending deposit/withdrawal confirmed by an admin
+    const approvedEvent = { deposit: 'deposit_success', withdrawal: 'withdrawal_completed' }[transaction.type];
+    if (approvedEvent) {
+      notify(approvedEvent, { user: transaction.user_id, dedupeKey: `${approvedEvent}:txn:${transaction._id}`, params: { amount: transaction.amount }, data: { transaction_id: String(transaction._id) } });
+    }
     req.flash('success', 'Transaction approved successfully!');
     res.redirect('/transactions/' + publicId(transaction));
   } catch (err) {
@@ -252,6 +259,11 @@ const reject = async (req, res) => {
           description: 'Withdrawal rejected - Refund to winnings',
         });
       }
+    }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — pending deposit/withdrawal rejected by an admin
+    const rejectedEvent = { deposit: 'deposit_failed', withdrawal: 'withdrawal_rejected' }[transaction.type];
+    if (rejectedEvent) {
+      notify(rejectedEvent, { user: transaction.user_id, dedupeKey: `${rejectedEvent}:txn:${transaction._id}`, params: { amount: transaction.amount }, data: { transaction_id: String(transaction._id) } });
     }
     req.flash('success', 'Transaction rejected successfully!');
     res.redirect('/transactions/' + publicId(transaction));

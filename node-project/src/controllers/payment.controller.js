@@ -8,6 +8,8 @@ const User = require('../models/user.model');
 const Transaction = require('../models/transaction.model');
 const config = require('../config/env');
 const logger = require('../config/logger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../services/notifications/notification.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit limits
 const { checkTransactionAmount } = require('../services/deposit-withdrawal-settings.service');
 
@@ -78,6 +80,8 @@ const createOrder = async (req, res) => {
       amount,
       payment_status: 0,
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications (event off by default: order awaiting payment)
+    notify('deposit_initiated', { user: userId, dedupeKey: `deposit_initiated:${orderId}`, params: { amount, reference: orderId }, data: { order_id: orderId } });
 
     const params = {
       app_id: LGPAY.appId,
@@ -154,6 +158,8 @@ const lgpayCallback = async (req, res) => {
 
       await session.commitTransaction();
       logger.info('Payment callback processed successfully', { orderId, amount: order.amount });
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — confirmed by LG Pay; deduped per order (callback retries / return page)
+      notify('deposit_success', { user: order.user_id, dedupeKey: `deposit_success:payment:${orderId}`, params: { amount: order.amount, reference: orderId }, data: { order_id: orderId } });
     } else {
       await session.abortTransaction();
       logger.warn('Payment status not success', { status });
@@ -205,6 +211,8 @@ const paymentReturn = async (req, res) => {
         transaction_id: orderId,
         description: 'Deposit via LG Pay',
       });
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — confirmed by the LG Pay order query; same key as the callback
+      notify('deposit_success', { user: payment.user_id, dedupeKey: `deposit_success:payment:${orderId}`, params: { amount: payment.amount, reference: orderId }, data: { order_id: orderId } });
       return res.redirect(`probtrade://payment-success?order_id=${orderId}`);
     }
   } catch (err) {

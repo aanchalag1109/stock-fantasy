@@ -3,6 +3,8 @@
 const KycSubmission = require('../../models/kyc-submission.model');
 const User = require('../../models/user.model');
 const { render } = require('../helpers/render');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../../services/notifications/notification.service');
 
 const index = async (req, res) => {
   try {
@@ -36,6 +38,8 @@ const approve = async (req, res) => {
     kyc.status = 'approved';
     await kyc.save();
     await User.findByIdAndUpdate(kyc.user_id, { kyc_status: 'approved' });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+    notify('kyc_approved', { user: kyc.user_id, dedupeKey: `kyc_approved:${kyc._id}`, data: { screen: 'kyc' } });
     req.flash('success', 'KYC approved successfully!');
     res.redirect('/kyc');
   } catch (err) { req.flash('error', err.message); res.redirect('/kyc'); }
@@ -49,6 +53,8 @@ const reject = async (req, res) => {
     kyc.rejection_reason = req.body.reason || 'Rejected by admin';
     await kyc.save();
     await User.findByIdAndUpdate(kyc.user_id, { kyc_status: 'rejected' });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+    notify('kyc_rejected', { user: kyc.user_id, dedupeKey: `kyc_rejected:${kyc._id}:${kyc.updated_at ? new Date(kyc.updated_at).getTime() : Date.now()}`, params: { reason: kyc.rejection_reason }, data: { screen: 'kyc' } });
     req.flash('success', 'KYC rejected.');
     res.redirect('/kyc');
   } catch (err) { req.flash('error', err.message); res.redirect('/kyc'); }

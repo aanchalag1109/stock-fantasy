@@ -65,6 +65,8 @@ const depositWithdrawalSettingsRoutes = require('./routes/deposit-withdrawal-set
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (super admin only)
 const adminUserRoutes = require('./routes/admin-users.routes');
 const adminRoleRoutes = require('./routes/admin-roles.routes');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications and Notification Management
+const notificationSettingsRoutes = require('./routes/notification-settings.routes');
 
 adminApp.use('/', authRoutes);
 adminApp.use('/dashboard', dashboardRoutes);
@@ -89,6 +91,8 @@ adminApp.use('/deposit-withdrawal-settings', depositWithdrawalSettingsRoutes);
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (super admin only)
 adminApp.use('/admin-users', adminUserRoutes);
 adminApp.use('/admin-roles', adminRoleRoutes);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications and Notification Management
+adminApp.use('/notification-settings', notificationSettingsRoutes);
 adminApp.use('/', pagesRoutes);
 
 // Root redirect

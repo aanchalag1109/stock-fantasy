@@ -69,6 +69,9 @@ router.get('/announcements', api.getAnnouncements);
 router.get('/notifications', api.getUserNotifications);
 router.post('/notifications/mark-read', api.markAsRead);
 router.post('/notifications/mark-all-read', api.markAllAsRead);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — per-user notification preferences
+router.get('/notification-preferences', api.getNotificationPreferences);
+router.post('/notification-preferences', api.updateNotificationPreferences);
 router.get('/settings', api.getSettings);
 router.post('/update-profile', (req, res, next) => {
   profileUpload(req, res, (err) => (err ? res.status(500).json({ success: false, message: 'Profile update failed: ' + err.message, errors: null }) : next()));

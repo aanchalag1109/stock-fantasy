@@ -1,0 +1,144 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT
+
+  Feature: Automated Notifications and Notification Management
+  Purpose: Send session reminders, winning amount notifications,
+           and deposit/withdrawal notifications.
+  Origin: Newly implemented in node-project; not directly converted
+           from the original PHP implementation.
+
+  Important: Keep this implementation distinguishable from the
+  original PHP project when comparing functionality in the future.
+%>
+<%
+  const canEdit = can('notification_settings.edit');
+  const groups = [];
+  Object.entries(events).forEach(([key, e]) => {
+    let g = groups.find(x => x.name === e.group);
+    if (!g) { g = { name: e.group, items: [] }; groups.push(g); }
+    g.items.push({ key, ...e });
+  });
+  const badge = { sent: 'success', retry: 'warning', failed: 'danger', skipped: 'secondary', disabled: 'light text-dark border' };
+  const when = (d) => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(d));
+%>
+<div class="container-fluid">
+    <div class="mb-4">
+        <h1 class="h3 mb-1"><i class="bi bi-bell text-primary me-2"></i>Notification Settings</h1>
+        <p class="text-muted mb-0">Automated in-app and push notifications sent when sessions are about to start, winnings are credited, and deposits or withdrawals change status.</p>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="small text-muted mb-1">Push provider</div>
+                    <% if (fcmConfigured) { %>
+                        <div class="h6 mb-1"><i class="bi bi-check-circle-fill text-success me-1"></i>Firebase Cloud Messaging</div>
+                        <div class="small text-muted">Project: <%= fcmProject %></div>
+                    <% } else { %>
+                        <div class="h6 mb-1"><i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>Not configured</div>
+                        <div class="small text-muted">Set <code>FCM_SERVICE_ACCOUNT_PATH</code> in the server <code>.env</code>. Until then only in-app notifications are stored.</div>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="small text-muted mb-2">Push results, last 24 hours</div>
+                    <div class="d-flex flex-wrap gap-3">
+                        <% Object.entries(counts).forEach(([status, count]) => { %>
+                        <div><span class="badge bg-<%= badge[status] %>"><%= status %></span> <strong><%= count %></strong></div>
+                        <% }) %>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form action="/notification-settings" method="POST" novalidate>
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-primary text-white"><h2 class="h6 mb-0 text-white"><i class="bi bi-sliders me-2"></i>Settings</h2></div>
+            <div class="card-body">
+                <% if (!canEdit) { %><div class="alert alert-info small py-2">You can view these settings but not change them.</div><% } %>
+                <fieldset <%= canEdit ? '' : 'disabled' %>>
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="push_enabled" name="push_enabled" value="1" <%= values.push_enabled ? 'checked' : '' %>>
+                            <label class="form-check-label fw-semibold" for="push_enabled">Send push notifications</label>
+                        </div>
+                        <div class="form-text">When off, notifications are still saved to each user's in-app history.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="session_reminder_minutes" class="form-label fw-semibold">Session reminder times (minutes before start)</label>
+                        <input type="text" class="form-control <%= errors.session_reminder_minutes ? 'is-invalid' : '' %>" id="session_reminder_minutes"
+                               name="session_reminder_minutes" value="<%= values.session_reminder_minutes %>" placeholder="30, 5">
+                        <div class="invalid-feedback"><%= errors.session_reminder_minutes %></div>
+                        <div class="form-text">Comma separated, 1–1440, up to 5 values. Sent to users who joined a contest in that session.</div>
+                    </div>
+                </div>
+                <hr>
+                <div class="fw-semibold mb-2">Events</div>
+                <div class="row g-3">
+                    <% groups.forEach(g => { %>
+                    <div class="col-md-6 col-xl-4">
+                        <div class="small text-uppercase text-muted mb-1"><%= g.name %></div>
+                        <% g.items.forEach(item => { %>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="events" value="<%= item.key %>" id="ev_<%= item.key %>" <%= values.events[item.key] ? 'checked' : '' %>>
+                            <label class="form-check-label" for="ev_<%= item.key %>"><%= item.label %></label>
+                        </div>
+                        <% }) %>
+                    </div>
+                    <% }) %>
+                </div>
+                </fieldset>
+            </div>
+            <% if (canEdit) { %>
+            <div class="card-footer bg-white text-end">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Settings</button>
+            </div>
+            <% } %>
+        </div>
+    </form>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h2 class="h6 mb-0"><i class="bi bi-clock-history me-2"></i>Recent automated notifications</h2>
+            <form method="GET" action="/notification-settings" class="d-flex gap-2">
+                <select name="event" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">All events</option>
+                    <% Object.entries(events).forEach(([key, e]) => { %>
+                    <option value="<%= key %>" <%= eventFilter === key ? 'selected' : '' %>><%= e.label %></option>
+                    <% }) %>
+                </select>
+            </form>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>When (IST)</th><th>User</th><th>Event</th><th>Message</th><th>Push</th><th>Read</th></tr>
+                </thead>
+                <tbody>
+                    <% if (!recent.length) { %>
+                    <tr><td colspan="6" class="text-center text-muted py-4">No automated notifications yet.</td></tr>
+                    <% } %>
+                    <% recent.forEach(n => { %>
+                    <tr>
+                        <td class="small text-nowrap"><%= when(n.created_at) %></td>
+                        <td class="small"><%= n.user ? n.user.name : String(n.user_id) %><% if (n.user && n.user.mobile) { %><div class="text-muted"><%= n.user.mobile %></div><% } %></td>
+                        <td class="small"><%= events[n.event] ? events[n.event].label : n.event %></td>
+                        <td class="small"><div class="fw-semibold"><%= n.title %></div><div class="text-muted"><%= n.description %></div></td>
+                        <td class="small">
+                            <% if (n.push_status) { %><span class="badge bg-<%= badge[n.push_status] || 'secondary' %>"><%= n.push_status %></span><% } %>
+                            <% if (n.push_error) { %><div class="text-muted"><%= n.push_error %></div><% } %>
+                        </td>
+                        <td class="small"><%= n.is_read ? 'Yes' : 'No' %></td>
+                    </tr>
+                    <% }) %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

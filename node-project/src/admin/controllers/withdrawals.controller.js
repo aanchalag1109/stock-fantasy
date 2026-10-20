@@ -4,6 +4,8 @@ const WithdrawalRequest = require('../../models/withdrawal-request.model');
 const User = require('../../models/user.model');
 const Transaction = require('../../models/transaction.model');
 const { render } = require('../helpers/render');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../../services/notifications/notification.service');
 const mongoose = require('mongoose');
 
 const index = async (req, res) => {
@@ -63,6 +65,15 @@ const update = async (req, res) => {
     }
 
     await mongoSession.commitTransaction();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — after the admin decision is committed; one per withdrawal and outcome
+    if (withdrawal.status === 'approved' || withdrawal.status === 'rejected') {
+      notify(`withdrawal_${withdrawal.status}`, {
+        user: withdrawal.user_id,
+        dedupeKey: `withdrawal_${withdrawal.status}:${withdrawal._id}`,
+        params: { amount: withdrawal.amount, reason: withdrawal.status === 'rejected' ? admin_message : null },
+        data: { screen: 'withdrawals', withdrawal_id: String(withdrawal._id) },
+      });
+    }
     req.flash('success', status === 'accepted' ? 'Withdrawal accepted. Please send USDT to user wallet.' : 'Withdrawal rejected. Amount refunded.');
     res.redirect('/withdrawal_requests');
   } catch (err) {

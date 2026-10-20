@@ -38,6 +38,8 @@ const MODULES = [
   { key: 'announcements', label: 'Announcements', group: 'Content', actions: { view: 'View', create: 'Create', delete: 'Delete' } },
   { key: 'banners', label: 'Banners', group: 'Content', actions: { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' } },
   { key: 'notifications', label: 'Push Notifications', group: 'Content', actions: { view: 'Open send form', send: 'Send' } },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications and Notification Management
+  { key: 'notification_settings', label: 'Automated Notification Settings', group: 'Content', actions: { view: 'View settings & log', edit: 'Edit settings' } },
   { key: 'app_settings', label: 'App Settings & Pages', group: 'System', actions: { view: 'View', edit: 'Edit' } },
   { key: 'cron', label: 'Cron Check', group: 'System', actions: { view: 'View logs', clear: 'Clear logs' } },
   { key: 'live_price_feeds', label: 'Live Price Feeds', group: 'System', actions: { view: 'View' } },
@@ -87,6 +89,7 @@ const LANDING_PAGES = [
   ['announcements.view', '/announcements'],
   ['banners.view', '/banners'],
   ['notifications.view', '/notifications'],
+  ['notification_settings.view', '/notification-settings'],
   ['app_settings.view', '/settings'],
   ['cron.view', '/cron-logs'],
   ['live_price_feeds.view', '/live-price-feeds'],

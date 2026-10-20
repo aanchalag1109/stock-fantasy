@@ -12,6 +12,8 @@ const mongoose = require('mongoose');
 const logger = require('../config/logger');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit/withdrawal limits
 const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../services/notifications/notification.service');
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -129,7 +131,7 @@ const depositAmount = async (req, res) => {
     user.deposit_balance = parseFloat((user.deposit_balance || 0)) + amount;
     await user.save({ session });
 
-    await Transaction.create([{
+    const [depositTxn] = await Transaction.create([{
       user_id: userId,
       type: 'deposit',
       amount,
@@ -138,6 +140,8 @@ const depositAmount = async (req, res) => {
     }], { session });
 
     await session.commitTransaction();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications (after commit)
+    notify('deposit_success', { user: user._id, dedupeKey: `deposit_success:txn:${depositTxn._id}`, params: { amount }, data: { transaction_id: String(depositTxn._id) } });
 
     const unread = await getUnreadCount(user._id);
     return res.json({
@@ -226,6 +230,8 @@ const withdrawAmount = async (req, res) => {
     }], { session });
 
     await session.commitTransaction();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications (after commit)
+    notify('withdrawal_submitted', { user: user._id, dedupeKey: `withdrawal_submitted:${withdrawalId}`, params: { amount }, data: { screen: 'withdrawals', withdrawal_id: String(withdrawalId) } });
 
     const unread = await getUnreadCount(user._id);
     return res.json({

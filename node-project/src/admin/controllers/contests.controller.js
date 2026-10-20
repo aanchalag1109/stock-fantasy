@@ -7,6 +7,8 @@ const ContestEntry = require('../../models/contest-entry.model');
 const User = require('../../models/user.model');
 const Transaction = require('../../models/transaction.model');
 const { render } = require('../helpers/render');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../../services/notifications/notification.service');
 
 const PAGE_SIZE = 8;
 const CATEGORIES = ['mega', 'equal', 'practice', 'guaranteed'];
@@ -628,13 +630,17 @@ const cancel = async (req, res) => {
       if (!user) continue;
       user.deposit_balance = Number(user.deposit_balance || 0) + entryFee;
       await user.save();
-      await Transaction.create({
+      const refundTxn = await Transaction.create({
         user_id: user._id,
         type: 'deposit',
         amount: entryFee,
         status: 'success',
         description: `Contest #${label} cancelled - Entry fee refunded`,
       });
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+      if (entryFee > 0) {
+        notify('refund_credited', { user, dedupeKey: `refund:txn:${refundTxn._id}`, params: { amount: entryFee, contestLabel: label }, data: { screen: 'wallet', contest_id: label } });
+      }
     }
     contest.status = 'cancelled';
     await contest.save();
