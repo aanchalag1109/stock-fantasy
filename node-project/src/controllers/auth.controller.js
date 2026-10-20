@@ -7,6 +7,8 @@ const Notification = require('../models/notification.model');
 const Setting = require('../models/setting.model');
 const config = require('../config/env');
 const logger = require('../config/logger');
+// NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+const otpService = require('../services/otp.service');
 
 // ─── Helper ───────────────────────────────────────────────────────────────
 function generateToken(userId) {
@@ -42,19 +44,23 @@ function buildUserResponse(user, token = null) {
 
 /**
  * POST /api/v1/auth/login
- * Mobile-based login (OTP-flow variant – no OTP check, just mobile lookup).
+ * Mobile-based login. Requires the OTP sent by POST /api/v1/auth/send-otp.
  */
 const login = async (req, res) => {
   try {
     const { mobile, fcm_token } = req.body;
-    if (!mobile || mobile.trim().length < 10) {
+    if (!mobile || String(mobile).trim().length < 10) {
       return res.status(400).json({ success: false, message: 'Valid mobile number required' });
     }
 
-    const user = await User.findOne({ mobile: mobile.trim() });
+    const user = await User.findOne({ mobile: String(mobile).trim() });
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found. Please register first.' });
     }
+
+    // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+    const otpResult = await otpService.verifyOtp(String(mobile).trim(), 'login', req.body.otp);
+    if (!otpResult.ok) return otpService.sendVerifyError(res, otpResult);
 
     if (fcm_token) {
       user.fcm_token = fcm_token;
@@ -78,74 +84,47 @@ const login = async (req, res) => {
 
 /**
  * POST /api/v1/auth/login/password
- * Login with mobile + password.
+ * NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+ * Password login has been retired; the route stays so older app builds get a clear message.
  */
-const passwordLogin = async (req, res) => {
-  try {
-    const { mobile, password, fcm_token } = req.body;
-    if (!mobile || !password) {
-      return res.status(400).json({ success: false, message: 'Mobile and password are required' });
-    }
-
-    const user = await User.findOne({ mobile: mobile.trim() });
-    if (!user) {
-      return res.status(401).json({ success: false, message: 'Invalid mobile number or password' });
-    }
-
-    const isMatch = user.password ? await bcrypt.compare(password, user.password) : false;
-    if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Invalid mobile number or password' });
-    }
-
-    if (fcm_token) {
-      user.fcm_token = fcm_token;
-      await user.save();
-    }
-
-    const token = generateToken(user._id);
-    const unread = await getUnreadCount(user._id);
-
-    return res.json({
-      success: true,
-      message: 'Login successful',
-      user: buildUserResponse(user, token),
-      unread_notifications: unread,
-    });
-  } catch (err) {
-    logger.error('Password login error:', err.message);
-    res.status(500).json({ success: false, message: 'Login failed' });
-  }
-};
+const passwordLogin = async (req, res) => res.status(410).json({
+  success: false,
+  message: 'Password login is no longer supported. Please login with OTP.',
+});
 
 /**
  * POST /api/v1/auth/register
+ * Requires the OTP sent by POST /api/v1/auth/send-otp (purpose: signup). No password.
  */
 const register = async (req, res) => {
   try {
-    const { mobile, name, email, password } = req.body;
+    const { mobile, name, email } = req.body;
 
-    if (!mobile || mobile.trim().length < 10) {
+    if (!mobile || String(mobile).trim().length < 10) {
       return res.status(400).json({ success: false, message: 'Valid mobile number required (min 10 digits)' });
     }
-    if (!name || !name.trim()) {
+    if (!name || !String(name).trim()) {
       return res.status(400).json({ success: false, message: 'Name is required' });
     }
 
-    const existing = await User.findOne({ $or: [{ mobile: mobile.trim() }, ...(email ? [{ email: email.toLowerCase().trim() }] : [])] });
+    const existing = await User.findOne({ $or: [{ mobile: String(mobile).trim() }, ...(email ? [{ email: String(email).toLowerCase().trim() }] : [])] });
     if (existing) {
-      if (existing.mobile === mobile.trim()) {
+      if (existing.mobile === String(mobile).trim()) {
         return res.status(409).json({ success: false, message: 'User with this mobile number already exists.' });
       }
       return res.status(409).json({ success: false, message: 'Email already in use.' });
     }
 
-    const hashedPassword = password ? await bcrypt.hash(password, 10) : null;
+    // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+    // Verified after the field/duplicate checks so a rejected form does not use up the OTP.
+    const otpResult = await otpService.verifyOtp(String(mobile).trim(), 'signup', req.body.otp);
+    if (!otpResult.ok) return otpService.sendVerifyError(res, otpResult);
 
     const user = await User.create({
-      name: name.trim(),
-      email: email ? email.toLowerCase().trim() : undefined,
-      mobile: mobile.trim(),
-      password: hashedPassword,
+      name: String(name).trim(),
+      email: email ? String(email).toLowerCase().trim() : undefined,
+      mobile: String(mobile).trim(),
+      password: null,
       deposit_balance: 0,
       winnings_balance: 0,
     });
