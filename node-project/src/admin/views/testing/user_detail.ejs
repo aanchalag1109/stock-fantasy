@@ -1,0 +1,54 @@
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between">
+                    <div>
+                        <h5 class="mb-0">User Details - <%= user.name || 'User' %></h5>
+                        <small class="text-muted">Mobile: <%= user.mobile || '—' %></small>
+                    </div>
+                    <a href="/testing/test-users" class="btn btn-sm btn-outline-secondary">Back to Testing</a>
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless">
+                        <tr><th width="35%">Name:</th><td><%= user.name || 'N/A' %></td></tr>
+                        <tr><th>Mobile:</th><td><%= user.mobile || '—' %></td></tr>
+                        <tr><th>Email:</th><td><%= user.email || 'N/A' %></td></tr>
+                        <tr><th>Deposit:</th><td>₹<%= Number(user.deposit_balance || 0).toFixed(2) %></td></tr>
+                        <tr><th>Winnings:</th><td>₹<%= Number(user.winnings_balance || 0).toFixed(2) %></td></tr>
+                        <tr><th>Created:</th><td><%= user.created_at ? new Date(user.created_at).toLocaleString('en-IN') : '—' %></td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header"><h5 class="mb-0">Upcoming Sessions</h5></div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr><th>ID</th><th>Name</th><th>Start Time</th><th>Action</th></tr>
+                            </thead>
+                            <tbody>
+                                <% if (upcomingSessions.length === 0) { %>
+                                <tr><td colspan="4" class="text-center text-muted py-3">No upcoming sessions found</td></tr>
+                                <% } %>
+                                <% upcomingSessions.forEach(session => { %>
+                                <tr>
+                                    <td><%= session.old_id || session._id %></td>
+                                    <td><%= session.name %></td>
+                                    <td><%= session.start_time ? new Date(session.start_time).toLocaleString('en-IN', { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
+                                    <td>
+                                        <a href="/testing/user/<%= user._id %>/session/<%= session._id %>/contests" class="btn btn-sm btn-outline-success">View Contests</a>
+                                    </td>
+                                </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

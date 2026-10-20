@@ -1,5 +1,6 @@
 'use strict';
 
+const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const SessionTemplate = require('../../models/session-template.model');
 const LeagueSession = require('../../models/league-session.model');
@@ -92,12 +93,230 @@ const performance = {
       admin: req.session.admin,
     });
   },
+  // Contest Calculation Details — mirrors PHP PerformanceController::show($contestId)
   show: async (req, res) => {
-    const session = await findSession(req.params.id);
-    if (!session) { req.flash('error', 'Session not found'); return res.redirect('/performance'); }
-    return performance.session({ ...req, params: { id: String(session._id) } }, res);
+    try {
+      const contestId = String(req.params.id);
+      // Resolve contest by ObjectId or old_id
+      let contest = null;
+      if (mongoose.isValidObjectId(contestId)) {
+        contest = await Contest.findById(contestId).lean();
+      }
+      if (!contest && /^\d+$/.test(contestId)) {
+        contest = await Contest.findOne({ old_id: Number(contestId) }).lean();
+      }
+      if (!contest) {
+        req.flash('error', 'Contest not found');
+        return res.redirect('/performance');
+      }
+
+      // Resolve session
+      const sessionRef = contest.league_session_id;
+      const sessionClauses = [];
+      if (sessionRef != null && String(sessionRef).length === 24) sessionClauses.push({ _id: sessionRef });
+      if (sessionRef != null && /^\d+$/.test(String(sessionRef)) && String(sessionRef).length < 24) {
+        sessionClauses.push({ old_id: Number(sessionRef) });
+      }
+      const session = sessionClauses.length
+        ? await LeagueSession.findOne({ $or: sessionClauses }).lean()
+        : null;
+
+      contest.session_name   = session ? session.name : '';
+      contest.session_status = session ? session.status : 'upcoming';
+      contest.session_id     = session ? String(session._id) : '';
+
+      // Prices stored on session assets array (MongoDB schema)
+      const sessionAssets = session ? (session.assets || []) : [];
+      const startPrices = {};
+      const endPrices   = {};
+      sessionAssets.forEach(a => {
+        if (a.start_price != null) startPrices[a.asset_symbol] = a.start_price;
+        if (a.end_price   != null) endPrices[a.asset_symbol]   = a.end_price;
+      });
+
+      // Participants
+      const contestKeys = [contest._id];
+      if (contest.old_id != null) contestKeys.push(contest.old_id);
+      const entries = await ContestEntry.find({ contest_id: { $in: contestKeys } })
+        .sort({ total_score: -1 }).lean();
+
+      const entryUserIds = [...new Set(entries.map(e => String(e.user_id)))];
+      const people = entryUserIds.length
+        ? await User.find({
+            $or: [
+              { _id: { $in: entryUserIds.filter(id => id.length === 24) } },
+              { old_id: { $in: entryUserIds.filter(id => /^\d+$/.test(id) && id.length < 24).map(Number) } },
+            ],
+          }).select('old_id name mobile winnings_balance').lean()
+        : [];
+      const peopleByKey = new Map();
+      people.forEach(p => {
+        peopleByKey.set(String(p._id), p);
+        if (p.old_id != null) peopleByKey.set(String(p.old_id), p);
+      });
+
+      const participants = entries.map(e => {
+        const person = peopleByKey.get(String(e.user_id));
+        return {
+          ...e,
+          user_name:        person ? person.name : null,
+          user_mobile:      person ? person.mobile : null,
+          winnings_balance: person ? (person.winnings_balance || 0) : 0,
+        };
+      });
+
+      const actualParticipantsCount = participants.length;
+      const entryFee          = Number(contest.entry_fee || 0);
+      const platformFeePercent = Number(contest.platform_fee || 0);
+      const winningPercent    = Number(contest.winning_percentage || 30);
+      const totalPool         = actualParticipantsCount * entryFee;
+      const platformFeeAmount = totalPool * (platformFeePercent / 100);
+      const actualPrizePool   = totalPool - platformFeeAmount;
+      let actualWinnersCount  = Math.floor(actualParticipantsCount * (winningPercent / 100));
+      if (actualWinnersCount < 1 && actualParticipantsCount > 0) actualWinnersCount = 1;
+      if (actualParticipantsCount === 0) actualWinnersCount = 0;
+
+      const contestCategory  = (contest.category || '').toLowerCase().trim();
+      const sessionStatus    = contest.session_status;
+
+      let flexibleDistribution = [];
+      if (sessionStatus === 'upcoming') {
+        let prizeDistJson = contest.prize_distribution;
+        if (typeof prizeDistJson === 'string') {
+          try { prizeDistJson = JSON.parse(prizeDistJson); } catch { prizeDistJson = []; }
+        }
+        if (Array.isArray(prizeDistJson)) {
+          flexibleDistribution = prizeDistJson.map(item => {
+            const rankStart = item.rank_start || 1;
+            const rankEnd   = item.rank_end   || 1;
+            const winners   = item.winners || 1;
+            const percent   = item.prize_percent || 0;
+            const perWinner = item.prize_per_user || 0;
+            return {
+              label:     `Ranks ${rankStart}-${rankEnd}`,
+              winners,
+              percent,
+              prize:     perWinner * winners,
+              perWinner,
+            };
+          });
+        }
+      } else if (contestCategory === 'equal' && sessionStatus === 'live') {
+        let prizeDistJson = contest.prize_distribution;
+        if (typeof prizeDistJson === 'string') {
+          try { prizeDistJson = JSON.parse(prizeDistJson); } catch { prizeDistJson = []; }
+        }
+        if (Array.isArray(prizeDistJson)) {
+          flexibleDistribution = prizeDistJson.map(item => {
+            const rankStart = item.rank_start || 1;
+            const rankEnd   = item.rank_end   || 1;
+            const percent   = Number(item.prize_percent || 0);
+            const winners   = Number(item.winners || 1);
+            const groupPrize = actualPrizePool * (percent / 100);
+            const perWinner  = winners > 0 ? Math.floor(groupPrize / winners) : 0;
+            return { label: `Ranks ${rankStart}-${rankEnd}`, winners, percent, prize: groupPrize, perWinner };
+          });
+        }
+      } else {
+        flexibleDistribution = getSimplePrizeTable(actualWinnersCount, actualPrizePool);
+      }
+
+      const stats = {
+        total_participants:    actualParticipantsCount,
+        profitable_users:      participants.filter(p => Number(p.total_score) > 0).length,
+        avg_score:             actualParticipantsCount ? (participants.reduce((s, p) => s + Number(p.total_score || 0), 0) / actualParticipantsCount).toFixed(2) : 0,
+        highest_score:         participants.reduce((m, p) => Math.max(m, Number(p.total_score || 0)), 0),
+        total_pool_generated:  totalPool,
+        platform_fee_collected: platformFeeAmount,
+        actual_prize_pool:     actualPrizePool,
+        actual_winners:        actualWinnersCount,
+        start_prices_count:    Object.keys(startPrices).length,
+        end_prices_count:      Object.keys(endPrices).length,
+      };
+
+      await render(res, 'performance/contest', {
+        title: `Contest #${contest.old_id || contest._id} — Calculation`,
+        contest,
+        session,
+        startPrices,
+        endPrices,
+        participants,
+        stats,
+        flexibleDistribution,
+        admin: req.session.admin,
+      });
+    } catch (err) {
+      console.error('performance.show error:', err);
+      req.flash('error', 'Error loading contest data: ' + err.message);
+      res.redirect('/performance');
+    }
   },
 };
+
+// ── Prize table helper (mirrors PHP getSimplePrizeTable) ──────────────────
+function getSimplePrizeTable(totalWinners, prizePool) {
+  if (totalWinners <= 0 || prizePool <= 0) return [];
+  const prizeDistributionTable = {
+    10: [
+      { start: 1, end: 1,   percent: 30 },
+      { start: 2, end: 2,   percent: 18 },
+      { start: 3, end: 3,   percent: 11 },
+      { start: 4, end: 5,   percent: 13.5 },
+      { start: 6, end: 10,  percent: 27.5 },
+    ],
+    25: [
+      { start: 1,  end: 1,  percent: 24 },
+      { start: 2,  end: 2,  percent: 14 },
+      { start: 3,  end: 3,  percent: 9 },
+      { start: 4,  end: 5,  percent: 12.375 },
+      { start: 6,  end: 10, percent: 18.125 },
+      { start: 11, end: 25, percent: 22.5 },
+    ],
+    50: [
+      { start: 1,  end: 1,  percent: 23 },
+      { start: 2,  end: 2,  percent: 13 },
+      { start: 3,  end: 3,  percent: 9 },
+      { start: 4,  end: 5,  percent: 8.1 },
+      { start: 6,  end: 10, percent: 15 },
+      { start: 11, end: 25, percent: 16.4 },
+      { start: 26, end: 50, percent: 15.5 },
+    ],
+    100: [
+      { start: 1,  end: 1,   percent: 18 },
+      { start: 2,  end: 2,   percent: 10 },
+      { start: 3,  end: 3,   percent: 8 },
+      { start: 4,  end: 5,   percent: 6.576 },
+      { start: 6,  end: 10,  percent: 10 },
+      { start: 11, end: 25,  percent: 15.4 },
+      { start: 26, end: 50,  percent: 16.524 },
+      { start: 51, end: 100, percent: 15.5 },
+    ],
+  };
+  const keys = Object.keys(prizeDistributionTable).map(Number).sort((a, b) => a - b);
+  let chosen = keys[0];
+  let minDiff = Infinity;
+  keys.forEach(k => {
+    const diff = Math.abs(k - totalWinners);
+    if (diff < minDiff) { minDiff = diff; chosen = k; }
+  });
+  const groups = prizeDistributionTable[chosen];
+  const distribution = [];
+  for (const group of groups) {
+    if (group.start > totalWinners) break;
+    const end = Math.min(group.end, totalWinners);
+    const groupPrize = prizePool * (group.percent / 100);
+    const numInGroup = end - group.start + 1;
+    distribution.push({
+      label:     `Ranks ${group.start}-${end}`,
+      winners:   numInGroup,
+      percent:   group.percent,
+      prize:     groupPrize,
+      perWinner: Math.floor(groupPrize / numInGroup),
+    });
+    if (end >= totalWinners) break;
+  }
+  return distribution;
+}
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -623,6 +842,8 @@ const priceFeeds = {
   },
 };
 
+const SavedBasket = require('../../models/saved-basket.model');
+
 const testing = {
   index: async (req, res) => {
     const page = Number(req.query.page || 1);
@@ -636,6 +857,104 @@ const testing = {
   testUsers: async (req, res) => {
     const users = await User.find({ is_test_user: true }).sort({ created_at: -1 }).limit(300).lean();
     render(res, 'testing/test_users', { title: 'Test Users', users, admin: req.session.admin });
+  },
+  myGame: async (req, res) => {
+    const sessions = await LeagueSession.find({ status: 'upcoming' }).sort({ start_time: 1 }).lean();
+    render(res, 'testing/my_game', { title: 'My Game - Upcoming Sessions', sessions, admin: req.session.admin });
+  },
+  sessionContests: async (req, res) => {
+    const session = await findDoc(LeagueSession, req.params.sessionId);
+    if (!session) { req.flash('error', 'Session not found'); return res.redirect('/testing'); }
+    const keys = [session._id];
+    if (session.old_id != null) keys.push(session.old_id);
+    const contests = await Contest.find({ league_session_id: { $in: keys } })
+      .select('old_id category entry_fee participants status prize_pool created_at').sort({ created_at: -1 }).lean();
+    render(res, 'testing/session_contests', { title: `Contests - ${session.name}`, session, contests, admin: req.session.admin });
+  },
+  contestDetail: async (req, res) => {
+    const contest = await findDoc(Contest, req.params.contestId);
+    if (!contest) { req.flash('error', 'Contest not found'); return res.redirect('/testing'); }
+
+    // Resolve session
+    const sessionRef = contest.league_session_id;
+    const sessionClauses = [];
+    if (sessionRef != null && String(sessionRef).length === 24) sessionClauses.push({ _id: sessionRef });
+    if (sessionRef != null && /^\d+$/.test(String(sessionRef)) && String(sessionRef).length < 24) {
+      sessionClauses.push({ old_id: Number(sessionRef) });
+    }
+    const session = sessionClauses.length ? await LeagueSession.findOne({ $or: sessionClauses }).lean() : null;
+
+    contest.session_name = session ? session.name : '';
+    contest.session_id = session ? String(session._id) : '';
+
+    const contestKeys = [contest._id];
+    if (contest.old_id != null) contestKeys.push(contest.old_id);
+
+    // Entries with user and basket info
+    const entries = await ContestEntry.find({ contest_id: { $in: contestKeys } })
+      .sort({ created_at: -1 }).lean();
+    const entryUserIds = [...new Set(entries.map(e => String(e.user_id)))];
+    const entryBasketIds = [...new Set(entries.map(e => e.basket_id).filter(Boolean))];
+    const [entryUsers, entryBaskets] = await Promise.all([
+      entryUserIds.length ? User.find({
+        $or: [
+          { _id: { $in: entryUserIds.filter(id => id.length === 24) } },
+          { old_id: { $in: entryUserIds.filter(id => /^\d+$/.test(id) && id.length < 24).map(Number) } },
+        ],
+      }).select('old_id name mobile').lean() : [],
+      entryBasketIds.length ? SavedBasket.find({ _id: { $in: entryBasketIds } }).select('serial_no assets').lean() : [],
+    ]);
+    const userByKey = new Map();
+    entryUsers.forEach(u => { userByKey.set(String(u._id), u); if (u.old_id) userByKey.set(String(u.old_id), u); });
+    const basketByKey = new Map(entryBaskets.map(b => [String(b._id), b]));
+    const enrichedEntries = entries.map(e => {
+      const u = userByKey.get(String(e.user_id));
+      const b = e.basket_id ? basketByKey.get(String(e.basket_id)) : null;
+      return {
+        ...e,
+        user_name: u ? u.name : null,
+        user_mobile: u ? u.mobile : null,
+        serial_no: b ? b.serial_no : null,
+        asset_names: b ? (b.assets || []).map(a => a.symbol || a.name) : [],
+      };
+    });
+
+    // Available test users (not yet in this contest)
+    const alreadyJoinedUserIds = entries.map(e => String(e.user_id));
+    const availableUsers = await User.find({ is_test_user: true })
+      .select('old_id name mobile').sort({ name: 1 }).lean();
+    const filteredAvailableUsers = availableUsers.filter(u =>
+      !alreadyJoinedUserIds.includes(String(u._id)) && !alreadyJoinedUserIds.includes(String(u.old_id))
+    );
+
+    // Available baskets
+    const sessionId = session ? String(session._id) : null;
+    let availableBaskets = [];
+    if (sessionId) {
+      const usedBasketIds = entries.map(e => String(e.basket_id)).filter(Boolean);
+      const testUserIds = availableUsers.map(u => u._id);
+      const rawBaskets = await SavedBasket.find({
+        session_id: { $in: session ? [session._id, ...(session.old_id != null ? [session.old_id] : [])] : [] },
+        user_id: { $in: testUserIds },
+        _id: { $nin: usedBasketIds },
+      }).sort({ created_at: -1 }).lean();
+      const basketUserMap = new Map(availableUsers.map(u => [String(u._id), u]));
+      availableBaskets = rawBaskets.map(b => ({
+        ...b,
+        user_name: (basketUserMap.get(String(b.user_id)) || {}).name || null,
+        asset_names: (b.assets || []).map(a => a.symbol || a.name),
+      }));
+    }
+
+    render(res, 'testing/contest_detail', {
+      title: `Contest Detail`,
+      contest,
+      session,
+      entries: enrichedEntries,
+      availableUsers: filteredAvailableUsers,
+      availableBaskets,
+      admin: req.session.admin,
+    });
   },
   generate: async (req, res) => {
     const docs = [];
@@ -658,14 +977,197 @@ const testing = {
   },
   bulkDelete: async (req, res) => {
     const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
-    if (ids.length) await User.deleteMany({ _id: { $in: ids }, is_test_user: true });
+    if (ids.length) {
+      await ContestEntry.deleteMany({ user_id: { $in: ids } });
+      await SavedBasket.deleteMany({ user_id: { $in: ids } });
+      await User.deleteMany({ _id: { $in: ids }, is_test_user: true });
+    }
     req.flash('success', 'Selected test users deleted');
     res.redirect('/testing/test-users');
+  },
+  bulkDeleteJson: async (req, res) => {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
+    if (!ids.length) return res.json({ success: false, message: 'No users selected' });
+    try {
+      await ContestEntry.deleteMany({ user_id: { $in: ids } });
+      await SavedBasket.deleteMany({ user_id: { $in: ids } });
+      const result = await User.deleteMany({ _id: { $in: ids }, is_test_user: true });
+      res.json({ success: true, message: `${result.deletedCount} test user(s) deleted` });
+    } catch (e) {
+      res.status(500).json({ success: false, message: e.message });
+    }
   },
   user: async (req, res) => {
     const user = await User.findById(req.params.id).lean();
     if (!user) { req.flash('error', 'User not found'); return res.redirect('/testing'); }
     render(res, 'testing/user', { title: user.name || 'User', user, admin: req.session.admin });
+  },
+  userDetail: async (req, res) => {
+    const user = await User.findById(req.params.userId).lean();
+    if (!user) { req.flash('error', 'User not found'); return res.redirect('/testing/test-users'); }
+    const upcomingSessions = await LeagueSession.find({ status: 'upcoming' })
+      .select('old_id name start_time end_time status').sort({ start_time: 1 }).lean();
+    render(res, 'testing/user_detail', { title: `User - ${user.name}`, user, upcomingSessions, admin: req.session.admin });
+  },
+  userSessionContests: async (req, res) => {
+    const [user, session] = await Promise.all([
+      User.findById(req.params.userId).lean(),
+      findDoc(LeagueSession, req.params.sessionId),
+    ]);
+    if (!user || !session) { req.flash('error', 'User or session not found'); return res.redirect('/testing/test-users'); }
+    const sessionKeys = [session._id];
+    if (session.old_id != null) sessionKeys.push(session.old_id);
+    const [contests, baskets] = await Promise.all([
+      Contest.find({ league_session_id: { $in: sessionKeys } })
+        .select('old_id category entry_fee participants created_at').sort({ created_at: -1 }).lean(),
+      SavedBasket.find({ user_id: user._id, session_id: { $in: sessionKeys } })
+        .sort({ created_at: -1 }).lean(),
+    ]);
+    render(res, 'testing/user_session_contests', {
+      title: `${user.name} - ${session.name}`,
+      user, session, contests, baskets, admin: req.session.admin,
+    });
+  },
+  createBasket: async (req, res) => {
+    const { user_id, session_id, assets, multipliers } = req.body;
+    if (!user_id || !session_id || !Array.isArray(assets) || !assets.length) {
+      return res.json({ success: false, message: 'Invalid parameters' });
+    }
+    try {
+      const session = await findDoc(LeagueSession, session_id);
+      const sessionRef = session ? session._id : session_id;
+      const lastBasket = await SavedBasket.findOne({ user_id, session_id: sessionRef })
+        .sort({ created_at: -1 }).select('serial_no').lean();
+      let nextNum = 1;
+      if (lastBasket && lastBasket.serial_no) {
+        const match = String(lastBasket.serial_no).match(/^B(\d+)$/);
+        if (match) nextNum = parseInt(match[1], 10) + 1;
+      }
+      const basket = await SavedBasket.create({
+        user_id,
+        session_id: sessionRef,
+        contest_id: null,
+        serial_no: 'B' + nextNum,
+        assets: assets.map(a => ({ name: a.symbol || a.name, symbol: a.symbol || a.name, sector: a.sector || 'Other', category_id: a.category_id || null, prediction: a.prediction || 'UP' })),
+        multipliers: Array.isArray(multipliers) ? multipliers : [],
+        total_score: 0,
+        is_standalone: true,
+      });
+      res.json({ success: true, message: 'Basket created', basket_id: basket._id, serial_no: basket.serial_no });
+    } catch (e) {
+      res.status(500).json({ success: false, message: e.message });
+    }
+  },
+  deleteBasket: async (req, res) => {
+    try {
+      await SavedBasket.findByIdAndDelete(req.params.basketId);
+      res.json({ success: true, message: 'Basket deleted' });
+    } catch (e) {
+      res.status(500).json({ success: false, message: e.message });
+    }
+  },
+  getBaskets: async (req, res) => {
+    try {
+      const { userId, sessionId } = req.params;
+      const session = await findDoc(LeagueSession, sessionId);
+      const sessionKeys = session ? [session._id, ...(session.old_id != null ? [session.old_id] : [])] : [sessionId];
+      const baskets = await SavedBasket.find({ user_id: userId, session_id: { $in: sessionKeys } })
+        .sort({ created_at: -1 }).lean();
+      res.json(baskets);
+    } catch (e) {
+      res.status(500).json({ success: false, message: e.message });
+    }
+  },
+  bulkJoinContest: async (req, res) => {
+    const { user_ids, contest_id, session_id } = req.body;
+    if (!Array.isArray(user_ids) || !user_ids.length || !contest_id || !session_id) {
+      return res.json({ success: false, message: 'Invalid parameters' });
+    }
+    try {
+      const [contest, session] = await Promise.all([
+        findDoc(Contest, contest_id),
+        findDoc(LeagueSession, session_id),
+      ]);
+      if (!contest) return res.json({ success: false, message: 'Contest not found' });
+      if (!session) return res.json({ success: false, message: 'Session not found' });
+
+      const maxStocks = session.max_stocks || 3;
+      const sessionAssets = session.assets || [];
+      if (!sessionAssets.length) return res.json({ success: false, message: 'No assets found for session' });
+
+      // Group assets by category
+      const byCategory = {};
+      sessionAssets.forEach(a => {
+        const cat = a.category_name || 'Other';
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(a);
+      });
+      const categories = Object.keys(byCategory);
+
+      let joined = 0;
+      const contestRef = contest._id;
+      const sessionRef = session._id;
+
+      for (const userId of user_ids) {
+        const selected = [];
+
+        // At least 1 from each category
+        for (const cat of categories) {
+          const arr = byCategory[cat];
+          selected.push({ ...arr[Math.floor(Math.random() * arr.length)], prediction: Math.random() > 0.5 ? 'UP' : 'DOWN' });
+        }
+
+        // Fill remaining slots
+        const allFlat = sessionAssets.slice();
+        while (selected.length < maxStocks && allFlat.length) {
+          const idx = Math.floor(Math.random() * allFlat.length);
+          const asset = allFlat.splice(idx, 1)[0];
+          if (!selected.find(s => s.asset_symbol === asset.asset_symbol)) {
+            selected.push({ ...asset, prediction: Math.random() > 0.5 ? 'UP' : 'DOWN' });
+          }
+        }
+        const trimmed = selected.slice(0, maxStocks);
+
+        // Multipliers: 1 alpha (2x), 1 beta (1.5x), rest 1x
+        const alphaIdx = Math.floor(Math.random() * trimmed.length);
+        const betaIdx = (alphaIdx + 1) % trimmed.length;
+        const multipliers = trimmed.map((a, i) => ({
+          index: i, asset_name: a.asset_symbol,
+          multiplier: i === alphaIdx ? 2 : i === betaIdx ? 1.5 : 1,
+          prediction: a.prediction, selected: true,
+        }));
+        const assets = trimmed.map(a => ({
+          name: a.asset_symbol, symbol: a.asset_symbol,
+          sector: a.category_name || 'Other', category_id: a.category_id || null, prediction: a.prediction,
+        }));
+
+        // Serial number
+        const lastBasket = await SavedBasket.findOne({ user_id: userId, session_id: sessionRef })
+          .sort({ created_at: -1 }).select('serial_no').lean();
+        let nextNum = 1;
+        if (lastBasket && lastBasket.serial_no) {
+          const m = String(lastBasket.serial_no).match(/^B(\d+)$/);
+          if (m) nextNum = parseInt(m[1], 10) + 1;
+        }
+
+        const basket = await SavedBasket.create({
+          user_id: userId, session_id: sessionRef, contest_id: null,
+          serial_no: 'B' + nextNum, assets, multipliers, total_score: 0, is_standalone: true,
+        });
+
+        await ContestEntry.create({
+          user_id: userId, contest_id: contestRef,
+          basket_id: basket._id, session_id: sessionRef,
+          total_score: 0, rank: null,
+        });
+        joined++;
+      }
+
+      res.json({ success: true, message: 'Users joined successfully', joined });
+    } catch (e) {
+      console.error('bulkJoinContest error:', e);
+      res.status(500).json({ success: false, message: e.message });
+    }
   },
 };
 
@@ -719,3 +1221,4 @@ module.exports = {
   templates, performance, contestAnalysis, categories, liveManagement,
   pendingPrizes, payments, priceFeeds, testing, profile, referrals, fmt,
 };
+

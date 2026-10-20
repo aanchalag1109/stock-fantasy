@@ -1,0 +1,409 @@
+<%
+  function fmtNum(n) { return Number(n || 0).toLocaleString('en-IN'); }
+  function fmtDec(n, d) { return Number(n || 0).toFixed(d || 2); }
+  function when(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+  const sessionStatus = contest.session_status || 'upcoming';
+  const statusBadgeClass = sessionStatus === 'live' ? 'bg-success' : sessionStatus === 'completed' ? 'bg-secondary' : 'bg-warning';
+%>
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h5 class="mb-0"><i class="bi bi-calculator-fill me-2"></i>Contest Calculation Results</h5>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <button class="btn btn-info btn-sm" onclick="showPricesModal()">
+              <i class="bi bi-currency-exchange me-1"></i>Show Prices
+            </button>
+            <button class="btn btn-warning btn-sm" onclick="loadTransactions()">
+              <i class="bi bi-cash-coin me-1"></i>Transactions
+            </button>
+            <a href="/performance/session/<%= contest.session_id %>" class="btn btn-outline-light btn-sm">
+              <i class="bi bi-arrow-left me-1"></i>Back to Session
+            </a>
+            <span class="badge <%= statusBadgeClass %>">
+              <% if (sessionStatus === 'live') { %>🔴 LIVE<% } else if (sessionStatus === 'completed') { %>✅ COMPLETED<% } else { %>🟡 UPCOMING<% } %>
+            </span>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <!-- Stats Row -->
+          <div class="row mb-4">
+            <div class="col">
+              <div class="text-center p-3 bg-light rounded">
+                <h6 class="text-muted mb-1">Total Winners</h6>
+                <h4 class="text-primary mb-0"><%= fmtNum(stats.actual_winners) %></h4>
+              </div>
+            </div>
+            <div class="col">
+              <div class="text-center p-3 bg-light rounded">
+                <h6 class="text-muted mb-1">Total Pool</h6>
+                <h4 class="text-success mb-0"><%= fmtNum(stats.total_pool_generated) %> coins</h4>
+              </div>
+            </div>
+            <div class="col">
+              <div class="text-center p-3 bg-light rounded">
+                <h6 class="text-muted mb-1">Platform Fee</h6>
+                <h4 class="text-danger mb-0"><%= fmtNum(stats.platform_fee_collected) %> coins</h4>
+              </div>
+            </div>
+            <div class="col">
+              <div class="text-center p-3 bg-light rounded">
+                <h6 class="text-muted mb-1">Prize Pool</h6>
+                <h4 class="text-warning mb-0"><%= fmtNum(stats.actual_prize_pool) %> coins</h4>
+              </div>
+            </div>
+            <div class="col">
+              <div class="text-center p-3 bg-light rounded">
+                <h6 class="text-muted mb-1">Participants</h6>
+                <h4 class="text-info mb-0"><%= fmtNum(stats.total_participants) %></h4>
+              </div>
+            </div>
+            <div class="col" id="sessionAssetsStatBox">
+              <div class="text-center p-3 bg-light rounded">
+                <h6 class="text-muted mb-1">Session Assets</h6>
+                <h4 class="text-info mb-0" id="statTotalAssets">—</h4>
+                <small id="statPriceSummary" class="text-muted">loading...</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Contest Details -->
+          <div class="row mb-4">
+            <div class="col-md-6">
+              <h6 class="text-muted mb-2">Contest Details:</h6>
+              <p class="mb-1"><strong>Contest ID:</strong> #<%= contest.old_id || contest._id %></p>
+              <p class="mb-1"><strong>Category:</strong> <%= (contest.category || '').charAt(0).toUpperCase() + (contest.category || '').slice(1) %></p>
+              <p class="mb-1"><strong>Session:</strong> <%= contest.session_name || 'N/A' %></p>
+            </div>
+            <div class="col-md-6">
+              <h6 class="text-muted mb-2">Fee Structure:</h6>
+              <p class="mb-1"><strong>Entry Fee:</strong> <%= fmtNum(contest.entry_fee) %> probcoins</p>
+              <p class="mb-1"><strong>Platform Fee:</strong> <%= contest.platform_fee || 0 %>%</p>
+              <p class="mb-1"><strong>Winning %:</strong> <%= contest.winning_percentage || 30 %>%</p>
+            </div>
+          </div>
+
+          <!-- Session Asset Prices (auto-loads on page ready) -->
+          <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg,#17a2b8 0%,#138496 100%);color:#fff">
+              <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Session Asset Prices</h5>
+              <button class="btn btn-sm btn-light" onclick="loadPrices()" id="loadPricesBtn">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+              </button>
+            </div>
+            <div class="card-body">
+              <div class="alert alert-info mb-3">
+                <i class="bi bi-info-circle me-2"></i>Prices are saved at session level. All contests in this session share the same prices.
+              </div>
+              <div id="pricesContainer">
+                <div class="text-center p-3"><div class="spinner-border text-info"></div><p class="mt-2 text-muted">Loading prices...</p></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Transactions (lazy load) -->
+          <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg,#fd7e14 0%,#e83e8c 100%);color:#fff">
+              <h5 class="mb-0"><i class="bi bi-cash-coin me-2"></i>Transactions</h5>
+              <button class="btn btn-sm btn-light" onclick="loadTransactions()" id="loadTxnBtn">
+                <i class="bi bi-arrow-clockwise me-1"></i>Load Transactions
+              </button>
+            </div>
+            <div class="card-body p-0">
+              <div id="transactionsContainer">
+                <div class="text-center p-3 text-muted">Click "Load Transactions" to view contest transactions</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prize Distribution -->
+          <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+              <h5 class="mb-0"><i class="bi bi-trophy-fill me-2"></i>Prize Distribution</h5>
+            </div>
+            <div class="card-body">
+              <% if (flexibleDistribution && flexibleDistribution.length > 0) { %>
+              <div class="row">
+                <% flexibleDistribution.forEach(dist => { %>
+                <div class="col-md-6 mb-3">
+                  <div class="p-3 border rounded">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div>
+                        <h6 class="mb-1"><%= dist.label %></h6>
+                        <small class="text-muted"><%= dist.winners %> winners · <%= fmtDec(dist.percent, 2) %>%</small>
+                      </div>
+                      <div class="text-end">
+                        <div class="fw-bold text-success fs-5"><%= fmtNum(dist.perWinner) %> coins</div>
+                        <small class="text-muted">per winner</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <% }) %>
+              </div>
+              <% } else { %>
+              <div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>No prize distribution data available.</div>
+              <% } %>
+            </div>
+          </div>
+
+          <!-- Participants / Leaderboard -->
+          <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg,#007bff 0%,#6610f2 100%);color:#fff">
+              <h5 class="mb-0"><i class="bi bi-people-fill me-2"></i>Joined Users (<span id="participantCount"><%= stats.total_participants %></span>)</h5>
+              <button class="btn btn-sm btn-light" onclick="loadParticipants()" id="loadParticipantsBtn">
+                <i class="bi bi-arrow-clockwise me-1"></i>Load Participants
+              </button>
+            </div>
+            <div class="card-body p-0">
+              <div id="participantsContainer">
+                <div class="text-center p-3 text-muted">Click "Load Participants" to view leaderboard data</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Prices Modal -->
+<div class="modal fade" id="pricesModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title"><i class="bi bi-currency-exchange me-2"></i>Session Asset Prices</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="pricesModalBody">
+        <div class="text-center p-4"><div class="spinner-border text-primary"></div></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CONTEST_ID = '<%= contest._id %>';
+const SESSION_ID = '<%= contest.session_id %>';
+const TOTAL_WINNERS = <%= stats.actual_winners || 0 %>;
+const FLEXIBLE_DIST = <%- JSON.stringify(flexibleDistribution || []) %>;
+
+// ── Load Prices ────────────────────────────────────────────────────────────
+function loadPrices() {
+  // Update inline card container
+  document.getElementById('pricesContainer').innerHTML =
+    '<div class="text-center p-3"><div class="spinner-border text-info"></div><p class="mt-2 text-muted">Loading prices...</p></div>';
+
+  // Also open modal if triggered via top button (check caller)
+  const btn = document.getElementById('loadPricesBtn');
+  if (btn) btn.disabled = true;
+
+  fetch('/api/performance/' + CONTEST_ID + '/prices')
+    .then(r => r.json())
+    .then(data => {
+      const html = buildPricesHtml(data);
+      document.getElementById('pricesContainer').innerHTML = html;
+      // Update modal body if modal is open
+      const modalBody = document.getElementById('pricesModalBody');
+      if (modalBody) modalBody.innerHTML = html;
+      // Update stat box
+      updateAssetStatBox(data);
+      if (btn) btn.disabled = false;
+    })
+    .catch(err => {
+      const msg = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>Failed to load prices: ' + err.message + '</div>';
+      document.getElementById('pricesContainer').innerHTML = msg;
+      const modalBody = document.getElementById('pricesModalBody');
+      if (modalBody) modalBody.innerHTML = msg;
+      if (btn) btn.disabled = false;
+    });
+}
+
+function updateAssetStatBox(data) {
+  const startPrices = data.start_prices || [];
+  const endPrices   = data.end_prices   || [];
+  const total = Math.max(startPrices.length, endPrices.length);
+  const statBox = document.getElementById('sessionAssetsStatBox');
+  if (!statBox) return;
+
+  document.getElementById('statTotalAssets').textContent = total || '—';
+  const missing = total - startPrices.length;
+  const endMissing = total - endPrices.length;
+  let summary = '';
+  if (total === 0) {
+    summary = 'no prices captured';
+    statBox.querySelector('.rounded').classList.add('border', 'border-warning');
+  } else {
+    summary = `<span class="text-success fw-bold">${startPrices.length} start</span> / ` +
+              `<span class="${endPrices.length === total ? 'text-success' : 'text-danger'} fw-bold">${endPrices.length} end</span>`;
+    if (missing > 0) {
+      summary += `<br><small class="text-warning">⚠️ ${missing} prices missing</small>`;
+      statBox.querySelector('.rounded').classList.add('border', 'border-warning');
+    }
+  }
+  document.getElementById('statPriceSummary').innerHTML = summary;
+}
+
+// Show prices in modal (top header button)
+function showPricesModal() {
+  const modal = new bootstrap.Modal(document.getElementById('pricesModal'));
+  modal.show();
+  document.getElementById('pricesModalBody').innerHTML =
+    document.getElementById('pricesContainer').innerHTML;
+}
+
+// Auto-load prices on page load
+document.addEventListener('DOMContentLoaded', () => { loadPrices(); });
+
+function buildPricesHtml(data) {
+  const startPrices = data.start_prices || [];
+  const endPrices   = data.end_prices   || [];
+  const sessionInfo = data.session_info || {};
+
+  if (!startPrices.length && !endPrices.length) {
+    return '<div class="alert alert-warning text-center"><i class="bi bi-exclamation-triangle display-4 text-warning d-block mb-2"></i>No Price Data Available.<br>This session has not started yet or prices have not been captured.</div>';
+  }
+
+  const startTable = startPrices.length ? `
+    <div class="table-responsive" style="max-height:400px;overflow-y:auto">
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light sticky-top"><tr><th>Symbol</th><th>Start Price</th><th>Time</th></tr></thead>
+      <tbody>${startPrices.map(p => `
+        <tr>
+          <td class="fw-bold">${p.asset_symbol}</td>
+          <td class="text-success">₹${Number(p.start_price || 0).toLocaleString('en-IN')}</td>
+          <td class="text-muted small">${p.start_price_fetched_at ? new Date(p.start_price_fetched_at).toLocaleString() : 'N/A'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>` : '<div class="text-center p-3 text-muted">No start prices available</div>';
+
+  const endTable = endPrices.length ? `
+    <div class="table-responsive" style="max-height:400px;overflow-y:auto">
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light sticky-top"><tr><th>Symbol</th><th>End Price</th><th>Change</th><th>Time</th></tr></thead>
+      <tbody>${endPrices.map(p => {
+        const sp = startPrices.find(s => s.asset_symbol === p.asset_symbol);
+        const change = sp && sp.start_price > 0 ? ((p.end_price - sp.start_price) / sp.start_price * 100) : 0;
+        const cls  = change > 0 ? 'text-success' : change < 0 ? 'text-danger' : 'text-muted';
+        const icon = change > 0 ? '↑' : change < 0 ? '↓' : '→';
+        return `<tr>
+          <td class="fw-bold">${p.asset_symbol}</td>
+          <td class="text-danger">₹${Number(p.end_price || 0).toLocaleString('en-IN')}</td>
+          <td class="${cls}">${icon} ${change.toFixed(2)}%</td>
+          <td class="text-muted small">${p.end_price_fetched_at ? new Date(p.end_price_fetched_at).toLocaleString() : 'N/A'}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table></div>` : '<div class="text-center p-3 text-muted">No end prices available</div>';
+
+  return `
+    <div class="alert alert-info mb-3">
+      <strong>Session:</strong> ${sessionInfo.name || 'N/A'} &nbsp;|&nbsp;
+      <strong>Status:</strong> <span class="badge bg-${sessionInfo.status === 'live' ? 'success' : 'secondary'}">${sessionInfo.status || 'N/A'}</span>
+    </div>
+    <div class="row">
+      <div class="col-md-6">
+        <div class="card border-success"><div class="card-header bg-success text-white"><h6 class="mb-0">Start Prices (${startPrices.length})</h6></div>
+        <div class="card-body p-0">${startTable}</div></div>
+      </div>
+      <div class="col-md-6">
+        <div class="card border-danger"><div class="card-header bg-danger text-white"><h6 class="mb-0">End Prices (${endPrices.length})</h6></div>
+        <div class="card-body p-0">${endTable}</div></div>
+      </div>
+    </div>`;
+}
+
+// ── Load Transactions ──────────────────────────────────────────────────────
+function loadTransactions() {
+  document.getElementById('transactionsContainer').innerHTML = '<div class="text-center p-3"><div class="spinner-border text-warning"></div></div>';
+
+  fetch('/api/performance/' + CONTEST_ID + '/transactions')
+    .then(r => r.json())
+    .then(data => {
+      const txns = data.transactions || [];
+      if (!txns.length) {
+        document.getElementById('transactionsContainer').innerHTML = '<div class="text-center p-4 text-muted"><i class="bi bi-inbox display-4 d-block mb-2"></i>No transactions found for this contest.</div>';
+        return;
+      }
+      let html = `<div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>ID</th><th>User</th><th>Type</th><th>Amount</th><th>Status</th><th>Description</th><th>Date</th></tr>
+          </thead><tbody>`;
+      txns.forEach(t => {
+        const typeBadge = t.type === 'winnings' ? 'bg-success' : t.type === 'contest_entry' ? 'bg-primary' : 'bg-secondary';
+        const statusBadge = t.status === 'success' ? 'bg-success' : t.status === 'failed' ? 'bg-danger' : 'bg-warning';
+        html += `<tr>
+          <td class="fw-bold">#${t.old_id || t._id}</td>
+          <td><div class="fw-semibold">${t.user_name || 'Unknown'}</div><small class="text-muted">${t.user_mobile || ''}</small></td>
+          <td><span class="badge ${typeBadge}">${t.type}</span></td>
+          <td class="${Number(t.amount) >= 0 ? 'text-success' : 'text-danger'} fw-bold">₹${Number(t.amount || 0).toLocaleString('en-IN')}</td>
+          <td><span class="badge ${statusBadge}">${t.status}</span></td>
+          <td class="small text-muted">${t.description || '—'}</td>
+          <td class="small text-muted">${t.created_at ? new Date(t.created_at).toLocaleString('en-IN', {timeZone:'Asia/Kolkata'}) : '—'}</td>
+        </tr>`;
+      });
+      html += '</tbody></table></div>';
+      document.getElementById('transactionsContainer').innerHTML = html;
+    })
+    .catch(err => {
+      document.getElementById('transactionsContainer').innerHTML = '<div class="alert alert-danger m-3"><i class="bi bi-exclamation-triangle me-2"></i>Failed to load transactions: ' + err.message + '</div>';
+    });
+}
+
+// ── Load Participants ──────────────────────────────────────────────────────
+function loadParticipants() {
+  document.getElementById('participantsContainer').innerHTML = '<div class="text-center p-3"><div class="spinner-border text-primary"></div></div>';
+
+  fetch('/api/performance/' + CONTEST_ID + '/participants')
+    .then(r => r.json())
+    .then(data => {
+      const participants = data.participants || [];
+      if (!participants.length) {
+        document.getElementById('participantsContainer').innerHTML = '<div class="text-center p-4 text-muted"><i class="bi bi-people display-4 d-block mb-2"></i>No participants found.</div>';
+        return;
+      }
+      let html = `<div class="table-responsive" style="max-height:500px;overflow-y:auto">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-light sticky-top">
+            <tr><th>Rank</th><th>User</th><th>Score</th><th>Prize</th><th>Status</th></tr>
+          </thead><tbody>`;
+      participants.forEach((p, i) => {
+        const rank = i + 1;
+        const isWinner = rank <= TOTAL_WINNERS;
+        const prize = getPrizeForRank(rank);
+        html += `<tr class="${isWinner ? 'table-success' : ''}">
+          <td><span class="badge ${isWinner ? 'bg-success' : 'bg-secondary'}">${rank}</span>${isWinner ? '<br><small class="text-success">WINNER</small>' : ''}</td>
+          <td><div class="fw-semibold">${p.user_name || 'User #' + p.user_id}</div><small class="text-muted">${p.user_mobile || ''}</small></td>
+          <td><span class="fw-bold ${Number(p.total_score) >= 0 ? 'text-success' : 'text-danger'}">${Number(p.total_score || 0) >= 0 ? '+' : ''}${Number(p.total_score || 0).toFixed(2)}</span></td>
+          <td>${isWinner ? '<span class="text-success fw-bold">₹' + Number(prize).toLocaleString('en-IN') + ' coins</span>' : '—'}</td>
+          <td><span class="badge ${isWinner ? 'bg-success' : 'bg-secondary'}">${isWinner ? 'Winner' : 'Participant'}</span></td>
+        </tr>`;
+      });
+      html += '</tbody></table></div>';
+      document.getElementById('participantsContainer').innerHTML = html;
+    })
+    .catch(err => {
+      document.getElementById('participantsContainer').innerHTML = '<div class="alert alert-danger m-3">Failed to load participants: ' + err.message + '</div>';
+    });
+}
+
+function getPrizeForRank(rank) {
+  for (const dist of FLEXIBLE_DIST) {
+    const m = (dist.label || '').match(/Ranks?\s*(\d+)-?(\d+)?/i);
+    if (m) {
+      const s = parseInt(m[1]);
+      const e = parseInt(m[2] || m[1]);
+      if (rank >= s && rank <= e) return dist.perWinner || 0;
+    }
+  }
+  return 0;
+}
+</script>

@@ -44,10 +44,21 @@ router.get('/live-price-feeds/stocks', requireAdmin, priceFeeds.stocks);
 router.get('/live-price-feeds/cryptos', requireAdmin, priceFeeds.cryptos);
 
 router.get('/testing', requireAdmin, testing.index);
+router.get('/testing/my-game', requireAdmin, testing.myGame);
 router.get('/testing/test-users', requireAdmin, testing.testUsers);
 router.post('/testing/generate-users', requireAdmin, testing.generate);
 router.post('/testing/bulk-delete-users', requireAdmin, testing.bulkDelete);
-router.get('/testing/user/:id', requireAdmin, testing.user);
+router.post('/testing/bulk-delete-users-json', requireAdmin, testing.bulkDeleteJson);
+router.get('/testing/session/:sessionId/contests', requireAdmin, testing.sessionContests);
+router.get('/testing/contest/:contestId', requireAdmin, testing.contestDetail);
+router.post('/testing/bulk-join-contest', requireAdmin, testing.bulkJoinContest);
+router.post('/testing/create-basket', requireAdmin, testing.createBasket);
+router.delete('/testing/delete-basket/:basketId', requireAdmin, testing.deleteBasket);
+router.get('/testing/baskets/:userId/:sessionId', requireAdmin, testing.getBaskets);
+router.get('/testing/user/:userId', requireAdmin, testing.userDetail);
+router.get('/testing/user/:userId/session/:sessionId/contests', requireAdmin, testing.userSessionContests);
+// Legacy simple user view (keep backward compat)
+router.get('/testing/view/:id', requireAdmin, testing.user);
 
 router.get('/profile', requireAdmin, profile.show);
 router.get('/profile/show', requireAdmin, profile.show);

@@ -1,91 +1,359 @@
 <%
-  const statusBadge = {
-    live: 'success',
-    upcoming: 'info',
-    completed: 'warning',
-  };
+  const statusBadgeMap = { live: 'success', upcoming: 'info', completed: 'warning' };
   function when(d) {
     if (!d) return '—';
     return new Date(d).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
   }
 %>
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb">
-                    <li class="breadcrumb-item"><a href="/performance">Sessions</a></li>
-                    <li class="breadcrumb-item active">Session #<%= session.old_id || session._id %></li>
-                </ol>
-            </nav>
-            <h1 class="h3 mb-0"><i class="bi bi-graph-up text-success me-2"></i>Session Details</h1>
-        </div>
-        <a href="/performance" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i>Back to Sessions
-        </a>
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/performance">Sessions</a></li>
+          <li class="breadcrumb-item active">Session #<%= session.old_id || session._id %></li>
+        </ol>
+      </nav>
+      <h1 class="h3 mb-0"><i class="bi bi-graph-up text-success me-2"></i>Session Details</h1>
     </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <button onclick="showSessionPrices()" class="btn btn-info me-2">
+        <i class="bi bi-currency-dollar me-1"></i>Show Prices
+      </button>
+      <button onclick="testTransaction()" class="btn btn-warning me-2">
+        <i class="bi bi-cash-coin me-1"></i>Test Transaction
+      </button>
+      <a href="/performance" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back to Sessions
+      </a>
+    </div>
+  </div>
 
-    <div class="card shadow-sm border-0 mb-4">
-        <div class="card-header text-white" style="background: linear-gradient(135deg, #007bff 0%, #6610f2 100%);">
-            <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Session Information</h5>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-6">
-                    <h5><%= session.name %></h5>
-                    <p class="text-muted mb-2">Session ID: #<%= session.old_id || session._id %></p>
-                    <p class="mb-2"><strong>Status:</strong>
-                        <span class="badge bg-<%= statusBadge[session.status] || 'secondary' %>">
-                            <%= session.status ? session.status.charAt(0).toUpperCase() + session.status.slice(1) : 'Unknown' %>
-                        </span>
-                    </p>
-                    <p class="mb-2"><strong>Market Type:</strong> <span class="badge bg-info"><%= session.market_type %></span></p>
-                    <p class="mb-2"><strong>Max Stocks:</strong> <%= session.max_stocks %></p>
-                </div>
-                <div class="col-md-6">
-                    <p class="mb-2"><strong>Start Time:</strong> <%= when(session.start_time) %></p>
-                    <p class="mb-2"><strong>End Time:</strong> <%= when(session.end_time) %></p>
-                </div>
-            </div>
-        </div>
+  <!-- Session Info -->
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header text-white" style="background:linear-gradient(135deg,#007bff 0%,#6610f2 100%)">
+      <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Session Information</h5>
     </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6">
+          <h5><%= session.name %></h5>
+          <p class="text-muted mb-2">Session ID: #<%= session.old_id || session._id %></p>
+          <p class="mb-2"><strong>Status:</strong>
+            <span class="badge bg-<%= statusBadgeMap[session.status] || 'secondary' %>">
+              <%= session.status ? session.status.charAt(0).toUpperCase() + session.status.slice(1) : 'Unknown' %>
+            </span>
+          </p>
+          <p class="mb-2"><strong>Market Type:</strong> <span class="badge bg-info"><%= session.market_type %></span></p>
+          <p class="mb-2"><strong>Max Stocks:</strong> <%= session.max_stocks %></p>
+        </div>
+        <div class="col-md-6">
+          <p class="mb-2"><strong>Start Time:</strong> <%= when(session.start_time) %></p>
+          <p class="mb-2"><strong>End Time:</strong> <%= when(session.end_time) %></p>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    <div class="card shadow-sm border-0">
-        <div class="card-header text-white" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
-            <h5 class="mb-0"><i class="bi bi-trophy-fill me-2"></i>Session Contests</h5>
-        </div>
-        <div class="card-body p-0">
-            <% if (!contests.length) { %>
-            <div class="text-center p-4">
-                <i class="bi bi-inbox display-4 text-muted"></i>
-                <h5 class="mt-3">No Contests Found</h5>
-            </div>
-            <% } else { %>
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Contest ID</th>
-                            <th>Category</th>
-                            <th>Prize Pool</th>
-                            <th>Entry Fee</th>
-                            <th>Spots</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <% contests.forEach(contest => { %>
-                        <tr>
-                            <td class="fw-bold">#<%= contest.old_id || contest._id %></td>
-                            <td><%= contest.category %></td>
-                            <td class="text-success fw-bold">₹<%= Number(contest.prize_pool || 0).toLocaleString('en-US') %></td>
-                            <td class="text-danger">₹<%= Number(contest.entry_fee || 0).toLocaleString('en-US') %></td>
-                            <td><span class="badge bg-primary"><%= contest.joined_count || 0 %>/<%= contest.max_participants || 0 %></span></td>
-                        </tr>
-                        <% }) %>
-                    </tbody>
-                </table>
-            </div>
-            <% } %>
-        </div>
+  <!-- Session Asset Prices card — auto-loads on page ready -->
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg,#17a2b8 0%,#138496 100%)">
+      <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Session Asset Prices</h5>
+      <button class="btn btn-sm btn-light" onclick="showSessionPrices()">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+      </button>
     </div>
+    <div class="card-body" id="sessionPricesInline">
+      <div class="text-center p-3"><div class="spinner-border text-info"></div><p class="mt-2 text-muted">Loading prices...</p></div>
+    </div>
+  </div>
+
+  <!-- Contests -->
+  <div class="card shadow-sm border-0">
+    <div class="card-header text-white" style="background:linear-gradient(135deg,#28a745 0%,#20c997 100%)">
+      <h5 class="mb-0"><i class="bi bi-trophy-fill me-2"></i>Session Contests</h5>
+    </div>
+    <div class="card-body p-0">
+      <% if (!contests || !contests.length) { %>
+      <div class="text-center p-4">
+        <i class="bi bi-inbox display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">No Contests Found</h5>
+      </div>
+      <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Contest ID</th>
+              <th>Category</th>
+              <th>Prize Pool</th>
+              <th>Entry Fee</th>
+              <th>Spots</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% contests.forEach(function(contest) { %>
+            <tr>
+              <td class="fw-bold">#<%= contest.old_id || contest._id %></td>
+              <td><%= contest.category %></td>
+              <td class="text-success fw-bold">₹<%= Number(contest.prize_pool || 0).toLocaleString('en-US') %></td>
+              <td class="text-danger">₹<%= Number(contest.entry_fee || 0).toLocaleString('en-US') %></td>
+              <td><span class="badge bg-primary"><%= contest.joined_count || 0 %>/<%= contest.max_participants || 0 %></span></td>
+              <td>
+                <span class="badge bg-<%= contest.status === 'live' ? 'success' : contest.status === 'completed' ? 'secondary' : 'info' %>">
+                  <%= contest.status %>
+                </span>
+              </td>
+              <td>
+                <a href="/performance/<%= contest._id %>" class="btn btn-sm btn-outline-primary">
+                  <i class="bi bi-eye me-1"></i>View Details
+                </a>
+              </td>
+            </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
+    </div>
+  </div>
 </div>
+
+<!-- Session Prices Modal — matches PHP session-detail.blade.php exactly -->
+<div class="modal fade" id="sessionPricesModal" tabindex="-1" aria-labelledby="sessionPricesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="sessionPricesModalLabel">
+          <i class="bi bi-currency-dollar me-2"></i>Session Asset Prices
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="pricesContainer">
+          <div class="text-center p-4">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading prices...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.bg-gradient-primary { background: linear-gradient(135deg, #007bff 0%, #6610f2 100%); }
+.bg-gradient-success { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); }
+</style>
+
+<script>
+// Pass session data from server so we don't need an extra AJAX call for session info
+const SESSION_ID = '<%= session._id %>';
+const SESSION_DATA = {
+  id:          '<%= session.old_id || session._id %>',
+  name:        <%- JSON.stringify(session.name || '') %>,
+  status:      '<%= session.status || "" %>',
+  market_type: '<%= session.market_type || "" %>',
+  start_time:  '<%= session.start_time ? new Date(session.start_time).toLocaleString("en-US", {timeZone:"Asia/Kolkata"}) : "" %>',
+  end_time:    '<%= session.end_time ? new Date(session.end_time).toLocaleString("en-US", {timeZone:"Asia/Kolkata"}) : "" %>'
+};
+
+// ── Show Session Prices — renders inline AND in modal ──────────────────────
+function showSessionPrices() {
+  // Refresh inline card
+  document.getElementById('sessionPricesInline').innerHTML =
+    '<div class="text-center p-3"><div class="spinner-border text-info"></div><p class="mt-2 text-muted">Loading prices...</p></div>';
+
+  // Also open modal
+  var modal = new bootstrap.Modal(document.getElementById('sessionPricesModal'));
+  modal.show();
+  document.getElementById('pricesContainer').innerHTML =
+    '<div class="text-center p-4"><div class="spinner-border text-primary" role="status">' +
+    '<span class="visually-hidden">Loading prices...</span></div></div>';
+
+  fetch('/api/session-prices/' + SESSION_ID)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var html = displaySessionPricesHtml(data);
+        document.getElementById('sessionPricesInline').innerHTML = html;
+        document.getElementById('pricesContainer').innerHTML = html;
+      } else {
+        var warn = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>' +
+          (data.message || 'No price data found for this session') + '</div>';
+        document.getElementById('sessionPricesInline').innerHTML = warn;
+        document.getElementById('pricesContainer').innerHTML = warn;
+      }
+    })
+    .catch(function(error) {
+      var err = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' +
+        'Failed to load session prices: ' + error.message + '</div>';
+      document.getElementById('sessionPricesInline').innerHTML = err;
+      document.getElementById('pricesContainer').innerHTML = err;
+    });
+}
+
+// Auto-load on page ready (inline only, no modal)
+function loadPricesInline() {
+  fetch('/api/session-prices/' + SESSION_ID)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('sessionPricesInline').innerHTML =
+        data.success ? displaySessionPricesHtml(data) :
+        '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>' + (data.message || 'No price data') + '</div>';
+    })
+    .catch(function(e) {
+      document.getElementById('sessionPricesInline').innerHTML =
+        '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>Failed to load prices: ' + e.message + '</div>';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', loadPricesInline);
+
+// ── Display Session Prices — mirrors PHP displaySessionPrices() exactly ──────
+function displaySessionPricesHtml(data) {
+  var startPrices = data.start_prices || [];
+  var endPrices   = data.end_prices   || [];
+  // Use server-injected session data for the info block (matches PHP session_info)
+  var si = data.session_info || {};
+  var sessionInfo = {
+    id:          si.id          || SESSION_DATA.id,
+    name:        si.name        || SESSION_DATA.name,
+    status:      si.status      || SESSION_DATA.status,
+    market_type: si.market_type || SESSION_DATA.market_type
+  };
+
+  // ── Session Information block (matches PHP exactly) ──────────────────────
+  var html =
+    '<div class="row mb-4">' +
+    '  <div class="col-md-12">' +
+    '    <div class="alert alert-info">' +
+    '      <h6 class="mb-2"><i class="bi bi-info-circle me-2"></i>Session Information</h6>' +
+    '      <p class="mb-1"><strong>Session ID:</strong> ' + sessionInfo.id + '</p>' +
+    '      <p class="mb-1"><strong>Name:</strong> ' + escapeHtml(sessionInfo.name) + '</p>' +
+    '      <p class="mb-1"><strong>Status:</strong> ' + getStatusBadge(sessionInfo.status) + '</p>' +
+    '      <p class="mb-0"><strong>Market Type:</strong>' +
+    '        <span class="badge bg-info">' + escapeHtml(sessionInfo.market_type) + '</span>' +
+    '      </p>' +
+    '    </div>' +
+    '  </div>' +
+    '</div>';
+
+  if (startPrices.length === 0 && endPrices.length === 0) {
+    html +=
+      '<div class="alert alert-warning text-center">' +
+      '  <i class="bi bi-exclamation-triangle display-4 text-warning"></i>' +
+      '  <h5 class="mt-3">No Price Data Available</h5>' +
+      '  <p>This session hasn\'t been started yet or prices haven\'t been captured.</p>' +
+      '</div>';
+    return html;
+  }
+
+  // ── Start Prices column ──────────────────────────────────────────────────
+  var startRows = '';
+  if (startPrices.length > 0) {
+    startPrices.forEach(function(p) {
+      var time = p.start_price_fetched_at ? new Date(p.start_price_fetched_at).toLocaleString() : 'N/A';
+      startRows +=
+        '<tr>' +
+        '  <td class="fw-bold">' + escapeHtml(p.asset_symbol) + '</td>' +
+        '  <td class="text-success">₹' + Number(p.start_price || 0).toLocaleString('en-IN') + '</td>' +
+        '  <td class="text-muted small">' + time + '</td>' +
+        '</tr>';
+    });
+  }
+  var startContent = startPrices.length > 0
+    ? '<div class="table-responsive" style="max-height:400px;overflow-y:auto">' +
+      '<table class="table table-sm table-hover mb-0">' +
+      '<thead class="table-light sticky-top"><tr><th>Symbol</th><th>Start Price</th><th>Time</th></tr></thead>' +
+      '<tbody>' + startRows + '</tbody></table></div>'
+    : '<div class="text-center p-3 text-muted">No start prices available</div>';
+
+  // ── End Prices column ────────────────────────────────────────────────────
+  var endRows = '';
+  if (endPrices.length > 0) {
+    endPrices.forEach(function(p) {
+      var sp = startPrices.find(function(s) { return s.asset_symbol === p.asset_symbol; });
+      var change = (sp && sp.start_price > 0) ? ((p.end_price - sp.start_price) / sp.start_price * 100) : 0;
+      var cls  = change > 0 ? 'text-success' : (change < 0 ? 'text-danger' : 'text-muted');
+      var icon = change > 0 ? '↑' : (change < 0 ? '↓' : '→');
+      var time = p.end_price_fetched_at ? new Date(p.end_price_fetched_at).toLocaleString() : 'N/A';
+      endRows +=
+        '<tr>' +
+        '  <td class="fw-bold">' + escapeHtml(p.asset_symbol) + '</td>' +
+        '  <td class="text-danger">₹' + Number(p.end_price || 0).toLocaleString('en-IN') + '</td>' +
+        '  <td class="' + cls + '">' + icon + ' ' + change.toFixed(2) + '%</td>' +
+        '  <td class="text-muted small">' + time + '</td>' +
+        '</tr>';
+    });
+  }
+  var endContent = endPrices.length > 0
+    ? '<div class="table-responsive" style="max-height:400px;overflow-y:auto">' +
+      '<table class="table table-sm table-hover mb-0">' +
+      '<thead class="table-light sticky-top"><tr><th>Symbol</th><th>End Price</th><th>Change</th><th>Time</th></tr></thead>' +
+      '<tbody>' + endRows + '</tbody></table></div>'
+    : '<div class="text-center p-3 text-muted">No end prices available</div>';
+
+  html +=
+    '<div class="row">' +
+    '  <div class="col-md-6">' +
+    '    <div class="card border-success">' +
+    '      <div class="card-header bg-success text-white">' +
+    '        <h6 class="mb-0"><i class="bi bi-play-circle me-2"></i>Start Prices (' + startPrices.length + ')</h6>' +
+    '      </div>' +
+    '      <div class="card-body p-0">' + startContent + '</div>' +
+    '    </div>' +
+    '  </div>' +
+    '  <div class="col-md-6">' +
+    '    <div class="card border-danger">' +
+    '      <div class="card-header bg-danger text-white">' +
+    '        <h6 class="mb-0"><i class="bi bi-stop-circle me-2"></i>End Prices (' + endPrices.length + ')</h6>' +
+    '      </div>' +
+    '      <div class="card-body p-0">' + endContent + '</div>' +
+    '    </div>' +
+    '  </div>' +
+    '</div>';
+
+  return html;
+}
+
+// ── Status Badge Helper ───────────────────────────────────────────────────────
+function getStatusBadge(status) {
+  var badges = {
+    live:      '<span class="badge bg-success">Live</span>',
+    upcoming:  '<span class="badge bg-info">Upcoming</span>',
+    completed: '<span class="badge bg-warning">Completed</span>'
+  };
+  return badges[status] || '<span class="badge bg-secondary">Unknown</span>';
+}
+
+// ── Test Transaction — mirrors PHP testTransaction() ──────────────────────────
+function testTransaction() {
+  if (!confirm('Create a test transaction for session ' + SESSION_DATA.id + '?')) return;
+
+  fetch('/api/test-transaction/' + SESSION_ID, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        alert('Test transaction created successfully!\nTransaction ID: ' + (data.transaction_id || 'N/A'));
+      } else {
+        alert('Error: ' + (data.message || 'Failed to create transaction'));
+      }
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>

@@ -1,0 +1,199 @@
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3">Contest Detail</h1>
+            <p class="text-muted mb-0"><%= contest.session_name || '' %></p>
+        </div>
+        <a href="/testing/session/<%= contest.session_id %>/contests" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>Back to Contests
+        </a>
+    </div>
+
+    <!-- Contest Info -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-bold bg-primary text-white"><i class="bi bi-trophy me-2"></i>Contest Information</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3"><strong>Contest ID:</strong> <%= contest.old_id || contest._id %></div>
+                <div class="col-md-3"><strong>Category:</strong> <%= contest.category %></div>
+                <div class="col-md-3"><strong>Entry Fee:</strong> ₹<%= Number(contest.entry_fee || 0).toFixed(2) %></div>
+                <div class="col-md-3"><strong>Max Participants:</strong> <%= contest.participants || 0 %></div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-md-3"><strong>Prize Pool:</strong> ₹<%= Number(contest.prize_pool || 0).toFixed(2) %></div>
+                <div class="col-md-3">
+                    <strong>Status:</strong>
+                    <span class="badge bg-<%= contest.status === 'live' ? 'success' : contest.status === 'upcoming' ? 'info' : 'secondary' %>"><%= contest.status %></span>
+                </div>
+                <div class="col-md-3"><strong>Entries:</strong> <%= entries.length %></div>
+                <div class="col-md-3"><strong>Created:</strong> <%= contest.created_at ? new Date(contest.created_at).toLocaleString('en-IN') : '—' %></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contest Entries -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-bold"><i class="bi bi-people me-2"></i>Contest Entries (<%= entries.length %>)</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Mobile</th>
+                            <th>Basket</th>
+                            <th>Assets</th>
+                            <th>Score</th>
+                            <th>Rank</th>
+                            <th>Joined At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (entries.length === 0) { %>
+                        <tr><td colspan="7" class="text-center text-muted py-4">No entries found.</td></tr>
+                        <% } %>
+                        <% entries.forEach(entry => { %>
+                        <tr>
+                            <td><%= entry.user_name || '—' %></td>
+                            <td><%= entry.user_mobile || '—' %></td>
+                            <td><%= entry.serial_no ? '<span class="badge bg-secondary">' + entry.serial_no + '</span>' : '—' %></td>
+                            <td><small><%= (entry.asset_names || []).slice(0, 3).join(', ') %><%= (entry.asset_names || []).length > 3 ? '...' : '' %></small></td>
+                            <td><%= Number(entry.total_score || 0).toFixed(2) %></td>
+                            <td><%= entry.rank || '—' %></td>
+                            <td><%= entry.created_at ? new Date(entry.created_at).toLocaleString('en-IN') : '—' %></td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <!-- Available Test Users -->
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header fw-bold bg-warning text-dark d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-people me-2"></i>Available Test Users (<%= availableUsers.length %>)</span>
+                    <div class="d-flex gap-1 align-items-center">
+                        <input type="number" id="selectCount" class="form-control form-control-sm" style="width:70px;" placeholder="Count" min="1" max="<%= availableUsers.length %>">
+                        <button class="btn btn-sm btn-primary" onclick="selectByCount()">Select</button>
+                        <button class="btn btn-sm btn-success" onclick="joinContestForSelected()" id="joinContestBtn" disabled>
+                            <i class="bi bi-box-arrow-in-right me-1"></i>Join Contest
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height:400px;overflow-y:auto;">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                                    <th>ID</th><th>Name</th><th>Mobile</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (availableUsers.length === 0) { %>
+                                <tr><td colspan="4" class="text-center text-muted py-3">No available test users.</td></tr>
+                                <% } %>
+                                <% availableUsers.forEach(user => { %>
+                                <tr>
+                                    <td><input type="checkbox" class="user-checkbox" value="<%= user._id %>" onchange="updateJoinBtn()"></td>
+                                    <td><%= user.old_id || user._id %></td>
+                                    <td><%= user.name %></td>
+                                    <td><%= user.mobile %></td>
+                                </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Available Baskets -->
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header fw-bold bg-info text-white">
+                    <i class="bi bi-basket me-2"></i>Available Baskets (<%= availableBaskets.length %>)
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height:400px;overflow-y:auto;">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr><th>User</th><th>Serial</th><th>Assets</th><th>Created</th></tr>
+                            </thead>
+                            <tbody>
+                                <% if (availableBaskets.length === 0) { %>
+                                <tr><td colspan="4" class="text-center text-muted py-3">No available baskets.</td></tr>
+                                <% } %>
+                                <% availableBaskets.forEach(basket => { %>
+                                <tr>
+                                    <td><%= basket.user_name || '—' %></td>
+                                    <td><span class="badge bg-secondary"><%= basket.serial_no || 'N/A' %></span></td>
+                                    <td><small><%= (basket.asset_names || []).slice(0, 3).join(', ') %><%= (basket.asset_names || []).length > 3 ? '...' : '' %></small></td>
+                                    <td><small><%= basket.created_at ? new Date(basket.created_at).toLocaleString('en-IN', { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—' %></small></td>
+                                </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const CONTEST_ID = '<%= contest._id %>';
+const SESSION_ID = '<%= contest.session_id %>';
+
+function toggleSelectAll() {
+    const checked = document.getElementById('selectAll').checked;
+    document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = checked);
+    updateJoinBtn();
+}
+
+function selectByCount() {
+    const count = parseInt(document.getElementById('selectCount').value);
+    if (!count || count < 1) { alert('Enter a valid number'); return; }
+    document.querySelectorAll('.user-checkbox').forEach((cb, i) => { cb.checked = i < count; });
+    updateJoinBtn();
+}
+
+function updateJoinBtn() {
+    const checked = document.querySelectorAll('.user-checkbox:checked').length;
+    document.getElementById('joinContestBtn').disabled = checked === 0;
+}
+
+async function joinContestForSelected() {
+    const selected = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
+    if (!selected.length) return;
+    if (!confirm(`Generate random baskets and join contest for ${selected.length} user(s)?`)) return;
+
+    const btn = document.getElementById('joinContestBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+
+    try {
+        const res = await fetch('/testing/bulk-join-contest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_ids: selected, contest_id: CONTEST_ID, session_id: SESSION_ID })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`Success! ${data.joined} user(s) joined the contest`);
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-box-arrow-in-right me-1"></i>Join Contest';
+        }
+    } catch (e) {
+        alert('Failed: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-box-arrow-in-right me-1"></i>Join Contest';
+    }
+}
+</script>

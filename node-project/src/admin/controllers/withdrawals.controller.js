@@ -25,9 +25,14 @@ const index = async (req, res) => {
 const show = async (req, res) => {
   try {
     const request = await WithdrawalRequest.findById(req.params.id)
-      .populate({ path: 'user_id', model: 'User', select: 'name mobile email payment_details winnings_balance deposit_balance' }).lean();
+      .populate({ path: 'user_id', model: 'User', select: 'name mobile email payment_details winnings_balance deposit_balance old_id' }).lean();
     if (!request) { req.flash('error', 'Not found'); return res.redirect('/withdrawal_requests'); }
-    render(res, 'withdrawals/show', { title: 'Withdrawal Detail', request, admin: req.session.admin });
+
+    // Fetch last 5 withdrawal requests for this user (for history panel)
+    const history = await WithdrawalRequest.find({ user_id: request.user_id?._id || request.user_id })
+      .sort({ created_at: -1 }).limit(5).select('amount status created_at _id').lean();
+
+    render(res, 'withdrawals/show', { title: 'Withdrawal Detail', request, history, admin: req.session.admin });
   } catch (err) { res.status(500).send(err.message); }
 };
 

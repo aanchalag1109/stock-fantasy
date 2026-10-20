@@ -56,7 +56,17 @@ const bannerStorage = multer.diskStorage({
   },
   filename: (req, file, cb) => cb(null, `banner_${Date.now()}${path.extname(file.originalname)}`),
 });
-const bannerUpload = multer({ storage: bannerStorage }).single('image');
+const bannerUpload = multer({
+  storage: bannerStorage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.gif'];
+    if (!allowed.includes(path.extname(file.originalname).toLowerCase())) {
+      return cb(new Error('Image must be JPG, PNG, or GIF and under 2MB'));
+    }
+    cb(null, true);
+  },
+}).single('image');
 
 const banners = {
   index: async (req, res) => {
@@ -72,6 +82,37 @@ const banners = {
         req.flash('success', 'Banner created!');
         res.redirect('/banners');
       } catch (e) { req.flash('error', e.message); res.redirect('/banners/create'); }
+    });
+  },
+  edit: async (req, res) => {
+    const banner = await Banner.findById(req.params.id).lean();
+    if (!banner) { req.flash('error', 'Banner not found'); return res.redirect('/banners'); }
+    render(res, 'banners/edit', { title: 'Edit Banner', banner, admin: req.session.admin });
+  },
+  update: (req, res) => {
+    const back = '/banners/' + req.params.id + '/edit';
+    bannerUpload(req, res, async (err) => {
+      if (err) { req.flash('error', err.message); return res.redirect(back); }
+      try {
+        const banner = await Banner.findById(req.params.id);
+        if (!banner) { req.flash('error', 'Banner not found'); return res.redirect('/banners'); }
+        const title = String(req.body.title || '').trim();
+        if (!title || title.length > 255) {
+          req.flash('error', 'Title is required and must be at most 255 characters.');
+          return res.redirect(back);
+        }
+        const status = ['active', 'inactive'].includes(req.body.status) ? req.body.status : banner.status;
+        const update = {
+          title,
+          description: String(req.body.description || '').trim() || null,
+          link: String(req.body.link || '').trim() || null,
+          status,
+        };
+        if (req.file) update.image = 'uploads/banners/' + req.file.filename;
+        await Banner.findByIdAndUpdate(req.params.id, update);
+        req.flash('success', 'Banner updated successfully.');
+        res.redirect('/banners');
+      } catch (e) { req.flash('error', e.message); res.redirect(back); }
     });
   },
   destroy: async (req, res) => {

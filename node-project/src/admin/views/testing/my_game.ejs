@@ -1,0 +1,49 @@
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">Upcoming Sessions</h1>
+    </div>
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header fw-bold bg-primary text-white">
+                    <i class="bi bi-calendar2-week me-2"></i>Upcoming Sessions List
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Session Name</th>
+                                    <th>Start Time</th>
+                                    <th>End Time</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (sessions.length === 0) { %>
+                                <tr><td colspan="6" class="text-center text-muted py-4">No upcoming sessions found.</td></tr>
+                                <% } %>
+                                <% sessions.forEach(session => { %>
+                                <tr>
+                                    <td><%= session.old_id || session._id %></td>
+                                    <td><%= session.name %></td>
+                                    <td><%= session.start_time ? new Date(session.start_time).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
+                                    <td><%= session.end_time ? new Date(session.end_time).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
+                                    <td><span class="badge bg-info"><%= session.status %></span></td>
+                                    <td>
+                                        <a href="/testing/session/<%= session._id %>/contests" class="btn btn-sm btn-outline-info">
+                                            <i class="bi bi-eye"></i> View
+                                        </a>
+                                    </td>
+                                </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,9 +1,9 @@
 <%
   function on(prefix) {
     if (prefix === '/dashboard') return currentPath === '/dashboard' || currentPath === '/';
-    if (prefix === '/testing' || prefix === '/testing/test-users') {
-      return currentPath === '/testing' || currentPath.startsWith('/testing/');
-    }
+    if (prefix === '/testing/test-users') return currentPath === '/testing/test-users';
+    if (prefix === '/testing/my-game') return currentPath === '/testing/my-game' || currentPath.startsWith('/testing/session/') || currentPath.startsWith('/testing/contest/');
+    if (prefix === '/testing') return currentPath === '/testing' || currentPath.startsWith('/testing/');
     return currentPath === prefix || currentPath.startsWith(prefix + '/');
   }
 %>
@@ -111,7 +111,7 @@
         </a>
       </li>
       <li class="nav-item">
-        <a href="/testing" class="sidebar-link <%= on('/testing') ? 'active' : '' %>">
+        <a href="/testing/my-game" class="sidebar-link <%= on('/testing') ? 'active' : '' %>">
           <i class="bi bi-bug"></i> Testing
         </a>
       </li>

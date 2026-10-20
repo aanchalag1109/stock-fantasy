@@ -5,5 +5,7 @@ const { banners } = require('../controllers/misc.controller');
 router.get('/', requireAdmin, banners.index);
 router.get('/create', requireAdmin, banners.create);
 router.post('/', requireAdmin, banners.store);
+router.get('/:id/edit', requireAdmin, banners.edit);
+router.put('/:id', requireAdmin, banners.update);
 router.delete('/:id', requireAdmin, banners.destroy);
 module.exports = router;
