@@ -8,6 +8,8 @@ const User = require('../models/user.model');
 const Transaction = require('../models/transaction.model');
 const config = require('../config/env');
 const logger = require('../config/logger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit limits
+const { checkTransactionAmount } = require('../services/deposit-withdrawal-settings.service');
 
 const LGPAY = config.LGPAY;
 
@@ -51,13 +53,19 @@ const createOrder = async (req, res) => {
       return res.status(400).send('Invalid payment data');
     }
 
-    const { user_id: userId, amount, timestamp } = paymentData;
+    const { user_id: userId, timestamp } = paymentData;
 
     // Validate timestamp (10 minutes)
     const currentTime = Date.now();
     if (currentTime - timestamp > 600000) {
       return res.status(400).send('Payment link expired');
     }
+
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce deposit limits before the order
+    // is stored or LG Pay is called. Callback/return only settle orders checked here.
+    const check = await checkTransactionAmount('deposit', paymentData.amount);
+    if (!check.ok) return res.status(check.status).send(check.message);
+    const amount = check.amount;
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).send('User not found');

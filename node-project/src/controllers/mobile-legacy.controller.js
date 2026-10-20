@@ -13,6 +13,8 @@ const ContestPerformancePrize = require('../models/contest-performance-prize.mod
 const {
   keysOf, publicId, sqlDate, num, findByPublicId, scoreAssets, priceMaps, buildDynamicPrizeDistribution,
 } = require('../helpers/mobile-compat');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit limits
+const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
 
 function input(req, name) {
   if (req.body && req.body[name] != null && req.body[name] !== '') return req.body[name];
@@ -429,7 +431,10 @@ const checkLatestPayment = async (req, res) => {
 
 const testPaymentAdd = async (req, res) => {
   const userId = req.query.user_id == null ? 272 : req.query.user_id;
-  const amount = req.query.amount == null ? 200 : num(req.query.amount);
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: this debug route credits balance directly, so it gets the same limits.
+  const check = await checkTransactionAmount('deposit', req.query.amount == null ? 200 : req.query.amount);
+  if (!check.ok) return res.status(check.status).json(limitErrorBody(check));
+  const amount = check.amount;
   const orderId = `TEST_${Math.floor(Date.now() / 1000)}`;
   try {
     await Payment.create({ order_id: orderId, user_id: Number(userId) || userId, amount, payment_status: 1 });

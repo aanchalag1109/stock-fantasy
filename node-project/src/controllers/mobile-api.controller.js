@@ -18,6 +18,8 @@ const {
   findByPublicId, ensureOldId, priceMaps, scoreAssets, selectedMultipliers,
   buildDynamicPrizeDistribution, asPrizeArray, round2,
 } = require('../helpers/mobile-compat');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit/withdrawal limits
+const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
 
 function authUser(user) {
   return {
@@ -1353,9 +1355,12 @@ const clearUserTransactions = async (req, res) => {
 
 const depositAmount = async (req, res) => {
   try {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce deposit limits before any write.
+    const check = await checkTransactionAmount('deposit', req.body.wallet_balance);
+    if (!check.ok) return res.status(check.status).json({ ...limitErrorBody(check), errors: null });
     const user = await findByPublicId(User, req.body.user_id);
-    const amount = num(req.body.wallet_balance);
-    if (!user || amount < 0) return res.status(500).json({ success: false, error: 'Server error: The given data was invalid.', errors: null });
+    const amount = check.amount;
+    if (!user) return res.status(500).json({ success: false, error: 'Server error: The given data was invalid.', errors: null });
     user.deposit_balance = num(user.deposit_balance) + amount;
     await user.save();
     await Transaction.create({
@@ -1379,9 +1384,12 @@ const depositAmount = async (req, res) => {
 
 const withdrawAmount = async (req, res) => {
   try {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce withdrawal limits (replaces the hard-coded 500 minimum).
+    const check = await checkTransactionAmount('withdrawal', req.body.amount);
+    if (!check.ok) return res.status(check.status).json(limitErrorBody(check));
     const user = await findByPublicId(User, req.body.user_id);
-    const amount = num(req.body.amount);
-    if (!user || amount < 500) return res.status(500).json({ success: false, error: 'Failed to create withdrawal request: The given data was invalid.' });
+    const amount = check.amount;
+    if (!user) return res.status(500).json({ success: false, error: 'Failed to create withdrawal request: The given data was invalid.' });
     const address = user.payment_details && user.payment_details.usdt_wallet_address;
     if (!address) {
       return res.status(400).json({
