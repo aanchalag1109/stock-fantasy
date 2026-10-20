@@ -1,0 +1,180 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT
+
+  Feature: Deposit and Withdrawal Settings Module
+  Purpose: Manage minimum and maximum deposit and withdrawal limits
+  Origin: Newly implemented in node-project; not directly converted
+           from the original PHP implementation.
+
+  Important: Keep this implementation distinguishable from the
+  original PHP project when comparing functionality in the future.
+%>
+<%
+  const val = (k) => (limits[k] === null || limits[k] === undefined) ? '' : limits[k];
+  const sections = [
+    { title: 'Deposit Settings', icon: 'wallet2', fields: [
+      { key: 'min_deposit_amount', label: 'Minimum Deposit Amount' },
+      { key: 'max_deposit_amount', label: 'Maximum Deposit Amount' },
+    ] },
+    { title: 'Withdrawal Settings', icon: 'cash-coin', fields: [
+      { key: 'min_withdrawal_amount', label: 'Minimum Withdrawal Amount' },
+      { key: 'max_withdrawal_amount', label: 'Maximum Withdrawal Amount' },
+    ] },
+  ];
+%>
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div id="dwAlert" class="d-none mb-4" role="alert"></div>
+
+            <div class="card shadow-lg border-0 mb-4">
+                <div class="card-header bg-primary text-white d-flex align-items-center">
+                    <i class="bi bi-sliders me-2" style="font-size:1.5rem;"></i>
+                    <h2 class="mb-0 text-white h4">Deposit &amp; Withdrawal Settings</h2>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-4">Set the minimum and maximum amounts (₹) users can deposit and withdraw. Amounts must be greater than 0, up to 2 decimal places, and the maximum must not be lower than the minimum.</p>
+
+                    <form id="dwSettingsForm" action="/deposit-withdrawal-settings" method="POST" novalidate>
+                        <div class="row g-4">
+                            <% sections.forEach(section => { %>
+                            <div class="col-md-6">
+                                <div class="card h-100 border-0 bg-light">
+                                    <div class="card-body">
+                                        <h5 class="card-title mb-3"><i class="bi bi-<%= section.icon %> me-2"></i><%= section.title %></h5>
+                                        <% section.fields.forEach(field => { %>
+                                        <div class="mb-3">
+                                            <label for="<%= field.key %>" class="form-label"><%= field.label %> <span class="text-danger">*</span></label>
+                                            <div class="input-group has-validation">
+                                                <span class="input-group-text">₹</span>
+                                                <input type="number" name="<%= field.key %>" id="<%= field.key %>" class="form-control"
+                                                       value="<%= val(field.key) %>" min="0.01" max="<%= maxAllowed %>" step="0.01"
+                                                       inputmode="decimal" required>
+                                                <div class="invalid-feedback" data-error-for="<%= field.key %>"></div>
+                                            </div>
+                                        </div>
+                                        <% }) %>
+                                    </div>
+                                </div>
+                            </div>
+                            <% }) %>
+                        </div>
+
+                        <div class="d-flex justify-content-end mt-4">
+                            <button type="submit" id="dwSaveBtn" class="btn btn-primary">
+                                <i class="bi bi-save me-1"></i> Save Settings
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('dwSettingsForm');
+    var btn = document.getElementById('dwSaveBtn');
+    var alertBox = document.getElementById('dwAlert');
+    var btnHtml = btn.innerHTML;
+    var MAX_ALLOWED = <%= maxAllowed %>;
+    var FIELDS = {
+        min_deposit_amount: 'Minimum deposit amount',
+        max_deposit_amount: 'Maximum deposit amount',
+        min_withdrawal_amount: 'Minimum withdrawal amount',
+        max_withdrawal_amount: 'Maximum withdrawal amount'
+    };
+    var submitting = false;
+
+    function showAlert(type, message) {
+        var icon = type === 'success' ? 'check-circle-fill' : 'x-circle-fill';
+        alertBox.className = 'alert alert-' + type + ' alert-dismissible fade show mb-4';
+        alertBox.innerHTML = '<i class="bi bi-' + icon + ' me-2"></i><span></span>' +
+            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+        alertBox.querySelector('span').textContent = message;
+        alertBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function setErrors(errors) {
+        Object.keys(FIELDS).forEach(function (key) {
+            var input = document.getElementById(key);
+            var fb = form.querySelector('[data-error-for="' + key + '"]');
+            if (errors[key]) { input.classList.add('is-invalid'); fb.textContent = errors[key]; }
+            else { input.classList.remove('is-invalid'); fb.textContent = ''; }
+        });
+    }
+
+    // Mirrors services/deposit-withdrawal-settings.service.js validate(); the server stays authoritative.
+    function validate(data) {
+        var errors = {};
+        Object.keys(FIELDS).forEach(function (key) {
+            var str = String(data[key] || '').trim();
+            var label = FIELDS[key];
+            if (str === '') errors[key] = label + ' is required.';
+            else if (!/^\d+(\.\d{1,2})?$/.test(str)) errors[key] = label + ' must be a positive number with at most 2 decimal places.';
+            else if (Number(str) <= 0) errors[key] = label + ' must be greater than 0.';
+            else if (Number(str) > MAX_ALLOWED) errors[key] = label + ' cannot exceed ' + MAX_ALLOWED.toLocaleString('en-IN') + '.';
+        });
+        if (!errors.min_deposit_amount && !errors.max_deposit_amount && Number(data.min_deposit_amount) > Number(data.max_deposit_amount)) {
+            errors.max_deposit_amount = 'Maximum deposit amount must be greater than or equal to the minimum deposit amount.';
+        }
+        if (!errors.min_withdrawal_amount && !errors.max_withdrawal_amount && Number(data.min_withdrawal_amount) > Number(data.max_withdrawal_amount)) {
+            errors.max_withdrawal_amount = 'Maximum withdrawal amount must be greater than or equal to the minimum withdrawal amount.';
+        }
+        return errors;
+    }
+
+    function setBusy(busy) {
+        submitting = busy;
+        btn.disabled = busy;
+        btn.innerHTML = busy ? '<span class="spinner-border spinner-border-sm me-1"></span> Saving...' : btnHtml;
+    }
+
+    Object.keys(FIELDS).forEach(function (key) {
+        document.getElementById(key).addEventListener('input', function () {
+            this.classList.remove('is-invalid');
+        });
+    });
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (submitting) return;
+
+        var data = {};
+        Object.keys(FIELDS).forEach(function (key) { data[key] = document.getElementById(key).value; });
+
+        var errors = validate(data);
+        setErrors(errors);
+        if (Object.keys(errors).length) {
+            showAlert('danger', 'Please correct the highlighted fields.');
+            return;
+        }
+
+        setBusy(true);
+        fetch(form.action, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(data)
+        })
+            .then(function (r) {
+                if (r.redirected) throw new Error('Your session has expired. Please log in again.');
+                return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+            })
+            .then(function (res) {
+                if (res.ok && res.body.success) {
+                    Object.keys(FIELDS).forEach(function (key) {
+                        if (res.body.data && res.body.data[key] !== null) document.getElementById(key).value = res.body.data[key];
+                    });
+                    setErrors({});
+                    showAlert('success', res.body.message);
+                } else {
+                    setErrors(res.body.errors || {});
+                    showAlert('danger', res.body.message || 'Failed to save settings.');
+                }
+            })
+            .catch(function (err) { showAlert('danger', err.message || 'Network error. Please try again.'); })
+            .finally(function () { setBusy(false); });
+    });
+});
+</script>

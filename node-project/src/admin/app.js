@@ -55,6 +55,8 @@ const settingsRoutes = require('./routes/settings.routes');
 const cronRoutes = require('./routes/cron.routes');
 const apiRoutes = require('./routes/api.routes');
 const pagesRoutes = require('./routes/pages.routes');
+// NEW IMPLEMENTATION (node-project only, not converted from PHP): Deposit and Withdrawal Settings Module
+const depositWithdrawalSettingsRoutes = require('./routes/deposit-withdrawal-settings.routes');
 
 adminApp.use('/', authRoutes);
 adminApp.use('/dashboard', dashboardRoutes);
@@ -74,6 +76,8 @@ adminApp.use('/settings', settingsRoutes);
 adminApp.use('/cron', cronRoutes);
 adminApp.use('/cron-logs', cronRoutes);
 adminApp.use('/api', apiRoutes);
+// NEW IMPLEMENTATION (node-project only, not converted from PHP): Deposit and Withdrawal Settings Module
+adminApp.use('/deposit-withdrawal-settings', depositWithdrawalSettingsRoutes);
 adminApp.use('/', pagesRoutes);
 
 // Root redirect
