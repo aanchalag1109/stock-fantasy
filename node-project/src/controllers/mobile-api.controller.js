@@ -18,6 +18,8 @@ const {
   findByPublicId, ensureOldId, priceMaps, scoreAssets, selectedMultipliers,
   buildDynamicPrizeDistribution, asPrizeArray, round2,
 } = require('../helpers/mobile-compat');
+// NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+const otpService = require('../services/otp.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit/withdrawal limits
 const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
@@ -51,6 +53,10 @@ const login = async (req, res) => {
     }
     const user = await User.findOne({ mobile });
     if (!user) return res.status(404).json({ success: false, message: 'User not found. Please register first.' });
+    // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+    // PHP trusted the client's OTP check; the OTP from POST /send-otp is now verified here.
+    const otpResult = await otpService.verifyOtp(mobile, 'login', req.body.otp);
+    if (!otpResult.ok) return otpService.sendVerifyError(res, otpResult);
     if (req.body.fcm_token) {
       user.fcm_token = req.body.fcm_token;
       await user.save();
@@ -72,12 +78,13 @@ const register = async (req, res) => {
     const mobile = String(req.body.mobile || '').trim();
     const name = String(req.body.name || '').trim();
     const email = String(req.body.email || '').trim().toLowerCase();
-    const password = String(req.body.password || '');
     const errors = {};
     if (mobile.length < 10 || mobile.length > 15) errors.mobile = ['The mobile field is required.'];
     if (!name || name.length > 255) errors.name = ['The name field is required.'];
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = ['The email field must be a valid email.'];
-    if (password.length < 6) errors.password = ['The password must be at least 6 characters.'];
+    // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+    // The PHP password rule is removed; signup is confirmed by the OTP instead.
+    if (!/^\d{6}$/.test(String(req.body.otp || '').trim())) errors.otp = ['The otp field must be a 6-digit code.'];
     if (Object.keys(errors).length) {
       return res.status(400).json({ success: false, message: 'Registration failed: The given data was invalid.', errors });
     }
@@ -93,11 +100,15 @@ const register = async (req, res) => {
         errors: { email: ['The email has already been taken.'] },
       });
     }
+    // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+    // Verified after the field/duplicate checks so a rejected form does not use up the OTP.
+    const otpResult = await otpService.verifyOtp(mobile, 'signup', req.body.otp);
+    if (!otpResult.ok) return otpService.sendVerifyError(res, otpResult);
     const user = await User.create({
       name,
       email,
       mobile,
-      password: await bcrypt.hash(password, 10),
+      password: null,
       deposit_balance: 0,
       winnings_balance: 0,
     });
@@ -112,41 +123,13 @@ const register = async (req, res) => {
   }
 };
 
-const passwordLogin = async (req, res) => {
-  try {
-    const mobile = String(req.body.mobile || '').trim();
-    const password = String(req.body.password || '');
-    if (mobile.length < 10 || !password) {
-      return res.status(500).json({ success: false, message: 'Login failed: The given data was invalid.' });
-    }
-    const user = await User.findOne({ mobile });
-    const matches = user && user.password ? await bcrypt.compare(password, user.password) : false;
-    if (!user || !matches) {
-      return res.status(401).json({ success: false, message: 'Invalid mobile number or password' });
-    }
-    if (req.body.fcm_token) {
-      user.fcm_token = req.body.fcm_token;
-      await user.save();
-    }
-    await ensureOldId(User, user);
-    return res.json({
-      success: true,
-      message: 'Login successful',
-      user: {
-        id: publicId(user),
-        name: user.name || 'User',
-        email: user.email || '',
-        mobile: user.mobile || '',
-        wallet_balance: walletOf(user),
-        age: user.age,
-        gender: user.gender,
-      },
-      unread_notifications: await unreadCount(user),
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Login failed: ' + err.message });
-  }
-};
+// NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+// The PHP password login has been retired: the app now logs in with OTP only.
+// The route stays so older app builds get a clear message instead of a 404.
+const passwordLogin = async (req, res) => res.status(410).json({
+  success: false,
+  message: 'Password login is no longer supported. Please login with OTP.',
+});
 
 const checkUser = async (req, res) => {
   try {
