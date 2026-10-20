@@ -100,6 +100,12 @@
           <i class="bi bi-cash-coin"></i> Withdrawal Requests
         </a>
       </li>
+      <%# NEW IMPLEMENTATION (node-project only, not converted from PHP): Deposit and Withdrawal Settings Module %>
+      <li class="nav-item">
+        <a href="/deposit-withdrawal-settings" class="sidebar-link <%= on('/deposit-withdrawal-settings') ? 'active' : '' %>">
+          <i class="bi bi-sliders"></i> Deposit &amp; Withdrawal Settings
+        </a>
+      </li>
       <li class="nav-item">
         <a href="/live-price-feeds" class="sidebar-link <%= on('/live-price-feeds') ? 'active' : '' %>">
           <i class="bi bi-graph-up"></i> Live Price Feeds
