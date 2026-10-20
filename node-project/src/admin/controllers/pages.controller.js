@@ -13,6 +13,8 @@ const Transaction = require('../../models/transaction.model');
 const ContestEntry = require('../../models/contest-entry.model');
 const ContestPerformancePrize = require('../../models/contest-performance-prize.model');
 const { render, renderStandalone } = require('../helpers/render');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../../services/notifications/notification.service');
 
 function fmt(d) {
   if (!d) return '—';
@@ -801,7 +803,12 @@ const payments = {
     });
   },
   setStatus: (status) => async (req, res) => {
-    await Payment.findByIdAndUpdate(req.params.id, { payment_status: status });
+    const previous = await Payment.findByIdAndUpdate(req.params.id, { payment_status: status });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — admin rejected an order that was never credited.
+    // "Approve" only flips payment_status (no wallet credit), so it does not send a success notification.
+    if (status === -1 && previous && ![1, -1].includes(Number(previous.payment_status))) {
+      notify('deposit_failed', { user: previous.user_id, dedupeKey: `deposit_failed:payment:${previous.order_id}`, params: { amount: previous.amount, reference: previous.order_id }, data: { order_id: previous.order_id } });
+    }
     const labels = { 1: 'Payment approved', 4: 'Payment marked for verification', '-1': 'Payment rejected' };
     req.flash('success', labels[status] || 'Payment updated');
     res.redirect('/payments');

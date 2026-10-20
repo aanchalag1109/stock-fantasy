@@ -20,6 +20,10 @@ const {
 } = require('../helpers/mobile-compat');
 // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
 const otpService = require('../services/otp.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit/withdrawal limits
+const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../services/notifications/notification.service');
 
 function authUser(user) {
   return {
@@ -1336,18 +1340,23 @@ const clearUserTransactions = async (req, res) => {
 
 const depositAmount = async (req, res) => {
   try {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce deposit limits before any write.
+    const check = await checkTransactionAmount('deposit', req.body.wallet_balance);
+    if (!check.ok) return res.status(check.status).json({ ...limitErrorBody(check), errors: null });
     const user = await findByPublicId(User, req.body.user_id);
-    const amount = num(req.body.wallet_balance);
-    if (!user || amount < 0) return res.status(500).json({ success: false, error: 'Server error: The given data was invalid.', errors: null });
+    const amount = check.amount;
+    if (!user) return res.status(500).json({ success: false, error: 'Server error: The given data was invalid.', errors: null });
     user.deposit_balance = num(user.deposit_balance) + amount;
     await user.save();
-    await Transaction.create({
+    const depositTxn = await Transaction.create({
       user_id: user._id,
       type: 'deposit',
       amount,
       status: 'success',
       description: 'Manual deposit',
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+    notify('deposit_success', { user, dedupeKey: `deposit_success:txn:${depositTxn._id}`, params: { amount }, data: { transaction_id: String(depositTxn._id) } });
     return res.json({
       success: true,
       wallet_balance: walletOf(user),
@@ -1362,9 +1371,12 @@ const depositAmount = async (req, res) => {
 
 const withdrawAmount = async (req, res) => {
   try {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce withdrawal limits (replaces the hard-coded 500 minimum).
+    const check = await checkTransactionAmount('withdrawal', req.body.amount);
+    if (!check.ok) return res.status(check.status).json(limitErrorBody(check));
     const user = await findByPublicId(User, req.body.user_id);
-    const amount = num(req.body.amount);
-    if (!user || amount < 500) return res.status(500).json({ success: false, error: 'Failed to create withdrawal request: The given data was invalid.' });
+    const amount = check.amount;
+    if (!user) return res.status(500).json({ success: false, error: 'Failed to create withdrawal request: The given data was invalid.' });
     const address = user.payment_details && user.payment_details.usdt_wallet_address;
     if (!address) {
       return res.status(400).json({
@@ -1398,6 +1410,8 @@ const withdrawAmount = async (req, res) => {
       status: 'pending',
       description: `Withdrawal request #${publicId(withdrawal)} (USDT ${withdrawal.usdt_network || 'TRC20'})`,
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+    notify('withdrawal_submitted', { user, dedupeKey: `withdrawal_submitted:${withdrawal._id}`, params: { amount }, data: { screen: 'withdrawals', withdrawal_id: publicId(withdrawal) } });
     return res.json({
       success: true,
       withdrawal_id: publicId(withdrawal),
@@ -1429,6 +1443,9 @@ const getUserNotifications = async (req, res) => {
       type: row.type,
       created_at: sqlDate(row.created_at),
       is_read: !!row.is_read,
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — event + navigation payload (null for older rows)
+      event: row.event || null,
+      data: row.data || null,
     })),
   });
 };
@@ -1447,6 +1464,44 @@ const markAllAsRead = async (req, res) => {
   const user = await findByPublicId(User, req.body.user_id);
   if (user) await Notification.updateMany({ user_id: { $in: keysOf(user) }, is_read: false }, { $set: { is_read: true } });
   return res.json({ success: true, message: 'All notifications marked as read' });
+};
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT
+ *
+ * Feature: Automated Notifications and Notification Management
+ * GET/POST /api/v1/notification-preferences — per-user opt-outs. Follows the same
+ * user_id convention as the other mobile notification endpoints.
+ * Turning a category off stops its push notifications; session reminders are not
+ * created at all, while transaction/account notifications stay in in-app history.
+ */
+const NOTIFICATION_PREFERENCE_KEYS = ['session_reminders', 'winnings', 'transactions', 'account'];
+const preferencesOf = (user) => Object.fromEntries(NOTIFICATION_PREFERENCE_KEYS.map((key) => [
+  key, !(user.notification_preferences && user.notification_preferences[key] === false),
+]));
+
+const getNotificationPreferences = async (req, res) => {
+  const user = await findByPublicId(User, req.query.user_id || req.body.user_id);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+  return res.json({ success: true, preferences: preferencesOf(user) });
+};
+
+const updateNotificationPreferences = async (req, res) => {
+  const user = await findByPublicId(User, req.body.user_id);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+  const set = {};
+  for (const key of NOTIFICATION_PREFERENCE_KEYS) {
+    const value = req.body[key];
+    if (value === undefined) continue;
+    if (![true, false, 'true', 'false', 1, 0, '1', '0'].includes(value)) {
+      return res.status(422).json({ success: false, message: `${key} must be true or false` });
+    }
+    set[`notification_preferences.${key}`] = value === true || value === 'true' || value === 1 || value === '1';
+  }
+  if (!Object.keys(set).length) return res.status(422).json({ success: false, message: 'No preferences provided' });
+  await User.updateOne({ _id: user._id }, { $set: set });
+  const fresh = await User.findById(user._id).select('notification_preferences').lean();
+  return res.json({ success: true, message: 'Notification preferences updated', preferences: preferencesOf(fresh) });
 };
 
 const getAnnouncements = async (req, res) => {
@@ -1531,4 +1586,5 @@ module.exports = {
   getWalletAmount, getUserTransactions, userTransactionsEmpty, clearUserTransactions, depositAmount, withdrawAmount,
   getUserNotifications, markAsRead, markAllAsRead, getAnnouncements, sessionStats,
   getLivePrices, getStockLivePrice, getCryptoLivePrice, lgpayCallback,
+  getNotificationPreferences, updateNotificationPreferences, // NEW IMPLEMENTATION — NODE.JS PROJECT
 };

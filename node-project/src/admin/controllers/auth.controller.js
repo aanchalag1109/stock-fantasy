@@ -30,6 +30,12 @@ const login = async (req, res) => {
       return res.redirect('/login');
     }
 
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control — disabled admins cannot log in.
+    if (user.admin_status === 'disabled') {
+      req.flash('error', 'Your admin account has been disabled. Please contact a super admin.');
+      return res.redirect('/login');
+    }
+
     req.session.admin = {
       id: user._id.toString(),
       name: user.name,

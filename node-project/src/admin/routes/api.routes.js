@@ -3,6 +3,8 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const router = require('express').Router();
 const { requireAdmin } = require('../middleware/auth');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (feature-level permissions)
+const { requirePermission } = require('../middleware/permission');
 const config = require('../../config/env');
 const User = require('../../models/user.model');
 const Contest = require('../../models/contest.model');
@@ -13,7 +15,7 @@ const Asset = require('../../models/asset.model');
 const MarketTypeCategory = require('../../models/market-type-category.model');
 
 // Laravel registers this twice. The later api.php route wins and counts contests.status = live.
-router.get('/live-contests-count', requireAdmin, async (req, res) => {
+router.get('/live-contests-count', requireAdmin, requirePermission('live_management.view'), async (req, res) => {
   try {
     const count = await Contest.countDocuments({ status: 'live' });
     res.json({ count });
@@ -23,7 +25,7 @@ router.get('/live-contests-count', requireAdmin, async (req, res) => {
 });
 
 // PHP admin/api/categories/{type} returns id + name. id is the MySQL category id.
-router.get('/categories/:type', requireAdmin, async (req, res) => {
+router.get('/categories/:type', requireAdmin, requirePermission('sessions.create', 'sessions.edit'), async (req, res) => {
   const categories = await MarketTypeCategory.find({ category_type: req.params.type, status: 'active' })
     .sort({ old_id: 1, _id: 1 })
     .select('old_id name')
@@ -32,7 +34,7 @@ router.get('/categories/:type', requireAdmin, async (req, res) => {
 });
 
 // PHP admin/api/assets/{categoryId} filters by the numeric category id.
-router.get('/assets/:categoryId', requireAdmin, async (req, res) => {
+router.get('/assets/:categoryId', requireAdmin, requirePermission('sessions.create', 'sessions.edit'), async (req, res) => {
   const categoryId = String(req.params.categoryId);
   const categoryKeys = [];
   if (/^\d+$/.test(categoryId)) {
@@ -56,7 +58,7 @@ router.get('/assets/:categoryId', requireAdmin, async (req, res) => {
   })));
 });
 
-router.get('/v1/stock-live-price', requireAdmin, async (req, res) => {
+router.get('/v1/stock-live-price', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'live_price_feeds.view'), async (req, res) => {
   try {
     const symbol = req.query.symbol;
     if (!symbol) return res.status(404).json({ success: false, error: 'Stock not found' });
@@ -89,7 +91,7 @@ router.get('/v1/stock-live-price', requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/v1/crypto-live-price', requireAdmin, async (req, res) => {
+router.get('/v1/crypto-live-price', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'live_price_feeds.view'), async (req, res) => {
   try {
     const response = await axios.get('https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest', {
       headers: {
@@ -124,7 +126,7 @@ router.get('/v1/crypto-live-price', requireAdmin, async (req, res) => {
 });
 
 // Session assets grouped by category (used by testing create basket)
-router.get('/session-assets/:id', requireAdmin, async (req, res) => {
+router.get('/session-assets/:id', requireAdmin, requirePermission('sessions.view', 'testing.view'), async (req, res) => {
   try {
     const id = String(req.params.id);
     let session = null;
@@ -154,13 +156,13 @@ router.get('/session-assets/:id', requireAdmin, async (req, res) => {
 });
 
 // All sessions (for dropdowns)
-router.get('/sessions', requireAdmin, async (req, res) => {
+router.get('/sessions', requireAdmin, requirePermission('sessions.view'), async (req, res) => {
   const sessions = await LeagueSession.find().select('_id name status').lean();
   res.json(sessions);
 });
 
 // User search
-router.get('/users/search', requireAdmin, async (req, res) => {
+router.get('/users/search', requireAdmin, requirePermission('users.view'), async (req, res) => {
   const { q } = req.query;
   const users = await User.find({
     $or: [{ name: { $regex: q, $options: 'i' } }, { mobile: { $regex: q, $options: 'i' } }]
@@ -171,7 +173,7 @@ router.get('/users/search', requireAdmin, async (req, res) => {
 // ── Performance APIs ────────────────────────────────────────────────────────
 
 // Live sessions data (mirrors PHP LiveManagementController::getLiveSessionsData)
-router.get('/live-sessions-data', requireAdmin, async (req, res) => {
+router.get('/live-sessions-data', requireAdmin, requirePermission('live_management.view'), async (req, res) => {
   try {
     const status = req.query.status || 'all';
     const match = {};
@@ -212,7 +214,7 @@ router.get('/live-sessions-data', requireAdmin, async (req, res) => {
 });
 
 // Session details (mirrors PHP /api/sessions/:id)
-router.get('/sessions/:id', requireAdmin, async (req, res) => {
+router.get('/sessions/:id', requireAdmin, requirePermission('sessions.view'), async (req, res) => {
   try {
     const id = String(req.params.id);
     let session = null;
@@ -226,7 +228,7 @@ router.get('/sessions/:id', requireAdmin, async (req, res) => {
 });
 
 // Session contests (mirrors PHP PerformanceController::getSessionContests)
-router.get('/session-contests/:id', requireAdmin, async (req, res) => {
+router.get('/session-contests/:id', requireAdmin, requirePermission('sessions.view', 'contests.view'), async (req, res) => {
   try {
     const id = String(req.params.id);
     let session = null;
@@ -264,7 +266,7 @@ router.get('/session-contests/:id', requireAdmin, async (req, res) => {
 });
 
 // Session prices — start/end prices stored on session.assets array
-router.get('/session-prices/:id', requireAdmin, async (req, res) => {
+router.get('/session-prices/:id', requireAdmin, requirePermission('performance.view'), async (req, res) => {
   try {
     const id = String(req.params.id);
     let session = null;
@@ -292,7 +294,7 @@ router.get('/session-prices/:id', requireAdmin, async (req, res) => {
 });
 
 // Performance contest prices (used in contest.ejs loadPrices)
-router.get('/performance/:contestId/prices', requireAdmin, async (req, res) => {
+router.get('/performance/:contestId/prices', requireAdmin, requirePermission('performance.view'), async (req, res) => {
   try {
     const id = String(req.params.contestId);
     let contest = null;
@@ -330,7 +332,7 @@ router.get('/performance/:contestId/prices', requireAdmin, async (req, res) => {
 });
 
 // Performance contest transactions (used in contest.ejs loadTransactions)
-router.get('/performance/:contestId/transactions', requireAdmin, async (req, res) => {
+router.get('/performance/:contestId/transactions', requireAdmin, requirePermission('performance.view'), async (req, res) => {
   try {
     const id = String(req.params.contestId);
     let contest = null;
@@ -370,7 +372,7 @@ router.get('/performance/:contestId/transactions', requireAdmin, async (req, res
 });
 
 // Performance contest participants (used in contest.ejs loadParticipants)
-router.get('/performance/:contestId/participants', requireAdmin, async (req, res) => {
+router.get('/performance/:contestId/participants', requireAdmin, requirePermission('performance.view'), async (req, res) => {
   try {
     const id = String(req.params.contestId);
     let contest = null;
@@ -409,7 +411,7 @@ router.get('/performance/:contestId/participants', requireAdmin, async (req, res
 });
 
 // Test Transaction for a session (mirrors PHP POST /api/test-transaction/:sessionId)
-router.post('/test-transaction/:sessionId', requireAdmin, async (req, res) => {
+router.post('/test-transaction/:sessionId', requireAdmin, requirePermission('testing.manage'), async (req, res) => {
   try {
     const id = String(req.params.sessionId);
     let session = null;

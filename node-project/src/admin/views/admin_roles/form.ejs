@@ -1,0 +1,123 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT
+
+  Feature: Admin User Access Control
+  Purpose: Manage admin users, roles, and feature-level permissions
+  Origin: Newly implemented in node-project; not directly converted
+           from the original PHP implementation.
+
+  Important: Keep this implementation distinguishable from the
+  original PHP project when comparing functionality in the future.
+%>
+<%
+  const isEdit = !!role;
+  const action = isEdit ? '/admin-roles/' + role._id + '?_method=PUT' : '/admin-roles';
+  const granted = new Set(values.permissions || []);
+  const groups = [];
+  modules.forEach(m => {
+    let g = groups.find(x => x.name === m.group);
+    if (!g) { g = { name: m.group, modules: [] }; groups.push(g); }
+    g.modules.push(m);
+  });
+%>
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-xl-10">
+            <form action="<%= action %>" method="POST" novalidate id="roleForm">
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-primary text-white d-flex align-items-center">
+                        <i class="bi bi-shield-lock me-2" style="font-size:1.4rem;"></i>
+                        <h2 class="mb-0 text-white h5"><%= title %></h2>
+                    </div>
+                    <div class="card-body">
+                        <% if (Object.keys(errors).length) { %>
+                        <div class="alert alert-danger">Please correct the highlighted fields.</div>
+                        <% } %>
+                        <% if (isEdit && typeof assignedCount !== 'undefined' && assignedCount) { %>
+                        <div class="alert alert-info small mb-3"><i class="bi bi-info-circle me-1"></i>This role is assigned to <%= assignedCount %> admin user(s). Saving changes their access immediately.</div>
+                        <% } %>
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label for="name" class="form-label">Role name <span class="text-danger">*</span></label>
+                                <input type="text" id="name" name="name" class="form-control <%= errors.name ? 'is-invalid' : '' %>" value="<%= values.name %>" maxlength="100" required>
+                                <div class="invalid-feedback"><%= errors.name %></div>
+                            </div>
+                            <div class="col-md-7">
+                                <label for="description" class="form-label">Description</label>
+                                <input type="text" id="description" name="description" class="form-control <%= errors.description ? 'is-invalid' : '' %>" value="<%= values.description %>" maxlength="500">
+                                <div class="invalid-feedback"><%= errors.description %></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <h3 class="h6 mb-0"><i class="bi bi-ui-checks-grid me-2"></i>Permissions</h3>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-select="all">Select all</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-select="view">View only</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-select="none">Clear</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <% if (errors.permissions) { %><div class="alert alert-danger py-2"><%= errors.permissions %></div><% } %>
+                        <p class="small text-muted">Granting any action in a module also grants <strong>View</strong> for that module. Managing admin users and roles is reserved for super admins.</p>
+                        <% groups.forEach(g => { %>
+                        <h4 class="h6 text-uppercase text-muted small mt-4 mb-2"><%= g.name %></h4>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <tbody>
+                                <% g.modules.forEach(m => { %>
+                                <tr data-module="<%= m.key %>">
+                                    <td style="width: 34%;" class="fw-semibold"><%= m.label %></td>
+                                    <td>
+                                        <div class="d-flex flex-wrap gap-3">
+                                        <% Object.entries(m.actions).forEach(([action, label]) => { const key = m.key + '.' + action; %>
+                                            <div class="form-check mb-0">
+                                                <input class="form-check-input perm" type="checkbox" name="permissions" value="<%= key %>" id="p_<%= key %>"
+                                                       data-action="<%= action %>" <%= granted.has(key) ? 'checked' : '' %>>
+                                                <label class="form-check-label small" for="p_<%= key %>"><%= label %></label>
+                                            </div>
+                                        <% }) %>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                        <% }) %>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="/admin-roles" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i><%= isEdit ? 'Save Role' : 'Create Role' %></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('roleForm');
+    // Checking any action ticks the module's View box; unticking View clears the module's actions.
+    form.addEventListener('change', function (e) {
+        if (!e.target.classList.contains('perm')) return;
+        var row = e.target.closest('tr');
+        var view = row.querySelector('[data-action="view"]');
+        if (e.target.checked && view && e.target !== view) view.checked = true;
+        if (e.target === view && !view.checked) row.querySelectorAll('.perm').forEach(function (cb) { cb.checked = false; });
+    });
+    document.querySelectorAll('[data-select]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var mode = btn.getAttribute('data-select');
+            form.querySelectorAll('.perm').forEach(function (cb) {
+                cb.checked = mode === 'all' || (mode === 'view' && cb.getAttribute('data-action') === 'view');
+            });
+        });
+    });
+});
+</script>

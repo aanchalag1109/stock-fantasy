@@ -10,6 +10,10 @@ const LeagueSession = require('../models/league-session.model');
 const Notification = require('../models/notification.model');
 const mongoose = require('mongoose');
 const logger = require('../config/logger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit/withdrawal limits
+const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
+const { notify } = require('../services/notifications/notification.service');
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -102,14 +106,18 @@ const getUserTransactions = async (req, res) => {
  * Manual admin deposit.
  */
 const depositAmount = async (req, res) => {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce deposit limits before any write.
+  const check = await checkTransactionAmount('deposit', req.body.wallet_balance || req.body.amount);
+  if (!check.ok) return res.status(check.status).json(limitErrorBody(check));
+
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
 
     const userId = req.body.user_id;
-    const amount = parseFloat(req.body.wallet_balance || req.body.amount || 0);
+    const amount = check.amount;
 
-    if (!userId || isNaN(amount) || amount <= 0) {
+    if (!userId) {
       await session.abortTransaction();
       return res.status(400).json({ success: false, error: 'user_id and valid amount required' });
     }
@@ -123,7 +131,7 @@ const depositAmount = async (req, res) => {
     user.deposit_balance = parseFloat((user.deposit_balance || 0)) + amount;
     await user.save({ session });
 
-    await Transaction.create([{
+    const [depositTxn] = await Transaction.create([{
       user_id: userId,
       type: 'deposit',
       amount,
@@ -132,6 +140,8 @@ const depositAmount = async (req, res) => {
     }], { session });
 
     await session.commitTransaction();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications (after commit)
+    notify('deposit_success', { user: user._id, dedupeKey: `deposit_success:txn:${depositTxn._id}`, params: { amount }, data: { transaction_id: String(depositTxn._id) } });
 
     const unread = await getUnreadCount(user._id);
     return res.json({
@@ -154,17 +164,21 @@ const depositAmount = async (req, res) => {
  * POST /api/v1/wallet/withdraw
  */
 const withdrawAmount = async (req, res) => {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce withdrawal limits (replaces the hard-coded 500 minimum).
+  const check = await checkTransactionAmount('withdrawal', req.body.amount);
+  if (!check.ok) return res.status(check.status).json(limitErrorBody(check));
+
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
 
     const userId = req.body.user_id || req.userId;
-    const amount = parseFloat(req.body.amount || 0);
+    const amount = check.amount;
     const message = req.body.message || null;
 
-    if (!userId || isNaN(amount) || amount < 500) {
+    if (!userId) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, error: 'user_id required and minimum withdrawal is 500' });
+      return res.status(400).json({ success: false, error: 'user_id is required' });
     }
 
     const user = await User.findById(userId).session(session);
@@ -216,6 +230,8 @@ const withdrawAmount = async (req, res) => {
     }], { session });
 
     await session.commitTransaction();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications (after commit)
+    notify('withdrawal_submitted', { user: user._id, dedupeKey: `withdrawal_submitted:${withdrawalId}`, params: { amount }, data: { screen: 'withdrawals', withdrawal_id: String(withdrawalId) } });
 
     const unread = await getUnreadCount(user._id);
     return res.json({

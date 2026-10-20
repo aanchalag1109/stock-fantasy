@@ -1,0 +1,89 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT
+
+  Feature: Admin User Access Control
+  Purpose: Manage admin users, roles, and feature-level permissions
+  Origin: Newly implemented in node-project; not directly converted
+           from the original PHP implementation.
+
+  Important: Keep this implementation distinguishable from the
+  original PHP project when comparing functionality in the future.
+%>
+<%
+  const isEdit = !!adminUser;
+  const action = isEdit ? '/admin-users/' + adminUser._id + '?_method=PUT' : '/admin-users';
+  const v = (k) => (values && values[k] != null) ? values[k] : '';
+  const invalid = (k) => errors[k] ? 'is-invalid' : '';
+%>
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-primary text-white d-flex align-items-center">
+                    <i class="bi bi-person-badge me-2" style="font-size:1.4rem;"></i>
+                    <h2 class="mb-0 text-white h5"><%= title %></h2>
+                </div>
+                <div class="card-body">
+                    <% if (Object.keys(errors).length) { %>
+                    <div class="alert alert-danger">Please correct the highlighted fields.</div>
+                    <% } %>
+                    <form action="<%= action %>" method="POST" novalidate autocomplete="off">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                                <input type="text" id="name" name="name" class="form-control <%= invalid('name') %>" value="<%= v('name') %>" maxlength="255" required>
+                                <div class="invalid-feedback"><%= errors.name %></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="email" class="form-label">Email (login) <span class="text-danger">*</span></label>
+                                <input type="email" id="email" name="email" class="form-control <%= invalid('email') %>" value="<%= v('email') %>" required>
+                                <div class="invalid-feedback"><%= errors.email %></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="mobile" class="form-label">Mobile <span class="text-muted small">(optional)</span></label>
+                                <input type="text" id="mobile" name="mobile" class="form-control <%= invalid('mobile') %>" value="<%= v('mobile') %>">
+                                <div class="invalid-feedback"><%= errors.mobile %></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="admin_status" class="form-label">Status</label>
+                                <select id="admin_status" name="admin_status" class="form-select">
+                                    <option value="active" <%= v('admin_status') !== 'disabled' ? 'selected' : '' %>>Active</option>
+                                    <option value="disabled" <%= v('admin_status') === 'disabled' ? 'selected' : '' %>>Disabled (cannot log in)</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label for="access_level" class="form-label">Access <span class="text-danger">*</span></label>
+                                <select id="access_level" name="access_level" class="form-select <%= invalid('access_level') %>" required>
+                                    <option value="">— Choose a role —</option>
+                                    <option value="<%= SUPER %>" <%= v('access_level') === SUPER ? 'selected' : '' %>>Super Admin (full access, manages admin users &amp; roles)</option>
+                                    <% roles.forEach(r => { %>
+                                    <option value="<%= r._id %>" <%= v('access_level') === String(r._id) ? 'selected' : '' %>><%= r.name %></option>
+                                    <% }) %>
+                                </select>
+                                <div class="invalid-feedback"><%= errors.access_level %></div>
+                                <div class="form-text">
+                                    <% if (!roles.length) { %>No roles yet — <a href="/admin-roles/create">create a role</a> first to give limited access.<% } else { %>Roles are managed under <a href="/admin-roles">Roles &amp; Permissions</a>.<% } %>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="password" class="form-label">Password <% if (!isEdit) { %><span class="text-danger">*</span><% } %></label>
+                                <input type="password" id="password" name="password" class="form-control <%= invalid('password') %>" minlength="8" autocomplete="new-password" <%= isEdit ? '' : 'required' %>>
+                                <div class="invalid-feedback"><%= errors.password %></div>
+                                <% if (isEdit) { %><div class="form-text">Leave blank to keep the current password.</div><% } %>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="password_confirmation" class="form-label">Confirm Password</label>
+                                <input type="password" id="password_confirmation" name="password_confirmation" class="form-control <%= invalid('password_confirmation') %>" autocomplete="new-password">
+                                <div class="invalid-feedback"><%= errors.password_confirmation %></div>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-end gap-2 mt-4">
+                            <a href="/admin-users" class="btn btn-outline-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i><%= isEdit ? 'Save Changes' : 'Create Admin User' %></button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,3 +1,4 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control — links are shown only when can() allows the module. %>
 <%
   function on(prefix) {
     if (prefix === '/dashboard') return currentPath === '/dashboard' || currentPath === '/';
@@ -15,113 +16,178 @@
   <nav class="flex-grow-1 overflow-y-auto py-2">
     <div class="sidebar-section">Main</div>
     <ul class="nav flex-column px-2">
+      <% if (can('dashboard.view')) { %>
       <li class="nav-item">
         <a href="/dashboard" class="sidebar-link <%= on('/dashboard') ? 'active' : '' %>">
           <i class="bi bi-speedometer2"></i> Dashboard
         </a>
       </li>
+      <% } %>
+      <% if (can('sessions.view')) { %>
       <li class="nav-item">
         <a href="/league_sessions" class="sidebar-link <%= (on('/league_sessions') || on('/sessions')) ? 'active' : '' %>">
           <i class="bi bi-calendar2-week"></i> Leagues/Sessions
         </a>
       </li>
+      <% } %>
+      <% if (can('templates.view')) { %>
       <li class="nav-item">
         <a href="/templates" class="sidebar-link <%= on('/templates') ? 'active' : '' %>">
           <i class="bi bi-bookmark"></i> Saved Templates
         </a>
       </li>
+      <% } %>
+      <% if (can('performance.view')) { %>
       <li class="nav-item">
         <a href="/performance" class="sidebar-link <%= on('/performance') ? 'active' : '' %>">
           <i class="bi bi-graph-up-arrow"></i> Performance
         </a>
       </li>
+      <% } %>
+      <% if (can('contest_analysis.view')) { %>
       <li class="nav-item">
         <a href="/contest-analysis" class="sidebar-link <%= on('/contest-analysis') ? 'active' : '' %>">
           <i class="bi bi-bar-chart-line"></i> Contest Analysis
         </a>
       </li>
+      <% } %>
+      <% if (can('announcements.view')) { %>
       <li class="nav-item">
         <a href="/announcements" class="sidebar-link <%= on('/announcements') ? 'active' : '' %>">
           <i class="bi bi-megaphone"></i> Announcements
         </a>
       </li>
+      <% } %>
+      <% if (can('market_categories.view')) { %>
       <li class="nav-item">
         <a href="/market_type_categories" class="sidebar-link <%= on('/market_type_categories') ? 'active' : '' %>">
           <i class="bi bi-tags"></i> Market Type Category
         </a>
       </li>
+      <% } %>
+      <% if (can('users.view')) { %>
       <li class="nav-item">
         <a href="/users" class="sidebar-link <%= on('/users') ? 'active' : '' %>">
           <i class="bi bi-people"></i> Players
         </a>
       </li>
+      <% } %>
+      <% if (can('contests.view')) { %>
       <li class="nav-item">
         <a href="/contests" class="sidebar-link <%= on('/contests') ? 'active' : '' %>">
           <i class="bi bi-trophy"></i> Contests
         </a>
       </li>
+      <% } %>
+      <% if (can('live_management.view')) { %>
       <li class="nav-item">
         <a href="/live-management" class="sidebar-link <%= on('/live-management') ? 'active' : '' %>">
           <i class="bi bi-broadcast-pin"></i> Live Management
           <span class="badge bg-danger ms-auto" id="liveContestCount">0</span>
         </a>
       </li>
+      <% } %>
+      <% if (can('cron.view')) { %>
       <li class="nav-item">
         <a href="/cron-logs" class="sidebar-link <%= (on('/cron-logs') || on('/cron')) ? 'active' : '' %>">
           <i class="bi bi-clock-history"></i> Cron Check
         </a>
       </li>
+      <% } %>
+      <% if (can('transactions.view')) { %>
       <li class="nav-item">
         <a href="/transactions" class="sidebar-link <%= on('/transactions') ? 'active' : '' %>">
           <i class="bi bi-arrow-left-right"></i> Transactions
         </a>
       </li>
+      <% } %>
+      <% if (can('pending_prizes.view')) { %>
       <li class="nav-item">
         <a href="/pending-prizes" class="sidebar-link <%= on('/pending-prizes') ? 'active' : '' %>">
           <i class="bi bi-trophy text-warning"></i> Pending Prizes
         </a>
       </li>
+      <% } %>
+      <% if (can('payments.view')) { %>
       <li class="nav-item">
         <a href="/payments" class="sidebar-link <%= on('/payments') ? 'active' : '' %>">
           <i class="bi bi-credit-card"></i> Payment Orders
         </a>
       </li>
+      <% } %>
     </ul>
     <div class="sidebar-divider"></div>
     <div class="sidebar-section">Other</div>
     <ul class="nav flex-column px-2">
+      <% if (can('banners.view')) { %>
       <li class="nav-item">
         <a href="/banners" class="sidebar-link <%= on('/banners') ? 'active' : '' %>">
           <i class="bi bi-image"></i> Manage Banners
         </a>
       </li>
+      <% } %>
+      <% if (can('withdrawals.view')) { %>
       <li class="nav-item">
         <a href="/withdrawal_requests" class="sidebar-link <%= (on('/withdrawal_requests') || on('/withdrawals')) ? 'active' : '' %>">
           <i class="bi bi-cash-coin"></i> Withdrawal Requests
         </a>
       </li>
+      <% } %>
       <%# NEW IMPLEMENTATION (node-project only, not converted from PHP): Deposit and Withdrawal Settings Module %>
+      <% if (can('deposit_withdrawal_settings.view')) { %>
       <li class="nav-item">
         <a href="/deposit-withdrawal-settings" class="sidebar-link <%= on('/deposit-withdrawal-settings') ? 'active' : '' %>">
           <i class="bi bi-sliders"></i> Deposit &amp; Withdrawal Settings
         </a>
       </li>
+      <% } %>
+      <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications and Notification Management %>
+      <% if (can('notification_settings.view')) { %>
+      <li class="nav-item">
+        <a href="/notification-settings" class="sidebar-link <%= on('/notification-settings') ? 'active' : '' %>">
+          <i class="bi bi-bell"></i> Notification Settings
+        </a>
+      </li>
+      <% } %>
+      <% if (can('live_price_feeds.view')) { %>
       <li class="nav-item">
         <a href="/live-price-feeds" class="sidebar-link <%= on('/live-price-feeds') ? 'active' : '' %>">
           <i class="bi bi-graph-up"></i> Live Price Feeds
         </a>
       </li>
+      <% } %>
+      <% if (can('testing.view')) { %>
       <li class="nav-item">
         <a href="/testing/test-users" class="sidebar-link <%= on('/testing/test-users') ? 'active' : '' %>">
           <i class="bi bi-bug"></i> Test Users
         </a>
       </li>
+      <% } %>
+      <% if (can('testing.view')) { %>
       <li class="nav-item">
         <a href="/testing/my-game" class="sidebar-link <%= on('/testing') ? 'active' : '' %>">
           <i class="bi bi-bug"></i> Testing
         </a>
       </li>
+      <% } %>
     </ul>
+    <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (super admin only) %>
+    <% if (isSuperAdmin) { %>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section">Admin Access</div>
+    <ul class="nav flex-column px-2">
+      <li class="nav-item">
+        <a href="/admin-users" class="sidebar-link <%= on('/admin-users') ? 'active' : '' %>">
+          <i class="bi bi-person-badge"></i> Admin Users
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/admin-roles" class="sidebar-link <%= on('/admin-roles') ? 'active' : '' %>">
+          <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
+        </a>
+      </li>
+    </ul>
+    <% } %>
   </nav>
   <div class="sidebar-divider"></div>
   <div class="px-3 pb-3">
