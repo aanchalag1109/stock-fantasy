@@ -69,6 +69,8 @@ const adminRoleRoutes = require('./routes/admin-roles.routes');
 const notificationSettingsRoutes = require('./routes/notification-settings.routes');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System
 const appUpdateSettingsRoutes = require('./routes/app-update-settings.routes');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System
+const iosAppUpdateSettingsRoutes = require('./routes/ios-app-update-settings.routes');
 
 adminApp.use('/', authRoutes);
 adminApp.use('/dashboard', dashboardRoutes);
@@ -97,6 +99,8 @@ adminApp.use('/admin-roles', adminRoleRoutes);
 adminApp.use('/notification-settings', notificationSettingsRoutes);
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System
 adminApp.use('/android-app-update', appUpdateSettingsRoutes);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System
+adminApp.use('/ios-app-update', iosAppUpdateSettingsRoutes);
 adminApp.use('/', pagesRoutes);
 
 // Root redirect

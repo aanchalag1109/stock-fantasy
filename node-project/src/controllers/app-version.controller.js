@@ -23,7 +23,12 @@
 const ApiResponse = require('../utils/api-response');
 const logger = require('../config/logger');
 const service = require('../services/app-update-settings.service');
-const { readVersionCode, VERSION_HEADER } = require('../middleware/app-version.middleware');
+const {
+  readVersionCode, VERSION_HEADER,
+  readIosVersion, IOS_VERSION_HEADER, // NEW IMPLEMENTATION — NODE.JS PROJECT: iOS force update
+} = require('../middleware/app-version.middleware');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System
+const iosService = require('../services/ios-app-update-settings.service');
 
 const checkAndroidVersion = async (req, res) => {
   const version = readVersionCode(req, { allowQuery: true });
@@ -40,4 +45,26 @@ const checkAndroidVersion = async (req, res) => {
   }
 };
 
-module.exports = { checkAndroidVersion };
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT
+ *
+ * Feature: Admin-Controlled iOS Force Update System
+ * GET /api/v1/app-version/ios?version=2.5.0  (or header X-App-Version: 2.5.0)
+ * Public and read-only, same response shape as the Android check.
+ */
+const checkIosVersion = async (req, res) => {
+  const version = readIosVersion(req, { allowQuery: true });
+  if (version.invalid) {
+    return ApiResponse.error(res, `version (or ${IOS_VERSION_HEADER}) must be a version like 2.5.0.`, 400);
+  }
+  try {
+    const decision = iosService.evaluate(await iosService.getSettings(), version.present ? version.version : null);
+    res.set('Cache-Control', 'no-store');
+    return ApiResponse.success(res, decision);
+  } catch (err) {
+    logger.error(`[ios-app-update] version check failed: ${err.message}`);
+    return ApiResponse.error(res, 'Unable to check the app version right now. Please try again later.', 503);
+  }
+};
+
+module.exports = { checkAndroidVersion, checkIosVersion };

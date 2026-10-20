@@ -18,18 +18,15 @@
  */
 
 const Setting = require('../models/setting.model');
+const {
+  MESSAGE_MAX, DEFAULT_UPDATE_MESSAGE, DEFAULT_OPTIONAL_MESSAGE, toBool, parseMessage, decide,
+} = require('./app-update-common');
 
 const SETTINGS_KEY = 'android_app_update';
 
 const MAX_VERSION_CODE = 2100000000; // Google Play's upper limit for versionCode
 const VERSION_NAME_PATTERN = /^\d{1,4}(\.\d{1,4}){1,3}$/; // e.g. 2.5 / 2.5.0 / 2.5.0.1
 const PACKAGE_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/;
-const MESSAGE_MIN = 10;
-const MESSAGE_MAX = 500;
-
-const DEFAULT_UPDATE_MESSAGE = 'A new version is available. Please update your application to continue using the latest features and improvements.';
-const DEFAULT_OPTIONAL_MESSAGE = 'A new version of the app is available with the latest features and improvements.';
-
 // Safe first-run state: nothing is enforced until an admin configures and enables the policy.
 const DEFAULTS = {
   update_policy_enabled: false,
@@ -64,8 +61,6 @@ function parseVersionCode(value) {
   return num > 0 && num <= MAX_VERSION_CODE ? num : null;
 }
 
-const toBool = (value) => value === true || value === 'true' || value === '1' || value === 1 || value === 'on';
-
 /**
  * Accepts only https://play.google.com/store/apps/details?id=<package>[&hl=..].
  * Returns { url, packageName } with a normalised URL, or { error }.
@@ -91,17 +86,6 @@ function parsePlayStoreUrl(input) {
   const unexpected = [...url.searchParams.keys()].filter((k) => !['id', 'hl', 'gl'].includes(k));
   if (unexpected.length || url.hash) return { error: 'Google Play Store URL must not contain extra parameters.' };
   return { url: `https://play.google.com/store/apps/details?id=${packageName}`, packageName };
-}
-
-/** Plain-text message check. Returns { text } or { error }. */
-function parseMessage(value, label) {
-  const text = String(value === undefined || value === null ? '' : value).replace(/\r\n/g, '\n').trim();
-  if (text.length < MESSAGE_MIN) return { error: `${label} must be at least ${MESSAGE_MIN} characters.` };
-  if (text.length > MESSAGE_MAX) return { error: `${label} must be at most ${MESSAGE_MAX} characters.` };
-  if (/[<>]/.test(text)) return { error: `${label} must be plain text (no HTML).` };
-  // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u0008\u000B-\u001F\u007F]/.test(text)) return { error: `${label} contains invalid characters.` };
-  return { text };
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
@@ -204,57 +188,29 @@ async function saveSettings(values) {
 // ─── Policy evaluation ───────────────────────────────────────────────────────
 
 /**
- * Decides what an installed app should do. `versionCode` may be null when the
- * client did not report one; then only the policy is returned (status "unknown").
- *
- * status:
- *   disabled    — policy off: never prompt or block
- *   unknown     — no version code supplied
- *   required    — below minimum and force update on: block until updated
- *   recommended — below minimum but force update off: prompt, do not block
- *   optional    — supported but older than latest, optional prompt on
- *   up_to_date  — latest (or newer), or optional prompts off
+ * Decides what an installed Android app should do (rules in app-update-common.js).
+ * `versionCode` may be null when the client did not report one; then only the
+ * policy is returned (status "unknown").
  */
 function evaluate(settings, versionCode) {
   const s = settings;
-  const configured = s.update_policy_enabled && s.latest_version_code && s.minimum_supported_version_code;
-  const base = {
-    platform: 'android',
-    update_policy_enabled: !!s.update_policy_enabled,
-    force_update_enabled: !!s.force_update_enabled,
-    latest_version_name: s.latest_version_name,
-    latest_version_code: s.latest_version_code,
-    minimum_supported_version_code: s.minimum_supported_version_code,
-    current_version_code: versionCode || null,
-    store_url: s.play_store_url,
-  };
-  const result = (status, extra = {}) => ({
-    ...base,
-    status,
-    update_available: false,
-    update_required: false,
-    is_supported: true,
-    show_prompt: false,
-    message: null,
-    ...extra,
+  return decide({
+    base: {
+      platform: 'android',
+      update_policy_enabled: !!s.update_policy_enabled,
+      force_update_enabled: !!s.force_update_enabled,
+      latest_version_name: s.latest_version_name,
+      latest_version_code: s.latest_version_code,
+      minimum_supported_version_code: s.minimum_supported_version_code,
+      current_version_code: versionCode || null,
+      store_url: s.play_store_url,
+    },
+    configured: !!(s.update_policy_enabled && s.latest_version_code && s.minimum_supported_version_code),
+    settings: s,
+    hasCurrent: !!versionCode,
+    belowMinimum: !!versionCode && versionCode < s.minimum_supported_version_code,
+    behindLatest: !!versionCode && versionCode < s.latest_version_code,
   });
-
-  if (!configured) return result('disabled');
-  if (!versionCode) return result('unknown', { message: s.update_message });
-
-  const belowMinimum = versionCode < s.minimum_supported_version_code;
-  const behindLatest = versionCode < s.latest_version_code;
-
-  if (belowMinimum && s.force_update_enabled) {
-    return result('required', { update_available: true, update_required: true, is_supported: false, show_prompt: true, message: s.update_message });
-  }
-  if (belowMinimum) {
-    return result('recommended', { update_available: true, is_supported: false, show_prompt: true, message: s.update_message });
-  }
-  if (behindLatest && s.optional_update_enabled) {
-    return result('optional', { update_available: true, show_prompt: true, message: s.optional_update_message });
-  }
-  return result('up_to_date', { update_available: behindLatest });
 }
 
 module.exports = {

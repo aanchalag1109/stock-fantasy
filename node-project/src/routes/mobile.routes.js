@@ -31,6 +31,8 @@ router.get('/payment-return', payment.paymentReturn);
 
 // NEW IMPLEMENTATION — NODE.JS PROJECT: public, read-only Android update policy check
 router.get('/app-version/android', appVersion.checkAndroidVersion);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: public, read-only iOS update policy check
+router.get('/app-version/ios', appVersion.checkIosVersion);
 // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
 // Step 1 of login/signup; /login and /register then require the OTP.
 router.post('/send-otp', require('../controllers/otp.controller').sendOtp);
@@ -49,7 +51,7 @@ router.get('/my-contests/session/:sessionId', api.myContestsBySession);
 router.get('/user-contests', api.getUserContests);
 router.get('/user-joined-sessions', api.getUserJoinedSessions);
 router.get('/contests/:id(\\d+)', api.getContest);
-router.post('/bulk-join-contest', requireSupportedAppVersion, api.bulkJoinContest); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android app version guard
+router.post('/bulk-join-contest', requireSupportedAppVersion, api.bulkJoinContest); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android/iOS app version guard
 
 router.get('/sessions', api.getUserSessions);
 router.get('/sessions/active', api.getActiveSession);
@@ -71,8 +73,8 @@ router.get('/wallet-amount', api.getWalletAmount);
 router.get('/user-transactions', api.getUserTransactions);
 router.get('/user-transactions-empty', api.userTransactionsEmpty);
 router.get('/clear-user-transactions', api.clearUserTransactions);
-router.post('/deposit-amount', requireSupportedAppVersion, api.depositAmount); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android app version guard
-router.post('/withdraw-amount', requireSupportedAppVersion, api.withdrawAmount); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android app version guard
+router.post('/deposit-amount', requireSupportedAppVersion, api.depositAmount); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android/iOS app version guard
+router.post('/withdraw-amount', requireSupportedAppVersion, api.withdrawAmount); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android/iOS app version guard
 
 router.get('/announcements', api.getAnnouncements);
 router.get('/notifications', api.getUserNotifications);

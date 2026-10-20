@@ -25,6 +25,8 @@ async function main() {
     // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System.
     // Idempotent: stores the safe defaults (policy disabled) only if nothing exists yet.
     await require('./src/services/app-update-settings.service').initializeDefaults();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System (same idempotent defaults)
+    await require('./src/services/ios-app-update-settings.service').initializeDefaults();
 
     // Load admin Express app AFTER DB is ready
     const adminApp = require('./src/admin/app');

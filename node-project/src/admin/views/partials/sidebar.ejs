@@ -156,6 +156,12 @@
           <i class="bi bi-phone"></i> Android App Update
         </a>
       </li>
+      <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System %>
+      <li class="nav-item">
+        <a href="/ios-app-update" class="sidebar-link <%= on('/ios-app-update') ? 'active' : '' %>">
+          <i class="bi bi-apple"></i> iOS App Update
+        </a>
+      </li>
       <% } %>
       <% if (can('live_price_feeds.view')) { %>
       <li class="nav-item">

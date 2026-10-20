@@ -9,7 +9,7 @@ router.get('/session/:sessionId', ctrl.contestsBySession);
 router.get('/session-details/:sessionId', ctrl.getSessionDetails);
 router.get('/active-session', ctrl.getActiveSession);
 router.get('/user', ctrl.getUserContests);
-router.post('/bulk-join', requireSupportedAppVersion, ctrl.bulkJoinContest); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android app version guard
+router.post('/bulk-join', requireSupportedAppVersion, ctrl.bulkJoinContest); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android/iOS app version guard
 router.post('/calculate-results', ctrl.calculateResults);
 router.get('/', ctrl.contests);
 router.get('/:id', ctrl.getContest);
