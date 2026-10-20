@@ -31,6 +31,9 @@ router.get('/payment-return', payment.paymentReturn);
 
 // NEW IMPLEMENTATION — NODE.JS PROJECT: public, read-only Android update policy check
 router.get('/app-version/android', appVersion.checkAndroidVersion);
+// NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+// Step 1 of login/signup; /login and /register then require the OTP.
+router.post('/send-otp', require('../controllers/otp.controller').sendOtp);
 
 router.post('/login', api.login);
 router.post('/register', api.register);

@@ -11,6 +11,10 @@ module.exports = {
   JWT_SECRET: process.env.JWT_SECRET || 'probtrade-secret-2026',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '30d',
   CRON_SECRET: process.env.CRON_SECRET || 'probtrade-cron-secret-2026',
+
+  // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
+  // Static OTP until an SMS provider is integrated (see src/services/otp.service.js).
+  OTP_STATIC_CODE: /^\d{6}$/.test(process.env.OTP_STATIC_CODE || '') ? process.env.OTP_STATIC_CODE : '123456',
   
   // MySQL for data migration
   MYSQL: {
