@@ -22,6 +22,10 @@ async function main() {
     // First deploy only: if no super admin exists yet, existing admins keep full access.
     await require('./src/services/admin-access.service').bootstrapSuperAdmins();
 
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System.
+    // Idempotent: stores the safe defaults (policy disabled) only if nothing exists yet.
+    await require('./src/services/app-update-settings.service').initializeDefaults();
+
     // Load admin Express app AFTER DB is ready
     const adminApp = require('./src/admin/app');
 

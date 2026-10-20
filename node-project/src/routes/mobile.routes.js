@@ -7,6 +7,9 @@ const router = require('express').Router();
 const api = require('../controllers/mobile-api.controller');
 const legacy = require('../controllers/mobile-legacy.controller');
 const payment = require('../controllers/payment.controller');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System
+const appVersion = require('../controllers/app-version.controller');
+const { requireSupportedAppVersion } = require('../middleware/app-version.middleware');
 
 const profileDir = path.join(__dirname, '../../public/uploads/profiles');
 const profileUpload = multer({
@@ -26,6 +29,9 @@ const profileUpload = multer({
 router.post('/payment/lgpay-callback', api.lgpayCallback);
 router.get('/payment-return', payment.paymentReturn);
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: public, read-only Android update policy check
+router.get('/app-version/android', appVersion.checkAndroidVersion);
+
 router.post('/login', api.login);
 router.post('/register', api.register);
 router.post('/password-login', api.passwordLogin);
@@ -40,7 +46,7 @@ router.get('/my-contests/session/:sessionId', api.myContestsBySession);
 router.get('/user-contests', api.getUserContests);
 router.get('/user-joined-sessions', api.getUserJoinedSessions);
 router.get('/contests/:id(\\d+)', api.getContest);
-router.post('/bulk-join-contest', api.bulkJoinContest);
+router.post('/bulk-join-contest', requireSupportedAppVersion, api.bulkJoinContest); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android app version guard
 
 router.get('/sessions', api.getUserSessions);
 router.get('/sessions/active', api.getActiveSession);
@@ -62,8 +68,8 @@ router.get('/wallet-amount', api.getWalletAmount);
 router.get('/user-transactions', api.getUserTransactions);
 router.get('/user-transactions-empty', api.userTransactionsEmpty);
 router.get('/clear-user-transactions', api.clearUserTransactions);
-router.post('/deposit-amount', api.depositAmount);
-router.post('/withdraw-amount', api.withdrawAmount);
+router.post('/deposit-amount', requireSupportedAppVersion, api.depositAmount); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android app version guard
+router.post('/withdraw-amount', requireSupportedAppVersion, api.withdrawAmount); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android app version guard
 
 router.get('/announcements', api.getAnnouncements);
 router.get('/notifications', api.getUserNotifications);

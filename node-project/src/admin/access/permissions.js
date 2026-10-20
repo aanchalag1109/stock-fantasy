@@ -41,6 +41,8 @@ const MODULES = [
   // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications and Notification Management
   { key: 'notification_settings', label: 'Automated Notification Settings', group: 'Content', actions: { view: 'View settings & log', edit: 'Edit settings' } },
   { key: 'app_settings', label: 'App Settings & Pages', group: 'System', actions: { view: 'View', edit: 'Edit' } },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System
+  { key: 'app_update_settings', label: 'Android App Update Settings', group: 'System', actions: { view: 'View', edit: 'Edit update policy' } },
   { key: 'cron', label: 'Cron Check', group: 'System', actions: { view: 'View logs', clear: 'Clear logs' } },
   { key: 'live_price_feeds', label: 'Live Price Feeds', group: 'System', actions: { view: 'View' } },
   { key: 'testing', label: 'Testing Tools & Test Users', group: 'System', actions: { view: 'View', manage: 'Generate, delete & run tests' } },
@@ -91,6 +93,7 @@ const LANDING_PAGES = [
   ['notifications.view', '/notifications'],
   ['notification_settings.view', '/notification-settings'],
   ['app_settings.view', '/settings'],
+  ['app_update_settings.view', '/android-app-update'],
   ['cron.view', '/cron-logs'],
   ['live_price_feeds.view', '/live-price-feeds'],
   ['referrals.view', '/referrals'],

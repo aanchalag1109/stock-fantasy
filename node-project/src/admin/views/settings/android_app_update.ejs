@@ -1,0 +1,206 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT
+
+  Feature: Admin-Controlled Android Force Update System
+  Purpose: Manage Android version requirements and update policies
+  Origin: Newly implemented in node-project; not directly converted
+           from the original PHP implementation.
+
+  Important: Keep this implementation distinguishable from the
+  original PHP project when comparing functionality in the future.
+%>
+<%
+  const canEdit = can('app_update_settings.edit');
+  const v = (k) => (settings[k] === null || settings[k] === undefined) ? '' : settings[k];
+  const updatedAt = settings.updated_at
+    ? new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(settings.updated_at)) + ' IST'
+    : 'Never';
+  const statusLabel = { required: 'Blocked — must update', recommended: 'Prompted to update (not blocked)', optional: 'Optional update prompt', up_to_date: 'No prompt', disabled: 'Policy disabled — no prompt' };
+%>
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div id="auAlert" class="d-none mb-4" role="alert"></div>
+
+            <div class="card shadow-lg border-0 mb-4">
+                <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-phone me-2" style="font-size:1.5rem;"></i>
+                        <h2 class="mb-0 text-white h4">Android App Update Settings</h2>
+                    </div>
+                    <span class="small">Last updated: <span id="auUpdatedAt"><%= updatedAt %></span></span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-3">Controls what installed Android apps are told when they check their version. Versions are compared by <strong>version code</strong> (a whole number that increases with every release), never by version name.</p>
+                    <% if (!canEdit) { %><div class="alert alert-info small py-2">You can view these settings but not change them.</div><% } %>
+
+                    <form id="auSettingsForm" action="/android-app-update" method="POST" novalidate>
+                        <fieldset <%= canEdit ? '' : 'disabled' %>>
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <div class="card h-100 border-0 bg-light"><div class="card-body">
+                                    <h5 class="card-title mb-3"><i class="bi bi-toggles me-2"></i>Policy</h5>
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" id="update_policy_enabled" name="update_policy_enabled" value="1" <%= settings.update_policy_enabled ? 'checked' : '' %>>
+                                        <label class="form-check-label fw-semibold" for="update_policy_enabled">Update policy enabled</label>
+                                        <div class="form-text">When off, no app is prompted or blocked.</div>
+                                    </div>
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" id="force_update_enabled" name="force_update_enabled" value="1" <%= settings.force_update_enabled ? 'checked' : '' %>>
+                                        <label class="form-check-label fw-semibold" for="force_update_enabled">Force update enabled</label>
+                                        <div class="form-text">Apps below the minimum version must update before continuing, and deposits, withdrawals and contest joins from them are refused. When off, they are only prompted.</div>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="optional_update_enabled" name="optional_update_enabled" value="1" <%= settings.optional_update_enabled ? 'checked' : '' %>>
+                                        <label class="form-check-label fw-semibold" for="optional_update_enabled">Prompt supported but older apps</label>
+                                        <div class="form-text">Shows the optional message to apps between the minimum and the latest version.</div>
+                                    </div>
+                                </div></div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card h-100 border-0 bg-light"><div class="card-body">
+                                    <h5 class="card-title mb-3"><i class="bi bi-123 me-2"></i>Versions</h5>
+                                    <div class="mb-3">
+                                        <label for="latest_version_name" class="form-label">Latest version name <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="latest_version_name" name="latest_version_name" value="<%= v('latest_version_name') %>" placeholder="2.5.0" maxlength="19">
+                                        <div class="invalid-feedback" data-error-for="latest_version_name"></div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="latest_version_code" class="form-label">Latest version code <span class="text-danger">*</span></label>
+                                        <input type="number" class="form-control" id="latest_version_code" name="latest_version_code" value="<%= v('latest_version_code') %>" placeholder="20500" min="1" max="<%= maxVersionCode %>" step="1">
+                                        <div class="invalid-feedback" data-error-for="latest_version_code"></div>
+                                    </div>
+                                    <div>
+                                        <label for="minimum_supported_version_code" class="form-label">Minimum supported version code <span class="text-danger">*</span></label>
+                                        <input type="number" class="form-control" id="minimum_supported_version_code" name="minimum_supported_version_code" value="<%= v('minimum_supported_version_code') %>" placeholder="20400" min="1" max="<%= maxVersionCode %>" step="1">
+                                        <div class="invalid-feedback" data-error-for="minimum_supported_version_code"></div>
+                                        <div class="form-text">Oldest build that may keep working. Must not exceed the latest version code.</div>
+                                    </div>
+                                </div></div>
+                            </div>
+                            <div class="col-12">
+                                <div class="card border-0 bg-light"><div class="card-body">
+                                    <h5 class="card-title mb-3"><i class="bi bi-chat-text me-2"></i>Messages &amp; store link</h5>
+                                    <div class="mb-3">
+                                        <label for="update_message" class="form-label">Update message (below minimum)</label>
+                                        <textarea class="form-control" id="update_message" name="update_message" rows="2" maxlength="<%= messageMax %>"><%= v('update_message') %></textarea>
+                                        <div class="invalid-feedback" data-error-for="update_message"></div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="optional_update_message" class="form-label">Optional update message</label>
+                                        <textarea class="form-control" id="optional_update_message" name="optional_update_message" rows="2" maxlength="<%= messageMax %>"><%= v('optional_update_message') %></textarea>
+                                        <div class="invalid-feedback" data-error-for="optional_update_message"></div>
+                                    </div>
+                                    <div>
+                                        <label for="play_store_url" class="form-label">Google Play Store URL</label>
+                                        <input type="url" class="form-control" id="play_store_url" name="play_store_url" value="<%= v('play_store_url') %>" placeholder="https://play.google.com/store/apps/details?id=com.example.app">
+                                        <div class="invalid-feedback" data-error-for="play_store_url"></div>
+                                        <div class="form-text">Only Google Play app listings are accepted. Required while the update policy is enabled.</div>
+                                    </div>
+                                </div></div>
+                            </div>
+                        </div>
+                        </fieldset>
+                        <% if (canEdit) { %>
+                        <div class="d-flex justify-content-end mt-4">
+                            <button type="submit" id="auSaveBtn" class="btn btn-primary"><i class="bi bi-save me-1"></i> Save Settings</button>
+                        </div>
+                        <% } %>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-eye me-2"></i>What apps see (saved settings)</h5>
+                    <% if (!preview.below) { %>
+                        <p class="text-muted mb-0">Save version codes to see a preview.</p>
+                    <% } else { %>
+                    <ul class="mb-0 small">
+                        <li>Version code <strong><%= preview.below.current_version_code %></strong> (below minimum): <%= statusLabel[preview.below.status] || preview.below.status %></li>
+                        <% if (preview.behind && preview.behind.current_version_code >= settings.minimum_supported_version_code && preview.behind.current_version_code < settings.latest_version_code) { %>
+                        <li>Version code <strong><%= preview.behind.current_version_code %></strong> (supported, not latest): <%= statusLabel[preview.behind.status] || preview.behind.status %></li>
+                        <% } %>
+                        <li>Version code <strong><%= settings.latest_version_code %></strong> or newer: no prompt</li>
+                    </ul>
+                    <p class="small text-muted mt-2 mb-0">Public endpoint: <code>GET /api/v1/app-version/android?version_code=&lt;code&gt;</code></p>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<% if (canEdit) { %>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('auSettingsForm');
+    var btn = document.getElementById('auSaveBtn');
+    var alertBox = document.getElementById('auAlert');
+    var btnHtml = btn.innerHTML;
+    var TEXT = ['latest_version_name', 'latest_version_code', 'minimum_supported_version_code', 'update_message', 'optional_update_message', 'play_store_url'];
+    var FLAGS = ['update_policy_enabled', 'force_update_enabled', 'optional_update_enabled'];
+    var submitting = false;
+
+    function showAlert(type, message) {
+        var icon = type === 'success' ? 'check-circle-fill' : 'x-circle-fill';
+        alertBox.className = 'alert alert-' + type + ' alert-dismissible fade show mb-4';
+        alertBox.innerHTML = '<i class="bi bi-' + icon + ' me-2"></i><span></span>' +
+            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+        alertBox.querySelector('span').textContent = message;
+        alertBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function setErrors(errors) {
+        TEXT.forEach(function (key) {
+            var input = document.getElementById(key);
+            var fb = form.querySelector('[data-error-for="' + key + '"]');
+            if (errors[key]) { input.classList.add('is-invalid'); fb.textContent = errors[key]; }
+            else { input.classList.remove('is-invalid'); fb.textContent = ''; }
+        });
+    }
+
+    function setBusy(busy) {
+        submitting = busy;
+        btn.disabled = busy;
+        btn.innerHTML = busy ? '<span class="spinner-border spinner-border-sm me-1"></span> Saving...' : btnHtml;
+    }
+
+    TEXT.forEach(function (key) {
+        document.getElementById(key).addEventListener('input', function () { this.classList.remove('is-invalid'); });
+    });
+
+    // The server validates everything; the page only collects and reports.
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (submitting) return;
+        var data = {};
+        TEXT.forEach(function (key) { data[key] = document.getElementById(key).value; });
+        FLAGS.forEach(function (key) { data[key] = document.getElementById(key).checked; });
+
+        setBusy(true);
+        fetch(form.action, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(data)
+        })
+            .then(function (r) {
+                if (r.redirected) throw new Error('Your session has expired. Please log in again.');
+                return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+            })
+            .then(function (res) {
+                if (res.ok && res.body.success) {
+                    setErrors({});
+                    showAlert('success', res.body.message);
+                    setTimeout(function () { window.location.reload(); }, 1200); // refresh preview & timestamp
+                } else {
+                    setErrors(res.body.errors || {});
+                    showAlert('danger', res.body.message || 'Failed to save settings.');
+                }
+            })
+            .catch(function (err) { showAlert('danger', err.message || 'Network error. Please try again.'); })
+            .finally(function () { setBusy(false); });
+    });
+});
+</script>
+<% } %>

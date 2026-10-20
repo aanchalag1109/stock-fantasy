@@ -149,6 +149,14 @@
         </a>
       </li>
       <% } %>
+      <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System %>
+      <% if (can('app_update_settings.view')) { %>
+      <li class="nav-item">
+        <a href="/android-app-update" class="sidebar-link <%= on('/android-app-update') ? 'active' : '' %>">
+          <i class="bi bi-phone"></i> Android App Update
+        </a>
+      </li>
+      <% } %>
       <% if (can('live_price_feeds.view')) { %>
       <li class="nav-item">
         <a href="/live-price-feeds" class="sidebar-link <%= on('/live-price-feeds') ? 'active' : '' %>">
