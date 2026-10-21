@@ -71,6 +71,8 @@ const notificationSettingsRoutes = require('./routes/notification-settings.route
 const appUpdateSettingsRoutes = require('./routes/app-update-settings.routes');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System
 const iosAppUpdateSettingsRoutes = require('./routes/ios-app-update-settings.routes');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: USDT/INR to ProbCoin Conversion Settings
+const probcoinConversionRoutes = require('./routes/probcoin-conversion.routes');
 
 adminApp.use('/', authRoutes);
 adminApp.use('/dashboard', dashboardRoutes);
@@ -101,6 +103,8 @@ adminApp.use('/notification-settings', notificationSettingsRoutes);
 adminApp.use('/android-app-update', appUpdateSettingsRoutes);
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System
 adminApp.use('/ios-app-update', iosAppUpdateSettingsRoutes);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: USDT/INR to ProbCoin Conversion Settings
+adminApp.use('/probcoin-conversion', probcoinConversionRoutes);
 adminApp.use('/', pagesRoutes);
 
 // Root redirect

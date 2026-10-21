@@ -35,6 +35,8 @@ const MODULES = [
   { key: 'payments', label: 'Payment Orders', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject / verify' } },
   { key: 'withdrawals', label: 'Withdrawal Requests', group: 'Finance', actions: { view: 'View', process: 'Approve / reject' } },
   { key: 'deposit_withdrawal_settings', label: 'Deposit & Withdrawal Settings', group: 'Finance', actions: { view: 'View', edit: 'Edit limits' } },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT/INR to ProbCoin Conversion Settings
+  { key: 'probcoin_conversion', label: 'ProbCoin Conversion Settings', group: 'Finance', actions: { view: 'View', edit: 'Edit rates' } },
   { key: 'announcements', label: 'Announcements', group: 'Content', actions: { view: 'View', create: 'Create', delete: 'Delete' } },
   { key: 'banners', label: 'Banners', group: 'Content', actions: { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' } },
   { key: 'notifications', label: 'Push Notifications', group: 'Content', actions: { view: 'Open send form', send: 'Send' } },
@@ -80,6 +82,7 @@ const LANDING_PAGES = [
   ['withdrawals.view', '/withdrawal_requests'],
   ['payments.view', '/payments'],
   ['deposit_withdrawal_settings.view', '/deposit-withdrawal-settings'],
+  ['probcoin_conversion.view', '/probcoin-conversion'],
   ['performance.view', '/performance'],
   ['contest_analysis.view', '/contest-analysis'],
   ['live_management.view', '/live-management'],
