@@ -13,8 +13,22 @@ module.exports = {
   CRON_SECRET: process.env.CRON_SECRET || 'probtrade-cron-secret-2026',
 
   // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
-  // Static OTP until an SMS provider is integrated (see src/services/otp.service.js).
+  // Static OTP while SMS_ENABLED is false; a random OTP sent by SMS otherwise (see src/services/otp.service.js).
   OTP_STATIC_CODE: /^\d{6}$/.test(process.env.OTP_STATIC_CODE || '') ? process.env.OTP_STATIC_CODE : '123456',
+
+  // SMS provider (apitxt.com). {otp} in otpTemplate is replaced with the code; the text
+  // must match the DLT-approved template exactly or the message is rejected.
+  SMS: {
+    enabled: process.env.SMS_ENABLED === 'true',
+    apiUrl: process.env.SMS_API_URL || 'https://apitxt.com/api/sendMsg',
+    apiKey: process.env.SMS_API_KEY || '',
+    senderId: process.env.SMS_SENDER_ID || '',
+    route: process.env.SMS_ROUTE || '4',
+    dltTemplateId: process.env.SMS_DLT_TEMPLATE_ID || '',
+    peId: process.env.SMS_PE_ID || '',
+    otpTemplate: process.env.SMS_OTP_TEMPLATE || '',
+    timeoutMs: parseInt(process.env.SMS_TIMEOUT_MS, 10) || 10000,
+  },
   
   // MySQL for data migration
   MYSQL: {

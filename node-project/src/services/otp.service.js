@@ -11,15 +11,16 @@
  * Important: Keep this implementation distinguishable from the
  * original PHP project when comparing functionality in the future.
  *
- * The OTP is currently static (config.OTP_STATIC_CODE, default 123456) and no
- * SMS is sent. To go live, generate a random code in generateOtp() and send it
- * from deliverOtp(); nothing else needs to change.
+ * With SMS_ENABLED=true a random OTP is generated and sent by SMS
+ * (src/services/sms.service.js). Otherwise the OTP is static
+ * (config.OTP_STATIC_CODE, default 123456) and no SMS is sent.
  */
 
 const crypto = require('crypto');
 const OtpVerification = require('../models/otp-verification.model');
 const config = require('../config/env');
 const logger = require('../config/logger');
+const smsService = require('./sms.service');
 
 const PURPOSES = ['login', 'signup'];
 const OTP_EXPIRY_SECONDS = 300;
@@ -37,12 +38,29 @@ function hashOtp(mobile, purpose, otp) {
 }
 
 function generateOtp() {
-  return config.OTP_STATIC_CODE;
+  if (!config.SMS.enabled) return config.OTP_STATIC_CODE;
+  return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 }
 
+function buildOtpMessage(otp) {
+  return config.SMS.otpTemplate
+    .replace(/{otp}/g, otp)
+    .replace(/{minutes}/g, String(OTP_EXPIRY_SECONDS / 60));
+}
+
+// Resolves to true when the OTP was handed to the SMS provider (or SMS is disabled).
 async function deliverOtp(mobile, otp, purpose) {
-  // Static OTP mode: nothing is sent. Plug the SMS provider in here.
-  logger.info(`OTP issued (static mode) for ${purpose}: ${mobile}`);
+  if (!config.SMS.enabled) {
+    logger.info(`OTP issued (static mode) for ${purpose}: ${mobile}`);
+    return true;
+  }
+  const result = await smsService.sendSms(mobile, buildOtpMessage(otp));
+  if (!result.ok) {
+    logger.error(`OTP SMS failed for ${purpose}: ${mobile} (code ${result.code}): ${result.message}`);
+    return false;
+  }
+  logger.info(`OTP SMS sent for ${purpose}: ${mobile} (request ${result.request_id})`);
+  return true;
 }
 
 /**
@@ -63,13 +81,17 @@ async function sendOtp(mobile, purpose) {
   const otp = generateOtp();
   // Only the latest OTP for a mobile + purpose stays valid.
   await OtpVerification.deleteMany({ mobile, purpose, consumed_at: null });
-  await OtpVerification.create({
+  const record = await OtpVerification.create({
     mobile,
     purpose,
     otp_hash: hashOtp(mobile, purpose, otp),
     expires_at: new Date(now + OTP_EXPIRY_SECONDS * 1000),
   });
-  await deliverOtp(mobile, otp, purpose);
+  if (!(await deliverOtp(mobile, otp, purpose))) {
+    // Drop the undelivered OTP so the resend cooldown does not block a retry.
+    await OtpVerification.deleteOne({ _id: record._id });
+    return { ok: false, status: 502, message: 'Could not send OTP right now. Please try again.' };
+  }
 
   return { ok: true, expires_in: OTP_EXPIRY_SECONDS, resend_after: RESEND_COOLDOWN_SECONDS };
 }

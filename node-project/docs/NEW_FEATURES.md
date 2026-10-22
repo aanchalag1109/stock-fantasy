@@ -55,8 +55,9 @@ Sends session reminders, winnings, deposit, withdrawal, refund, wallet-adjustmen
 - **Tests:** `tests/notifications/notifications.test.js`, `tests/notifications/fcm.test.js`
 
 ## 5. OTP-only Login and Signup
-Mobile login and signup require an OTP. It is currently a static code (`OTP_STATIC_CODE`) until an SMS provider is integrated.
-- **New files:** `src/services/otp.service.js`, `src/controllers/otp.controller.js`, `src/models/otp-verification.model.js`
+Mobile login and signup require an OTP. With `SMS_ENABLED=true` a random 6-digit OTP is sent by SMS through apitxt.com (DLT route); otherwise the static `OTP_STATIC_CODE` is used and nothing is sent. If the SMS fails, send-otp returns `502` and the OTP is discarded so the user can retry at once.
+- **Config:** `SMS_ENABLED`, `SMS_API_KEY`, `SMS_SENDER_ID`, `SMS_ROUTE`, `SMS_DLT_TEMPLATE_ID`, `SMS_PE_ID`, `SMS_OTP_TEMPLATE` (`{otp}`, `{minutes}`)
+- **New files:** `src/services/otp.service.js`, `src/services/sms.service.js`, `src/controllers/otp.controller.js`, `src/models/otp-verification.model.js`
 - **Modified:** `src/config/env.js`, `.env.example`, `src/controllers/auth.controller.js`, `src/controllers/mobile-api.controller.js`, `src/routes/auth.routes.js`, `src/routes/mobile.routes.js`
 
 ## 6. Android & iOS Force Update
