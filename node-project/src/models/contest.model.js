@@ -56,6 +56,8 @@ const contestSchema = new mongoose.Schema({
   is_calculated: { type: Boolean, default: false },
   prizes_distributed: { type: Boolean, default: false },
   prize_distribution: { type: mongoose.Schema.Types.Mixed, default: null },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation — lease taken while a prize payout runs
+  payout_started_at: { type: Date, default: null },
   prizes: [prizeTierSchema]
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }

@@ -18,6 +18,7 @@ files it creates or changes.
 | 5 | [OTP-only Login and Signup](#5-otp-only-login-and-signup) | — | — |
 | 6 | [Android & iOS Force Update](#6-android--ios-force-update) | `/android-app-update`, `/ios-app-update` | `app_update_settings.*` |
 | 7 | [USDT/INR to ProbCoin Conversion Settings](#7-usdtinr-to-probcoin-conversion-settings) | `/probcoin-conversion` | `probcoin_conversion.*` |
+| 8 | [Contest Automation](#8-contest-automation-port-of-the-php-scheduler) | `/pending-prizes` (payout) | `pending_prizes.distribute` |
 
 Shared conventions:
 - **Settings:** stored in the existing `settings` collection (`Setting` model, unique `key`). Values are read fresh on every use, so admin changes apply on the next request.
@@ -77,3 +78,27 @@ Admins configure two independent application rates (not market prices):
 - **New files:** `src/services/probcoin-conversion.service.js`, `src/admin/controllers/probcoin-conversion.controller.js`, `src/admin/routes/probcoin-conversion.routes.js`, `src/admin/views/settings/probcoin_conversion.ejs`
 - **Modified:** `src/admin/access/permissions.js`, `src/admin/app.js`, `src/admin/views/partials/sidebar.ejs`
 - **Tests:** `tests/probcoin/probcoin-conversion.test.js`
+
+## 8. Contest Automation (port of the PHP scheduler)
+Ports the PHP Laravel scheduler (`app/Console/Kernel.php`), which Node was missing. Node's scheduler previously only wrote a heartbeat, so sessions never got start/end prices, scores or results automatically. It also makes the Pending Prizes payout work; the page previously replied "not enabled".
+
+| PHP command | Node job | Every | Does |
+|---|---|---|---|
+| `league:update-status` | `session-lifecycle.job.js` | 30 s | Moves sessions upcoming → live → completed. Fetches start/end prices into `session.assets`, copies them to each entry's `starting_prices`/`ending_prices`, and stores the prize preview. |
+| `contest:update-live-scores` | `live-scores.job.js` | 15 min | Updates live scores and ranks from current prices. |
+| `contest:calculate-performance` | `results.job.js` | 2 min | Cancels contests with fewer than 10 entries and refunds the entry fees; otherwise sets final scores, ranks and prize rows (`is_calculated`). |
+| `PendingPrizesController` | `prize-payout.service.js` | admin click | Re-scores, ranks, pays the prize rows (tied ranks split equally) and marks the contest `prizes_distributed`. |
+
+- **Prices:** `price-feed.js`. Indian stocks come from the RapidAPI NSE quote API, crypto from batched CoinMarketCap `quotes/latest`. **US/UK stocks are not priced yet.** Plug the new provider into `internationalStockPrice()`.
+- **Scoring:** reuses the app's `scoreAssets()` and `buildDynamicPrizeDistribution()` (`helpers/mobile-compat.js`), so the app leaderboard, automated results and payouts agree.
+- **Safety:**
+  - A job lease lock (`job_locks`) makes each job run once even though both servers start the scheduler.
+  - Every refund and prize is a transaction with a deterministic unique `transaction_id` (`REFUND_<contest>_E<entry>`, `MP_<contest>_E<entry>`) written before the balance changes, so nothing can be paid twice.
+  - A payout lease (`payout_started_at`) blocks concurrent payouts of the same contest.
+  - Prices are only fetched within 30 minutes of the start/end time, are never overwritten, and are never faked.
+  - Only sessions whose prices the automation captured (`start_prices_captured_at` / `end_prices_captured_at`) are auto-scored, so historical/migrated contests are never touched.
+- **Fixes over PHP:** no `rand(1000, 5000)` fallback price; cancelled contests are refunded once (PHP re-refunded them every 2 minutes); final scores don't drift after the session ends; cancelled contests are not revived to live/completed.
+- **Config:** `CONTEST_AUTOMATION_ENABLED` (default `true`), `STOCK_PRICE_REQUEST_DELAY_MS` (default 500)
+- **New files:** `src/services/contest-automation/{price-feed,contest-scoring,session-lifecycle.job,live-scores.job,results.job,prize-payout.service,ledger,job-lock}.js`, `src/models/job-lock.model.js`
+- **Modified:** `src/scheduler.js`, `src/config/env.js`, `.env.example`, `src/models/league-session.model.js` (capture markers), `src/models/contest.model.js` (`payout_started_at`), `src/admin/controllers/pages.controller.js` (Pending Prizes distribute)
+- **Tests:** `tests/contest-automation/contest-automation.test.js`, `tests/contest-automation/price-feed.test.js`

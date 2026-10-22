@@ -15,6 +15,9 @@ const ContestPerformancePrize = require('../../models/contest-performance-prize.
 const { render, renderStandalone } = require('../helpers/render');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
 const { notify } = require('../../services/notifications/notification.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation (Pending Prizes payout)
+const prizePayout = require('../../services/contest-automation/prize-payout.service');
+const logger = require('../../config/logger');
 
 function fmt(d) {
   if (!d) return '—';
@@ -774,11 +777,26 @@ const pendingPrizes = {
       title: 'Pending Prize Distribution', filter, days, groups: Object.values(grouped), admin: req.session.admin,
     });
   },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation — prize payout ported from PHP PendingPrizesController
   distributeContest: async (req, res) => {
-    res.json({ success: false, message: 'Manual prize payout is not enabled on this server yet. Review winners from Performance.' });
+    try {
+      const result = await prizePayout.distributeContest(req.params.id);
+      logger.info(`[prize-payout] ${req.adminAccess ? req.adminAccess.email : 'admin'} distributed contest ${req.params.id}: ${result.message}`);
+      res.json(result);
+    } catch (err) {
+      logger.error(`[prize-payout] contest ${req.params.id} failed: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error: ' + err.message });
+    }
   },
   distributeSession: async (req, res) => {
-    res.json({ success: false, message: 'Manual prize payout is not enabled on this server yet. Review winners from Performance.' });
+    try {
+      const result = await prizePayout.distributeSession(req.params.id);
+      logger.info(`[prize-payout] ${req.adminAccess ? req.adminAccess.email : 'admin'} distributed session ${req.params.id}: ${result.message}`);
+      res.json(result);
+    } catch (err) {
+      logger.error(`[prize-payout] session ${req.params.id} failed: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error: ' + err.message });
+    }
   },
 };
 

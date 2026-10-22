@@ -42,6 +42,10 @@ module.exports = {
     serviceAccountJson: process.env.FCM_SERVICE_ACCOUNT_JSON || null,
   },
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation (port of the PHP scheduled commands)
+  CONTEST_AUTOMATION_ENABLED: process.env.CONTEST_AUTOMATION_ENABLED !== 'false',
+  STOCK_PRICE_REQUEST_DELAY_MS: Number.isFinite(parseInt(process.env.STOCK_PRICE_REQUEST_DELAY_MS, 10)) ? parseInt(process.env.STOCK_PRICE_REQUEST_DELAY_MS, 10) : 500,
+
   PRICE_CACHE_DURATION: parseInt(process.env.PRICE_CACHE_DURATION, 10) || 60,
   PRICE_FETCH_TIMEOUT: parseInt(process.env.PRICE_FETCH_TIMEOUT, 10) || 10
 };

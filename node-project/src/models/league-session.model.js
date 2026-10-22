@@ -29,7 +29,11 @@ const leagueSessionSchema = new mongoose.Schema({
   image_url: { type: String, default: null },
   stocks: { type: mongoose.Schema.Types.Mixed, default: null },
   cryptos: { type: mongoose.Schema.Types.Mixed, default: null },
-  assets: [sessionAssetSchema]
+  assets: [sessionAssetSchema],
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation. Set only by the automation
+  // when it has captured this session's prices; sessions without them are never auto-scored.
+  start_prices_captured_at: { type: Date, default: null },
+  end_prices_captured_at: { type: Date, default: null }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
