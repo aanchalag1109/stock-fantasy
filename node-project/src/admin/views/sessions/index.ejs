@@ -13,8 +13,8 @@
     const get = (type) => (parts.find((part) => part.type === type) || {}).value || '';
     return get('month') + ' ' + get('day') + ', ' + get('year') + ' ' + get('hour') + ':' + get('minute');
   }
-  const statusColors = { live: 'success', upcoming: 'info', completed: 'warning', draft: 'secondary' };
-  const statusIcons = { live: 'broadcast', upcoming: 'clock', completed: 'check-circle', draft: 'file-earmark' };
+  const statusColors = { live: 'success', upcoming: 'info', completed: 'warning', draft: 'secondary', cancelled: 'danger' };
+  const statusIcons = { live: 'broadcast', upcoming: 'clock', completed: 'check-circle', draft: 'file-earmark', cancelled: 'x-octagon' };
 %>
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -31,19 +31,18 @@
             </a>
         </div>
     </div>
-    <div class="card shadow-sm mb-4">
-        <div class="card-body">
-            <div class="btn-group" role="group">
-                <a href="?status=live" class="btn <%= status === 'live' ? 'btn-success' : 'btn-outline-success' %>"><i class="bi bi-broadcast me-1"></i>Live</a>
-                <a href="?status=upcoming" class="btn <%= status === 'upcoming' ? 'btn-info' : 'btn-outline-info' %>"><i class="bi bi-clock me-1"></i>Upcoming</a>
-                <a href="?status=completed" class="btn <%= status === 'completed' ? 'btn-warning' : 'btn-outline-warning' %>"><i class="bi bi-check-circle me-1"></i>Completed</a>
-                <a href="?status=draft" class="btn <%= status === 'draft' ? 'btn-secondary' : 'btn-outline-secondary' %>"><i class="bi bi-file-earmark me-1"></i>Draft</a>
-                <%# NEW IMPLEMENTATION — NODE.JS PROJECT: sessions cancelled via Cancel Session / deactivation %>
-                <a href="?status=cancelled" class="btn <%= status === 'cancelled' ? 'btn-danger' : 'btn-outline-danger' %>"><i class="bi bi-x-octagon me-1"></i>Cancelled</a>
-                <a href="/league_sessions" class="btn <%= !status ? 'btn-dark' : 'btn-outline-dark' %>"><i class="bi bi-list me-1"></i>All</a>
-            </div>
-        </div>
-    </div>
+    <%- include('../partials/list_filters', {
+        basePath: '/league_sessions', dateLabel: 'Start date',
+        sortLabels: { latest: 'Latest first', oldest: 'Oldest first' },
+        tabs: [
+            { value: '', label: 'All', icon: 'list', color: 'dark' },
+            { value: 'live', label: 'Live', icon: 'broadcast', color: 'success' },
+            { value: 'upcoming', label: 'Upcoming', icon: 'clock', color: 'info' },
+            { value: 'completed', label: 'Completed', icon: 'check-circle', color: 'warning' },
+            { value: 'draft', label: 'Draft', icon: 'file-earmark', color: 'secondary' },
+            { value: 'cancelled', label: 'Cancelled', icon: 'x-octagon', color: 'danger' },
+        ],
+    }) %>
     <div class="card shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -127,8 +126,12 @@
                                     <% } else { %>
                                         <a href="/league_sessions/<%= s._id %>/edit" class="btn btn-outline-primary" title="Edit Session"><i class="bi bi-pencil"></i></a>
                                     <% } %>
+                                    <%# NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — cancel (with refunds) from the list %>
+                                    <% if (can('sessions.cancel') && ['upcoming', 'live', 'draft'].includes(st)) { %>
+                                    <button type="button" class="btn btn-outline-warning" title="Cancel Session (refunds joined users)" onclick="cancelSession('<%= s._id %>', <%= JSON.stringify(s.name || '') %>)"><i class="bi bi-x-octagon"></i></button>
+                                    <% } %>
                                     <% if (st !== 'live' || !active) { %>
-                                    <form action="/league_sessions/<%= s._id %>?_method=DELETE" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this session? This action cannot be undone.')">
+                                    <form action="/league_sessions/<%= s._id %>?_method=DELETE" method="POST" class="d-inline" onsubmit="return confirm('Delete this session? Joined users of its open contests are refunded first. This action cannot be undone.')">
                                         <button type="submit" class="btn btn-outline-danger" title="Delete Session"><i class="bi bi-trash"></i></button>
                                     </form>
                                     <% } %>
@@ -159,7 +162,7 @@
         <div class="card-footer bg-light">
             <div class="d-flex justify-content-between align-items-center">
                 <div class="text-muted small">Showing <%= from %> to <%= to %> of <%= total %> sessions</div>
-                <div><%- include('../partials/pagination', { pages, page, extraQuery: status ? 'status=' + encodeURIComponent(status) : '' }) %></div>
+                <div><%- include('../partials/pagination', { pages, page, extraQuery: filters.queryString }) %></div>
             </div>
         </div>
         <% } %>
@@ -188,6 +191,16 @@ document.addEventListener('DOMContentLoaded', function() {
     all?.addEventListener('change', function() { boxes.forEach(b => { b.checked = this.checked; }); refresh(); });
     boxes.forEach(b => b.addEventListener('change', refresh));
 });
+// NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — cancel a session from the list
+function cancelSession(id, name) {
+    if (!confirm('Cancel session "' + name + '"?
+
+All its contests will be cancelled and every joined user refunded their entry fee. This cannot be undone.')) return;
+    fetch('/league_sessions/' + id + '/cancel', { method: 'POST', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) { alert(data.message || (data.success ? 'Session cancelled' : 'Could not cancel session')); if (data.success) location.reload(); })
+        .catch(function () { alert('Could not cancel session'); });
+}
 function bulkDelete() {
     const checked = document.querySelectorAll('.session-checkbox:checked');
     if (!checked.length) return;

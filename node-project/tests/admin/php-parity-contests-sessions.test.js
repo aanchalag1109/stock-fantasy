@@ -69,7 +69,24 @@ function matches(doc, filter = {}) {
 }
 const copy = (d) => (d ? JSON.parse(JSON.stringify(d), (k, v) => (typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) ? new Date(v) : v)) : d);
 function query(value) {
-  const q = { select: () => q, sort: () => q, session: () => q, lean: () => q, limit: () => q, skip: () => q, populate: () => q, then: (a, b) => Promise.resolve(value).then(a, b) };
+  // sort / skip / limit are applied to array results (used by the list-filter tests)
+  const sortBy = (spec) => (x, y) => {
+    for (const [k, dir] of Object.entries(spec)) {
+      const a = x[k]; const b = y[k];
+      if (a == null && b == null) continue;
+      if (a == null) return dir; if (b == null) return -dir;
+      const c = a instanceof ObjectId || typeof a === 'string' ? String(a).localeCompare(String(b)) : cmp(a, b);
+      if (c) return c * dir;
+    }
+    return 0;
+  };
+  const q = {
+    select: () => q, session: () => q, lean: () => q, populate: () => q,
+    sort: (spec) => { if (Array.isArray(value) && spec && typeof spec === 'object') value = [...value].sort(sortBy(spec)); return q; },
+    skip: (n) => { if (Array.isArray(value)) value = value.slice(n); return q; },
+    limit: (n) => { if (Array.isArray(value)) value = value.slice(0, n); return q; },
+    then: (a, b) => Promise.resolve(value).then(a, b),
+  };
   return q;
 }
 function applyUpdate(doc, update) {
@@ -89,6 +106,13 @@ function stub(name) {
   Model.aggregate = async (pipeline) => {
     const m = pipeline.find((st) => st.$match);
     const rows = all().filter((d) => matches(d, m ? m.$match : {}));
+    const group = (pipeline.find((st) => st.$group) || {}).$group || {};
+    if (group._id === '$status') {
+      const byStatus = new Map();
+      rows.forEach((d) => byStatus.set(d.status, (byStatus.get(d.status) || 0) + 1));
+      return [...byStatus].map(([status, n]) => ({ _id: status, n }));
+    }
+    if (group._id === null) return rows.length ? [{ _id: null, pool: rows.reduce((t, d) => t + (Number(d.prize_pool) || 0), 0) }] : [];
     const counts = new Map();
     rows.forEach((d) => { const k = String(d.contest_id); counts.set(k, { _id: d.contest_id, count: ((counts.get(k) || {}).count || 0) + 1 }); });
     return [...counts.values()];
@@ -106,6 +130,7 @@ function stub(name) {
   Model.insertMany = async (docs) => docs.map((d) => { const x = { _id: new ObjectId(), ...d }; all().push(x); return x; });
   Model.updateOne = async (f, u) => { const d = find(f); if (d) applyUpdate(d, u); return { modifiedCount: d ? 1 : 0 }; };
   Model.updateMany = async (f, u) => { const ds = all().filter((d) => matches(d, f)); ds.forEach((d) => applyUpdate(d, u)); return { modifiedCount: ds.length }; };
+  Model.deleteOne = async (f) => { const n = all().length; const d = find(f); db[name] = all().filter((x) => x !== d); return { deletedCount: n - db[name].length }; };
   Model.deleteMany = async (f) => { const n = all().length; db[name] = all().filter((d) => !matches(d, f)); return { deletedCount: n - db[name].length }; };
   Model.findOneAndUpdate = async (f, u, opts = {}) => {
     let d = find(f);
@@ -537,5 +562,135 @@ describe('Session edit (PHP edit rules) and Refetch Missing Prices', () => {
     assert.match(page.text, /Refetch Missing Prices/);
     assert.match(page.text, /Cancel Session/);
     assert.match(page.text, /This session is live/);
+  });
+});
+
+// ─── NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — list filters + refund-safe delete ──
+
+describe('Sessions & Contests list filters (client feedback)', () => {
+  beforeEach(reset);
+
+  const day = (iso) => new Date(`${iso}T10:00:00+05:30`); // 10:00 IST on that day
+  const sessionRows = (html) => [...html.matchAll(/<div class="fw-semibold text-dark">([^<]+)<\/div>/g)].map((m) => m[1]);
+  const tabCount = (html, tab) => Number(html.match(new RegExp(`data-status-tab="${tab}"[\\s\\S]*?<span class="badge[^"]*"[^>]*>(\\d+)<`))[1]);
+
+  function seedSessions() {
+    addSession({ name: 'Oct 1 done', status: 'completed', start_time: day('2026-10-01'), end_time: day('2026-10-01') });
+    addSession({ name: 'Oct 5 done', status: 'completed', start_time: day('2026-10-05'), end_time: day('2026-10-05') });
+    addSession({ name: 'Oct 9 cancelled', status: 'cancelled', active: false, start_time: day('2026-10-09'), end_time: day('2026-10-09') });
+    addSession({ name: 'Far upcoming', status: 'upcoming', start_time: min(60 * 24 * 30), end_time: min(60 * 24 * 30 + 60) });
+  }
+
+  test('sessions: latest first by default, oldest on request', async () => {
+    seedSessions();
+    const admin = await login();
+    assert.deepEqual(sessionRows((await admin.get('/league_sessions')).text), ['Far upcoming', 'Oct 9 cancelled', 'Oct 5 done', 'Oct 1 done']);
+    assert.deepEqual(sessionRows((await admin.get('/league_sessions?sort=oldest')).text), ['Oct 1 done', 'Oct 5 done', 'Oct 9 cancelled', 'Far upcoming']);
+  });
+
+  test('sessions: status + date range (IST days, inclusive) combine; tab counts follow the dates', async () => {
+    seedSessions();
+    const admin = await login();
+    const page = (await admin.get('/league_sessions?status=completed&from=2026-10-02&to=2026-10-09')).text;
+    assert.deepEqual(sessionRows(page), ['Oct 5 done']);
+    assert.equal(tabCount(page, 'completed'), 1);
+    assert.equal(tabCount(page, 'cancelled'), 1);
+    assert.equal(tabCount(page, 'all'), 2);
+    assert.match(page, /href="\/league_sessions\?status=cancelled&amp;from=2026-10-02&amp;to=2026-10-09"/, 'tabs keep the date filter');
+    // swapped dates are tolerated; junk is ignored
+    assert.deepEqual(sessionRows((await admin.get('/league_sessions?from=2026-10-05&to=2026-10-01&sort=oldest')).text), ['Oct 1 done', 'Oct 5 done']);
+    assert.equal(sessionRows((await admin.get('/league_sessions?status=bogus&from=nope')).text).length, 4);
+  });
+
+  test('sessions list has a Cancel button for open sessions that refunds through the cancel route', async () => {
+    const s = addSession({ name: 'Open one', status: 'upcoming', start_time: min(60), end_time: min(120) });
+    addSession({ name: 'Done', status: 'completed', start_time: min(-120), end_time: min(-60) });
+    const rows = addEntries(addContest(s, { status: 'active' }), 2);
+    const admin = await login();
+    const page = (await admin.get('/league_sessions')).text;
+    assert.equal((page.match(/onclick="cancelSession\(/g) || []).length, 1);
+    const res = await json(admin, 'post', `/league_sessions/${s._id}/cancel`);
+    assert.equal(res.status, 200, res.text);
+    rows.forEach((r) => assert.equal(balance(r), 25));
+    assert.equal(get('LeagueSession', s._id).status, 'cancelled');
+  });
+
+  test('contests: status filters use the session state; Cancelled uses the contest; counts are not per page', async () => {
+    const live = addSession({ status: 'live', start_time: day('2026-10-20') });
+    const upcoming = addSession({ status: 'upcoming', start_time: day('2026-10-25') });
+    const done = addSession({ status: 'completed', start_time: day('2026-10-10') });
+    for (let i = 0; i < 10; i += 1) addContest(done, { status: 'completed', name: `Done ${i}`, created_at: day('2026-10-09') });
+    addContest(live, { status: 'live', name: 'Live A', created_at: day('2026-10-18') });
+    addContest(upcoming, { status: 'active', name: 'Up A', created_at: day('2026-10-19') });
+    addContest(upcoming, { status: 'cancelled', name: 'Up cancelled', created_at: day('2026-10-21') });
+    const admin = await login();
+    const all = (await admin.get('/contests')).text;
+    assert.equal(tabCount(all, 'all'), 13);
+    assert.equal(tabCount(all, 'completed'), 10);
+    assert.equal(tabCount(all, 'upcoming'), 1, 'cancelled contests are not counted as upcoming');
+    assert.equal(tabCount(all, 'cancelled'), 1);
+    const names = (html) => [...html.matchAll(/Contest: ([^<]+)<\/div>/g)].map((m) => m[1]);
+    assert.deepEqual(names(all).slice(0, 3), ['Up cancelled', 'Up A', 'Live A'], 'newest first');
+    assert.deepEqual(names((await admin.get('/contests?status=cancelled')).text), ['Up cancelled']);
+    assert.deepEqual(names((await admin.get('/contests?status=upcoming')).text), ['Up A']);
+    assert.deepEqual(names((await admin.get('/contests?from=2026-10-20&to=2026-10-31')).text), ['Up cancelled', 'Up A', 'Live A']);
+    assert.match((await admin.get('/contests?status=completed&page=2')).text, /Showing 9 to 10 of 10 contests/);
+  });
+});
+
+describe('Delete refunds open contests first (client feedback)', () => {
+  beforeEach(reset);
+
+  test('deleting an open contest refunds its joined users; a completed one is just deleted', async () => {
+    const s = addSession({ status: 'upcoming' });
+    const open = addContest(s, { status: 'active' });
+    const rows = addEntries(open, 3);
+    const done = addContest(addSession({ status: 'completed' }), { status: 'completed' });
+    const doneRows = addEntries(done, 2);
+    const admin = await login();
+    await admin.post(`/contests/${open._id}?_method=DELETE`);
+    assert.equal(get('Contest', open._id), undefined);
+    rows.forEach((r) => assert.equal(balance(r), 25));
+    await admin.post(`/contests/${done._id}?_method=DELETE`);
+    assert.equal(get('Contest', done._id), undefined);
+    doneRows.forEach((r) => assert.equal(balance(r), 0));
+    assert.match((await admin.get('/contests')).text, /Contest deleted!/);
+  });
+
+  test('bulk delete refunds open contests and still skips live ones', async () => {
+    const s = addSession({ status: 'upcoming' });
+    const a = addContest(s, { status: 'active' });
+    const live = addContest(addSession(), { status: 'live' });
+    const rows = addEntries(a, 2);
+    const admin = await login();
+    await admin.post('/contests/bulk-delete').type('form').send({ 'contest_ids[]': [String(a._id), String(live._id)] });
+    assert.equal(get('Contest', a._id), undefined);
+    assert.ok(get('Contest', live._id));
+    rows.forEach((r) => assert.equal(balance(r), 25));
+    assert.match((await admin.get('/contests')).text, /Deleted 1 contests\. 2 entry fee\(s\) refunded\./);
+  });
+
+  test('deleting a session refunds its open contests and detaches them (PHP: ON DELETE SET NULL)', async () => {
+    const s = addSession({ status: 'upcoming', start_time: min(60), end_time: min(120) });
+    const c1 = addContest(s, { status: 'active' });
+    const c2 = addContest(s, { status: 'cancelled' });
+    const rows = addEntries(c1, 2);
+    const admin = await login();
+    await admin.post(`/league_sessions/${s._id}?_method=DELETE`);
+    assert.equal(get('LeagueSession', s._id), undefined);
+    rows.forEach((r) => assert.equal(balance(r), 25));
+    assert.equal(get('Contest', c1._id).status, 'cancelled');
+    assert.equal(get('Contest', c1._id).league_session_id, null);
+    assert.equal(get('Contest', c2._id).league_session_id, null);
+    assert.equal(db.Transaction.length, 2, 'the already-cancelled contest is not refunded again');
+  });
+
+  test('active live sessions still cannot be deleted', async () => {
+    const s = addSession({ status: 'live', active: true });
+    const rows = addEntries(addContest(s), 2);
+    const admin = await login();
+    await admin.post(`/league_sessions/${s._id}?_method=DELETE`);
+    assert.ok(get('LeagueSession', s._id));
+    rows.forEach((r) => assert.equal(balance(r), 0));
   });
 });

@@ -1,0 +1,36 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — shared Sessions/Contests filter bar.
+    Locals: filters, counts, statusLink, tabs [{ value, label, icon, color }], basePath, dateLabel, sortLabels %>
+<div class="card shadow-sm mb-4 list-filters">
+    <div class="card-body">
+        <div class="btn-group flex-wrap mb-3" role="group">
+            <% tabs.forEach(function (tab) { const activeTab = filters.status === tab.value; %>
+            <a href="<%= basePath %><%= statusLink(tab.value) %>" class="btn <%= activeTab ? 'btn-' + tab.color : 'btn-outline-' + tab.color %>" data-status-tab="<%= tab.value || 'all' %>">
+                <i class="bi bi-<%= tab.icon %> me-1"></i><%= tab.label %>
+                <span class="badge <%= activeTab ? 'bg-light text-dark' : 'bg-' + tab.color %> ms-1"><%= counts[tab.value || 'all'] || 0 %></span>
+            </a>
+            <% }) %>
+        </div>
+        <form method="GET" action="<%= basePath %>" class="row g-2 align-items-end">
+            <% if (filters.status) { %><input type="hidden" name="status" value="<%= filters.status %>"><% } %>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small text-muted mb-1"><%= dateLabel %> from</label>
+                <input type="date" name="from" value="<%= filters.from %>" class="form-control form-control-sm">
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small text-muted mb-1"><%= dateLabel %> to</label>
+                <input type="date" name="to" value="<%= filters.to %>" class="form-control form-control-sm">
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small text-muted mb-1">Sort</label>
+                <select name="sort" class="form-select form-select-sm">
+                    <option value="latest" <%= filters.sort === 'latest' ? 'selected' : '' %>><%= sortLabels.latest %></option>
+                    <option value="oldest" <%= filters.sort === 'oldest' ? 'selected' : '' %>><%= sortLabels.oldest %></option>
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>Apply</button>
+                <a href="<%= basePath %>" class="btn btn-sm btn-outline-secondary" title="Clear all filters"><i class="bi bi-x-lg"></i> Reset</a>
+            </div>
+        </form>
+    </div>
+</div>

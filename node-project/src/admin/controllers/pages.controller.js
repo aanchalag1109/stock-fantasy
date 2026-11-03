@@ -865,7 +865,7 @@ const payments = {
     const userMap = await paymentOrders.usersFor(items);
     items.forEach(p => { p.user = userMap.get(String(p.user_id)) || null; });
     render(res, 'payments/index', {
-      title: 'Payment Orders', payments: items, total, pages: Math.ceil(total / limit), page: Number(page), search, status, admin: req.session.admin,
+      title: 'Deposit Orders', payments: items, total, pages: Math.ceil(total / limit), page: Number(page), search, status, admin: req.session.admin,
     });
   },
   // PHP back(): return to the page (with its filters) the admin came from.
@@ -926,11 +926,11 @@ const testing = {
   },
   testUsers: async (req, res) => {
     const users = await User.find({ is_test_user: true }).sort({ created_at: -1 }).limit(300).lean();
-    render(res, 'testing/test_users', { title: 'Test Users', users, admin: req.session.admin });
+    render(res, 'testing/test_users', { title: 'Bot Users', users, admin: req.session.admin });
   },
   myGame: async (req, res) => {
     const sessions = await LeagueSession.find({ status: 'upcoming' }).sort({ start_time: 1 }).lean();
-    render(res, 'testing/my_game', { title: 'My Game - Upcoming Sessions', sessions, admin: req.session.admin });
+    render(res, 'testing/my_game', { title: 'Bot Contests - Upcoming Sessions', sessions, admin: req.session.admin });
   },
   sessionContests: async (req, res) => {
     const session = await findDoc(LeagueSession, req.params.sessionId);

@@ -89,4 +89,31 @@ async function refundEntries(contest, label) {
   return refunded;
 }
 
-module.exports = { cancelContest };
+// NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — deleting a contest or session must not
+// swallow entry fees. A contest that is still open (active/live) is cancelled and refunded first;
+// completed contests are left as they are (their results may already be paid; legacy contests have
+// no reliable "paid" flag), exactly like PHP's plain delete.
+const OPEN_STATUSES = ['active', 'live', 'upcoming'];
+
+function isOpen(contest) {
+  return OPEN_STATUSES.includes(contest.status || 'active') && contest.prizes_distributed !== true;
+}
+
+/**
+ * Refunds an open contest before it is deleted or detached.
+ * @returns {Promise<{ok:boolean, refunded:number, message?:string}>} ok=false → do not delete
+ */
+async function refundBeforeDelete(contest, { actor = 'admin' } = {}) {
+  if (!isOpen(contest)) return { ok: true, refunded: 0 };
+  const result = await cancelContest(contest, {
+    claimFilter: { status: { $in: OPEN_STATUSES } },
+    reason: `deleted by ${actor}`,
+  });
+  if (result.success) return { ok: true, refunded: result.refunded || 0 };
+  // Lost a race (e.g. it just completed or was cancelled by someone else): re-check before deleting.
+  const current = await Contest.findById(contest._id).select('status prizes_distributed').lean();
+  if (!current || current.status === 'cancelled' || !isOpen(current)) return { ok: true, refunded: 0 };
+  return { ok: false, refunded: 0, message: `Contest #${publicId(contest)}: ${result.message}` };
+}
+
+module.exports = { cancelContest, refundBeforeDelete, isOpen };

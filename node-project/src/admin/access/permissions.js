@@ -32,7 +32,7 @@ const MODULES = [
   { key: 'kyc', label: 'KYC Submissions', group: 'Players', actions: { view: 'View', review: 'Approve / reject' } },
   { key: 'tickets', label: 'Support Tickets', group: 'Players', actions: { view: 'View', reply: 'Reply & close' } },
   { key: 'transactions', label: 'Transactions', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject' } },
-  { key: 'payments', label: 'Payment Orders', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject / verify' } },
+  { key: 'payments', label: 'Deposit Orders', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject / verify' } },
   { key: 'withdrawals', label: 'Withdrawal Requests', group: 'Finance', actions: { view: 'View', process: 'Approve / reject' } },
   { key: 'deposit_withdrawal_settings', label: 'Deposit & Withdrawal Settings', group: 'Finance', actions: { view: 'View', edit: 'Edit limits' } },
   // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT/INR to ProbCoin Conversion Settings
@@ -47,7 +47,7 @@ const MODULES = [
   { key: 'app_update_settings', label: 'App Update Settings (Android & iOS)', group: 'System', actions: { view: 'View', edit: 'Edit update policy' } },
   { key: 'cron', label: 'Cron Check', group: 'System', actions: { view: 'View logs', clear: 'Clear logs' } },
   { key: 'live_price_feeds', label: 'Live Price Feeds', group: 'System', actions: { view: 'View' } },
-  { key: 'testing', label: 'Testing Tools & Test Users', group: 'System', actions: { view: 'View', manage: 'Generate, delete & run tests' } },
+  { key: 'testing', label: 'Bots (Bot Users & Bot Contests)', group: 'System', actions: { view: 'View', manage: 'Generate, delete & run tests' } },
 ];
 
 const ALL_PERMISSIONS = MODULES.flatMap((m) => Object.keys(m.actions).map((a) => `${m.key}.${a}`));

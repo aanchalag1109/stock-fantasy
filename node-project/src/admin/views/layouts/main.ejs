@@ -239,29 +239,7 @@
                 </button>
                 <h1 class="h5 mb-0"><%= typeof title !== 'undefined' ? title : 'Dashboard' %></h1>
                 <div class="d-flex align-items-center">
-                    <div class="dropdown ms-3" x-data="{ open: false }">
-                        <button @click="open = !open" class="btn btn-link text-dark position-relative" type="button">
-                            <i class="bi bi-bell" style="font-size: 1.25rem;"></i>
-                            <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle">
-                                <span class="visually-hidden">New alerts</span>
-                            </span>
-                        </button>
-                        <div x-show="open" @click.away="open = false" class="dropdown-menu dropdown-menu-end shadow" style="min-width: 300px;">
-                            <div class="dropdown-header"><h6 class="mb-0">Notifications</h6></div>
-                            <div class="dropdown-divider"></div>
-                            <a href="#" class="dropdown-item">
-                                <div class="d-flex align-items-center">
-                                    <div class="flex-shrink-0"><i class="bi bi-person-plus text-primary me-2"></i></div>
-                                    <div class="flex-grow-1">
-                                        <div>New user registered</div>
-                                        <small class="text-muted">2 minutes ago</small>
-                                    </div>
-                                </div>
-                            </a>
-                            <div class="dropdown-divider"></div>
-                            <a href="#" class="dropdown-item text-center">View all notifications</a>
-                        </div>
-                    </div>
+                    <%# NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — removed the dummy notification bell (hardcoded sample alert, links went nowhere) %>
                     <div class="dropdown ms-2" x-data="{ open: false }">
                         <button @click="open = !open" class="btn btn-link text-dark text-decoration-none d-flex align-items-center" type="button">
                             <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">

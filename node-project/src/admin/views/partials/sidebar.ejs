@@ -1,4 +1,5 @@
 <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control — links are shown only when can() allows the module. %>
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — tabs grouped into sections, renamed, and a Back button added. %>
 <%
   function on(prefix) {
     if (prefix === '/dashboard') return currentPath === '/dashboard' || currentPath === '/';
@@ -7,6 +8,53 @@
     if (prefix === '/testing') return currentPath === '/testing' || currentPath.startsWith('/testing/');
     return currentPath === prefix || currentPath.startsWith(prefix + '/');
   }
+
+  // A section's heading is shown only when the admin can open at least one of its links.
+  const sections = [
+    { title: 'Main', items: [
+      { show: can('dashboard.view'), href: '/dashboard', icon: 'bi-speedometer2', label: 'Dashboard', active: on('/dashboard') },
+      { show: can('live_management.view'), href: '/live-management', icon: 'bi-broadcast-pin', label: 'Live Management', active: on('/live-management'), liveBadge: true },
+    ] },
+    { title: 'Sessions & Contests', items: [
+      { show: can('sessions.view'), href: '/league_sessions', icon: 'bi-calendar2-week', label: 'Leagues / Sessions', active: on('/league_sessions') || on('/sessions') },
+      { show: can('contests.view'), href: '/contests', icon: 'bi-trophy', label: 'Contests', active: on('/contests') },
+      { show: can('templates.view'), href: '/templates', icon: 'bi-bookmark', label: 'Saved Templates', active: on('/templates') },
+      { show: can('market_categories.view'), href: '/market_type_categories', icon: 'bi-tags', label: 'Market Categories', active: on('/market_type_categories') },
+    ] },
+    { title: 'Banners & Notifications', items: [
+      { show: can('banners.view'), href: '/banners', icon: 'bi-image', label: 'Banners', active: on('/banners') },
+      { show: can('announcements.view'), href: '/announcements', icon: 'bi-megaphone', label: 'Announcements', active: on('/announcements') },
+      { show: can('notification_settings.view'), href: '/notification-settings', icon: 'bi-bell', label: 'Notification Settings', active: on('/notification-settings') },
+    ] },
+    { title: 'Payments & Transactions', items: [
+      { show: can('payments.view'), href: '/payments', icon: 'bi-credit-card', label: 'Deposit Orders', active: on('/payments') },
+      { show: can('withdrawals.view'), href: '/withdrawal_requests', icon: 'bi-cash-coin', label: 'Withdrawal Requests', active: on('/withdrawal_requests') || on('/withdrawals') },
+      { show: can('transactions.view'), href: '/transactions', icon: 'bi-arrow-left-right', label: 'Transactions', active: on('/transactions') },
+      { show: can('pending_prizes.view'), href: '/pending-prizes', icon: 'bi-gift', label: 'Pending Prizes', active: on('/pending-prizes') },
+      { show: can('deposit_withdrawal_settings.view'), href: '/deposit-withdrawal-settings', icon: 'bi-sliders', label: 'Deposit &amp; Withdrawal Settings', active: on('/deposit-withdrawal-settings') },
+      { show: can('probcoin_conversion.view'), href: '/probcoin-conversion', icon: 'bi-currency-exchange', label: 'ProbCoin Conversion', active: on('/probcoin-conversion') },
+    ] },
+    { title: 'Analytics', items: [
+      { show: can('performance.view'), href: '/performance', icon: 'bi-graph-up-arrow', label: 'Performance', active: on('/performance') },
+      { show: can('contest_analysis.view'), href: '/contest-analysis', icon: 'bi-bar-chart-line', label: 'Contest Analysis', active: on('/contest-analysis') },
+      { show: can('live_price_feeds.view'), href: '/live-price-feeds', icon: 'bi-graph-up', label: 'Live Price Feeds', active: on('/live-price-feeds') },
+    ] },
+    { title: 'Bots', items: [
+      { show: can('testing.view'), href: '/testing/test-users', icon: 'bi-robot', label: 'Bot Users', active: on('/testing/test-users') },
+      { show: can('testing.view'), href: '/testing/my-game', icon: 'bi-joystick', label: 'Bot Contests', active: on('/testing') && !on('/testing/test-users') },
+    ] },
+    { title: 'Users & Admin Management', items: [
+      { show: can('users.view'), href: '/users', icon: 'bi-people', label: 'Players', active: on('/users') },
+      { show: isSuperAdmin, href: '/admin-users', icon: 'bi-person-badge', label: 'Admin Users', active: on('/admin-users') },
+      { show: isSuperAdmin, href: '/admin-roles', icon: 'bi-shield-lock', label: 'Roles &amp; Permissions', active: on('/admin-roles') },
+    ] },
+    { title: 'App & System', items: [
+      { show: can('app_update_settings.view'), href: '/android-app-update', icon: 'bi-phone', label: 'Android App Update', active: on('/android-app-update') },
+      { show: can('app_update_settings.view'), href: '/ios-app-update', icon: 'bi-apple', label: 'iOS App Update', active: on('/ios-app-update') },
+      { show: can('cron.view'), href: '/cron-logs', icon: 'bi-clock-history', label: 'Cron Check', active: on('/cron-logs') || on('/cron') },
+    ] },
+  ];
+  const isHome = on('/dashboard');
 %>
 <div class="sidebar text-white d-flex flex-column d-lg-block" :class="{ 'open': sidebarOpen, 'd-none': !sidebarOpen && window.innerWidth < 992 }" style="width: 250px; z-index: 1040;">
   <div class="sidebar-logo">
@@ -14,202 +62,28 @@
   </div>
   <div class="sidebar-divider"></div>
   <nav class="flex-grow-1 overflow-y-auto py-2">
-    <div class="sidebar-section">Main</div>
-    <ul class="nav flex-column px-2">
-      <% if (can('dashboard.view')) { %>
+    <% if (!isHome) { %>
+    <ul class="nav flex-column px-2 mb-0">
       <li class="nav-item">
-        <a href="/dashboard" class="sidebar-link <%= on('/dashboard') ? 'active' : '' %>">
-          <i class="bi bi-speedometer2"></i> Dashboard
-        </a>
-      </li>
-      <% } %>
-      <% if (can('sessions.view')) { %>
-      <li class="nav-item">
-        <a href="/league_sessions" class="sidebar-link <%= (on('/league_sessions') || on('/sessions')) ? 'active' : '' %>">
-          <i class="bi bi-calendar2-week"></i> Leagues/Sessions
-        </a>
-      </li>
-      <% } %>
-      <% if (can('templates.view')) { %>
-      <li class="nav-item">
-        <a href="/templates" class="sidebar-link <%= on('/templates') ? 'active' : '' %>">
-          <i class="bi bi-bookmark"></i> Saved Templates
-        </a>
-      </li>
-      <% } %>
-      <% if (can('performance.view')) { %>
-      <li class="nav-item">
-        <a href="/performance" class="sidebar-link <%= on('/performance') ? 'active' : '' %>">
-          <i class="bi bi-graph-up-arrow"></i> Performance
-        </a>
-      </li>
-      <% } %>
-      <% if (can('contest_analysis.view')) { %>
-      <li class="nav-item">
-        <a href="/contest-analysis" class="sidebar-link <%= on('/contest-analysis') ? 'active' : '' %>">
-          <i class="bi bi-bar-chart-line"></i> Contest Analysis
-        </a>
-      </li>
-      <% } %>
-      <% if (can('announcements.view')) { %>
-      <li class="nav-item">
-        <a href="/announcements" class="sidebar-link <%= on('/announcements') ? 'active' : '' %>">
-          <i class="bi bi-megaphone"></i> Announcements
-        </a>
-      </li>
-      <% } %>
-      <% if (can('market_categories.view')) { %>
-      <li class="nav-item">
-        <a href="/market_type_categories" class="sidebar-link <%= on('/market_type_categories') ? 'active' : '' %>">
-          <i class="bi bi-tags"></i> Market Type Category
-        </a>
-      </li>
-      <% } %>
-      <% if (can('users.view')) { %>
-      <li class="nav-item">
-        <a href="/users" class="sidebar-link <%= on('/users') ? 'active' : '' %>">
-          <i class="bi bi-people"></i> Players
-        </a>
-      </li>
-      <% } %>
-      <% if (can('contests.view')) { %>
-      <li class="nav-item">
-        <a href="/contests" class="sidebar-link <%= on('/contests') ? 'active' : '' %>">
-          <i class="bi bi-trophy"></i> Contests
-        </a>
-      </li>
-      <% } %>
-      <% if (can('live_management.view')) { %>
-      <li class="nav-item">
-        <a href="/live-management" class="sidebar-link <%= on('/live-management') ? 'active' : '' %>">
-          <i class="bi bi-broadcast-pin"></i> Live Management
-          <span class="badge bg-danger ms-auto" id="liveContestCount">0</span>
-        </a>
-      </li>
-      <% } %>
-      <% if (can('cron.view')) { %>
-      <li class="nav-item">
-        <a href="/cron-logs" class="sidebar-link <%= (on('/cron-logs') || on('/cron')) ? 'active' : '' %>">
-          <i class="bi bi-clock-history"></i> Cron Check
-        </a>
-      </li>
-      <% } %>
-      <% if (can('transactions.view')) { %>
-      <li class="nav-item">
-        <a href="/transactions" class="sidebar-link <%= on('/transactions') ? 'active' : '' %>">
-          <i class="bi bi-arrow-left-right"></i> Transactions
-        </a>
-      </li>
-      <% } %>
-      <% if (can('pending_prizes.view')) { %>
-      <li class="nav-item">
-        <a href="/pending-prizes" class="sidebar-link <%= on('/pending-prizes') ? 'active' : '' %>">
-          <i class="bi bi-trophy text-warning"></i> Pending Prizes
-        </a>
-      </li>
-      <% } %>
-      <% if (can('payments.view')) { %>
-      <li class="nav-item">
-        <a href="/payments" class="sidebar-link <%= on('/payments') ? 'active' : '' %>">
-          <i class="bi bi-credit-card"></i> Payment Orders
-        </a>
-      </li>
-      <% } %>
-    </ul>
-    <div class="sidebar-divider"></div>
-    <div class="sidebar-section">Other</div>
-    <ul class="nav flex-column px-2">
-      <% if (can('banners.view')) { %>
-      <li class="nav-item">
-        <a href="/banners" class="sidebar-link <%= on('/banners') ? 'active' : '' %>">
-          <i class="bi bi-image"></i> Manage Banners
-        </a>
-      </li>
-      <% } %>
-      <% if (can('withdrawals.view')) { %>
-      <li class="nav-item">
-        <a href="/withdrawal_requests" class="sidebar-link <%= (on('/withdrawal_requests') || on('/withdrawals')) ? 'active' : '' %>">
-          <i class="bi bi-cash-coin"></i> Withdrawal Requests
-        </a>
-      </li>
-      <% } %>
-      <%# NEW IMPLEMENTATION (node-project only, not converted from PHP): Deposit and Withdrawal Settings Module %>
-      <% if (can('deposit_withdrawal_settings.view')) { %>
-      <li class="nav-item">
-        <a href="/deposit-withdrawal-settings" class="sidebar-link <%= on('/deposit-withdrawal-settings') ? 'active' : '' %>">
-          <i class="bi bi-sliders"></i> Deposit &amp; Withdrawal Settings
-        </a>
-      </li>
-      <% } %>
-      <%# NEW IMPLEMENTATION — NODE.JS PROJECT: USDT/INR to ProbCoin Conversion Settings %>
-      <% if (can('probcoin_conversion.view')) { %>
-      <li class="nav-item">
-        <a href="/probcoin-conversion" class="sidebar-link <%= on('/probcoin-conversion') ? 'active' : '' %>">
-          <i class="bi bi-currency-exchange"></i> ProbCoin Conversion
-        </a>
-      </li>
-      <% } %>
-      <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications and Notification Management %>
-      <% if (can('notification_settings.view')) { %>
-      <li class="nav-item">
-        <a href="/notification-settings" class="sidebar-link <%= on('/notification-settings') ? 'active' : '' %>">
-          <i class="bi bi-bell"></i> Notification Settings
-        </a>
-      </li>
-      <% } %>
-      <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System %>
-      <% if (can('app_update_settings.view')) { %>
-      <li class="nav-item">
-        <a href="/android-app-update" class="sidebar-link <%= on('/android-app-update') ? 'active' : '' %>">
-          <i class="bi bi-phone"></i> Android App Update
-        </a>
-      </li>
-      <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System %>
-      <li class="nav-item">
-        <a href="/ios-app-update" class="sidebar-link <%= on('/ios-app-update') ? 'active' : '' %>">
-          <i class="bi bi-apple"></i> iOS App Update
-        </a>
-      </li>
-      <% } %>
-      <% if (can('live_price_feeds.view')) { %>
-      <li class="nav-item">
-        <a href="/live-price-feeds" class="sidebar-link <%= on('/live-price-feeds') ? 'active' : '' %>">
-          <i class="bi bi-graph-up"></i> Live Price Feeds
-        </a>
-      </li>
-      <% } %>
-      <% if (can('testing.view')) { %>
-      <li class="nav-item">
-        <a href="/testing/test-users" class="sidebar-link <%= on('/testing/test-users') ? 'active' : '' %>">
-          <i class="bi bi-bug"></i> Test Users
-        </a>
-      </li>
-      <% } %>
-      <% if (can('testing.view')) { %>
-      <li class="nav-item">
-        <a href="/testing/my-game" class="sidebar-link <%= on('/testing') ? 'active' : '' %>">
-          <i class="bi bi-bug"></i> Testing
-        </a>
-      </li>
-      <% } %>
-    </ul>
-    <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (super admin only) %>
-    <% if (isSuperAdmin) { %>
-    <div class="sidebar-divider"></div>
-    <div class="sidebar-section">Admin Access</div>
-    <ul class="nav flex-column px-2">
-      <li class="nav-item">
-        <a href="/admin-users" class="sidebar-link <%= on('/admin-users') ? 'active' : '' %>">
-          <i class="bi bi-person-badge"></i> Admin Users
-        </a>
-      </li>
-      <li class="nav-item">
-        <a href="/admin-roles" class="sidebar-link <%= on('/admin-roles') ? 'active' : '' %>">
-          <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
+        <a href="/dashboard" class="sidebar-link sidebar-back" onclick="if (history.length > 1 && document.referrer.indexOf(location.host) !== -1) { history.back(); return false; }">
+          <i class="bi bi-arrow-left"></i> Back
         </a>
       </li>
     </ul>
     <% } %>
+    <% sections.forEach(function (section, i) { const items = section.items.filter(function (it) { return it.show; }); if (!items.length) return; %>
+    <div class="sidebar-section"><%= section.title %></div>
+    <ul class="nav flex-column px-2">
+      <% items.forEach(function (it) { %>
+      <li class="nav-item">
+        <a href="<%= it.href %>" class="sidebar-link <%= it.active ? 'active' : '' %>">
+          <i class="bi <%= it.icon %>"></i> <%- it.label %>
+          <% if (it.liveBadge) { %><span class="badge bg-danger ms-auto" id="liveContestCount">0</span><% } %>
+        </a>
+      </li>
+      <% }) %>
+    </ul>
+    <% }) %>
   </nav>
   <div class="sidebar-divider"></div>
   <div class="px-3 pb-3">

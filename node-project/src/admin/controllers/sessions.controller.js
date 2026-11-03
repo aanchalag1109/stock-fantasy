@@ -9,6 +9,12 @@ const MarketTypeCategory = require('../../models/market-type-category.model');
 const { render } = require('../helpers/render');
 // PHP PARITY: session cancel / refetch prices (services/session-management.service.js)
 const sessionService = require('../../services/session-management.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — list filters + refund-safe delete
+const { parseListFilters, withStatus } = require('../helpers/list-filters');
+const { refundBeforeDelete } = require('../../services/contest-cancellation.service');
+const { keysOf } = require('../../helpers/mobile-compat');
+
+const LIST_STATUSES = ['live', 'upcoming', 'completed', 'draft', 'cancelled'];
 
 const PAGE_SIZE = 8;
 const SESSION_STATUSES = ['upcoming', 'live', 'completed', 'draft'];
@@ -147,26 +153,21 @@ async function updateSessionStatuses() {
 const index = async (req, res) => {
   try {
     await updateSessionStatuses();
-    const { status } = req.query;
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — status, date (start date, IST) and
+    // Latest/Oldest filters; tab counts cover all matching sessions, not just the current page.
+    const filters = parseListFilters(req.query, LIST_STATUSES);
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const filter = {};
-    if (status) filter.status = status;
+    const base = filters.range ? { start_time: filters.range } : {};
+    const filter = filters.status ? { ...base, status: filters.status } : base;
+    const dir = filters.sort === 'oldest' ? 1 : -1;
     const skip = (page - 1) * PAGE_SIZE;
-    const [sessions, total] = await Promise.all([
-      LeagueSession.aggregate([
-        { $match: filter },
-        {
-          $addFields: {
-            id_missing: { $cond: [{ $eq: [{ $ifNull: ['$old_id', null] }, null] }, 1, 0] },
-          },
-        },
-        { $sort: { id_missing: 1, old_id: 1, _id: 1 } },
-        { $skip: skip },
-        { $limit: PAGE_SIZE },
-        { $project: { id_missing: 0 } },
-      ]),
+    const [sessions, total, statusCounts] = await Promise.all([
+      LeagueSession.find(filter).sort({ start_time: dir, _id: dir }).skip(skip).limit(PAGE_SIZE).lean(),
       LeagueSession.countDocuments(filter),
+      LeagueSession.aggregate([{ $match: base }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
     ]);
+    const counts = { all: 0 };
+    statusCounts.forEach((row) => { counts[row._id || 'upcoming'] = (counts[row._id || 'upcoming'] || 0) + row.n; counts.all += row.n; });
     const pages = Math.ceil(total / PAGE_SIZE) || 1;
     render(res, 'sessions/index', {
       title: 'Leagues & Sessions',
@@ -175,7 +176,10 @@ const index = async (req, res) => {
       pages,
       page,
       pageSize: PAGE_SIZE,
-      status: status || '',
+      status: filters.status,
+      filters,
+      counts,
+      statusLink: (value) => withStatus(filters, value),
       admin: req.session.admin,
     });
   } catch (err) { res.status(500).send(err.message); }
@@ -503,12 +507,17 @@ const cancel = async (req, res) => {
 const bulkDelete = async (req, res) => {
   try {
     const ids = [].concat(req.body.session_ids || req.body['session_ids[]'] || []).filter(Boolean);
-    const sessions = await LeagueSession.find({ _id: { $in: ids } }).select('_id status active').lean();
-    const deletable = sessions
-      .filter((session) => !(session.status === 'live' && session.active !== false))
-      .map((session) => session._id);
-    if (deletable.length) await LeagueSession.deleteMany({ _id: { $in: deletable } });
-    req.flash('success', `Deleted ${deletable.length} sessions successfully.`);
+    const sessions = await LeagueSession.find({ _id: { $in: ids } }).select('_id old_id status active').lean();
+    let deleted = 0;
+    let refunds = 0;
+    const failed = [];
+    for (const session of sessions) {
+      if (session.status === 'live' && session.active !== false) continue;
+      const result = await deleteSessionSafely(session, actorOf(req));
+      if (result.ok) { deleted += 1; refunds += result.refunded; } else failed.push(result.message);
+    }
+    req.flash('success', `Deleted ${deleted} sessions successfully.` + (refunds ? ` ${refunds} entry fee(s) refunded.` : ''));
+    if (failed.length) req.flash('error', `Not deleted: ${failed.join('; ')}`);
     res.redirect('/league_sessions');
   } catch (err) { req.flash('error', err.message); res.redirect('/league_sessions'); }
 };
@@ -521,10 +530,29 @@ const destroy = async (req, res) => {
       req.flash('error', 'Cannot delete active live sessions. Deactivate first.');
       return res.redirect('/league_sessions');
     }
-    await LeagueSession.findByIdAndDelete(session._id);
-    req.flash('success', 'Session deleted successfully.');
+    const result = await deleteSessionSafely(session, actorOf(req));
+    if (!result.ok) { req.flash('error', `Session not deleted: ${result.message}`); return res.redirect('/league_sessions'); }
+    req.flash('success', 'Session deleted successfully.' + (result.refunded ? ` ${result.refunded} entry fee(s) refunded.` : ''));
     res.redirect('/league_sessions');
   } catch (err) { req.flash('error', err.message); res.redirect('/league_sessions'); }
 };
+
+const actorOf = (req) => (req.adminAccess && req.adminAccess.email) || 'admin';
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — deleting a session first refunds the
+// entry fees of its still-open contests, then detaches its contests (PHP: ON DELETE SET NULL) and
+// deletes the session. If any refund fails, nothing is deleted.
+async function deleteSessionSafely(session, actor) {
+  const contests = await Contest.find({ league_session_id: { $in: keysOf(session) } }).lean();
+  let refunded = 0;
+  for (const contest of contests) {
+    const result = await refundBeforeDelete(contest, { actor });
+    if (!result.ok) return { ok: false, refunded, message: result.message };
+    refunded += result.refunded;
+  }
+  if (contests.length) await Contest.updateMany({ _id: { $in: contests.map((c) => c._id) } }, { $set: { league_session_id: null } });
+  await LeagueSession.deleteOne({ _id: session._id });
+  return { ok: true, refunded };
+}
 
 module.exports = { index, create, getTemplate, store, show, edit, update, destroy, bulkDelete, updateStatus, refetchPrices, cancel };

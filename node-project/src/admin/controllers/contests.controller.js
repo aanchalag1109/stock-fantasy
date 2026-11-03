@@ -8,7 +8,11 @@ const User = require('../../models/user.model');
 const Transaction = require('../../models/transaction.model');
 const { render } = require('../helpers/render');
 // PHP PARITY: contest cancel + refund (also sends refund notifications) — shared with session cancel
-const { cancelContest: cancelContestService } = require('../../services/contest-cancellation.service');
+const { cancelContest: cancelContestService, refundBeforeDelete } = require('../../services/contest-cancellation.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — list filters
+const { parseListFilters, withStatus } = require('../helpers/list-filters');
+
+const CONTEST_STATUSES = ['live', 'upcoming', 'completed', 'cancelled'];
 
 const PAGE_SIZE = 8;
 const CATEGORIES = ['mega', 'equal', 'practice', 'guaranteed'];
@@ -393,24 +397,44 @@ async function attachListMeta(contests) {
 
 const index = async (req, res) => {
   try {
-    const status = req.query.status || '';
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — working filters.
+    //   Live / Upcoming / Completed: the contest's session is in that state (contest not cancelled)
+    //   Cancelled: the contest itself was cancelled
+    //   Date: the session's start date (IST); Latest/Oldest: by creation date, pinned stay on top.
+    // Tab counts cover every matching contest, not just the current page.
+    const filters = parseListFilters(req.query, CONTEST_STATUSES);
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const filter = {};
-    if (status) {
-      const sessions = await LeagueSession.find({ status }).select('_id old_id').lean();
-      const keys = [];
-      sessions.forEach((session) => {
-        keys.push(session._id);
-        if (session.old_id != null) keys.push(session.old_id);
-      });
-      filter.league_session_id = { $in: keys };
-    }
-    const total = await Contest.countDocuments(filter);
-    const rows = await Contest.find(filter)
-      .sort({ is_pinned: -1, pin_order: 1, old_id: 1 })
-      .skip((page - 1) * PAGE_SIZE)
-      .limit(PAGE_SIZE)
-      .lean();
+    const sessionKeys = async (sessionStatus) => {
+      const match = {};
+      if (sessionStatus) match.status = sessionStatus;
+      if (filters.range) match.start_time = filters.range;
+      const sessions = await LeagueSession.find(match).select('_id old_id').lean();
+      return sessions.flatMap((s) => (s.old_id != null ? [s._id, s.old_id] : [s._id]));
+    };
+    const dateClause = filters.range ? { league_session_id: { $in: await sessionKeys(null) } } : {};
+    const filterFor = async (value) => {
+      if (value === 'cancelled') return { ...dateClause, status: 'cancelled' };
+      if (value) return { status: { $ne: 'cancelled' }, league_session_id: { $in: await sessionKeys(value) } };
+      return dateClause;
+    };
+    const filter = await filterFor(filters.status);
+    const dir = filters.sort === 'oldest' ? 1 : -1;
+    const [total, rows, ...tabCounts] = await Promise.all([
+      Contest.countDocuments(filter),
+      Contest.find(filter)
+        .sort({ is_pinned: -1, pin_order: 1, created_at: dir, _id: dir })
+        .skip((page - 1) * PAGE_SIZE)
+        .limit(PAGE_SIZE)
+        .lean(),
+      Contest.aggregate([
+        { $match: filter },
+        { $group: { _id: null, pool: { $sum: { $convert: { input: '$prize_pool', to: 'double', onError: 0, onNull: 0 } } } } },
+      ]),
+      ...['', ...CONTEST_STATUSES].map(async (value) => Contest.countDocuments(await filterFor(value))),
+    ]);
+    const [poolRow] = tabCounts.shift();
+    const counts = { pool: poolRow ? poolRow.pool : 0 };
+    ['all', ...CONTEST_STATUSES].forEach((key, i) => { counts[key] = tabCounts[i]; });
     const contests = await attachListMeta(rows);
     await render(res, 'contests/index', {
       title: 'Contest Management',
@@ -418,7 +442,10 @@ const index = async (req, res) => {
       total,
       pages: Math.ceil(total / PAGE_SIZE),
       page,
-      status,
+      status: filters.status,
+      filters,
+      counts,
+      statusLink: (value) => withStatus(filters, value),
       admin: req.session.admin,
     });
   } catch (err) {
@@ -600,12 +627,20 @@ const bulkDelete = async (req, res) => {
     const clauses = [];
     if (objectIds.length) clauses.push({ _id: { $in: objectIds } });
     if (numbers.length) clauses.push({ old_id: { $in: numbers } });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — open contests are refunded before deletion
     let deleted = 0;
-    if (clauses.length) {
-      const result = await Contest.deleteMany({ $or: clauses, status: { $ne: 'live' } });
-      deleted = result.deletedCount || 0;
+    let refunds = 0;
+    const failed = [];
+    const contests = clauses.length ? await Contest.find({ $or: clauses, status: { $ne: 'live' } }).lean() : [];
+    for (const contest of contests) {
+      const result = await refundBeforeDelete(contest, { actor: actorOf(req) });
+      if (!result.ok) { failed.push(result.message); continue; }
+      await Contest.deleteOne({ _id: contest._id });
+      deleted += 1;
+      refunds += result.refunded;
     }
-    req.flash('success', `Deleted ${deleted} contests.`);
+    req.flash('success', `Deleted ${deleted} contests.` + (refunds ? ` ${refunds} entry fee(s) refunded.` : ''));
+    if (failed.length) req.flash('error', `Not deleted: ${failed.join('; ')}`);
     res.redirect('/contests');
   } catch (err) {
     req.flash('error', err.message);
@@ -646,13 +681,22 @@ const togglePin = async (req, res) => {
 const destroy = async (req, res) => {
   try {
     const contest = await findContest(req.params.id);
-    if (contest) await contest.deleteOne();
-    req.flash('success', 'Contest deleted!');
+    let refunded = 0;
+    if (contest) {
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — refund an open contest before deleting it
+      const result = await refundBeforeDelete(contest.toObject ? contest.toObject() : contest, { actor: actorOf(req) });
+      if (!result.ok) { req.flash('error', `Contest not deleted: ${result.message}`); return res.redirect('/contests'); }
+      refunded = result.refunded;
+      await Contest.deleteOne({ _id: contest._id });
+    }
+    req.flash('success', 'Contest deleted!' + (refunded ? ` ${refunded} entry fee(s) refunded.` : ''));
     res.redirect('/contests');
   } catch (err) {
     req.flash('error', err.message);
     res.redirect('/contests');
   }
 };
+
+const actorOf = (req) => (req.adminAccess && req.adminAccess.email) || 'admin';
 
 module.exports = { index, create, store, show, edit, update, destroy, bulkDelete, cancel, togglePin };

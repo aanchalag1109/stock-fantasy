@@ -1,12 +1,12 @@
 <%
-  const pageCount = contests.length;
-  const liveCount = contests.filter((contest) => contest.status === 'live').length;
-  const upcomingCount = contests.filter((contest) => contest.status === 'upcoming').length;
-  const completedCount = contests.filter((contest) => contest.status === 'completed').length;
-  const pool = contests.reduce((sum, contest) => sum + (Number(contest.prize_pool) || 0), 0);
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — counts cover every matching contest, not just this page
+  const pageCount = counts.all;
+  const liveCount = counts.live;
+  const upcomingCount = counts.upcoming;
+  const pool = counts.pool;
   function money0(n) { return Math.round(Number(n) || 0).toLocaleString('en-US'); }
   const catColors = { mega: 'primary', equal: 'success', practice: 'info', guaranteed: 'danger' };
-  const statusColors = { active: 'success', cancelled: 'danger' };
+  const statusColors = { active: 'success', live: 'warning', completed: 'secondary', cancelled: 'danger' };
   const sessionStatusColors = { upcoming: 'info', live: 'warning', completed: 'secondary' };
   const fromItem = total ? ((page - 1) * 8) + 1 : 0;
   const toItem = Math.min(page * 8, total);
@@ -93,27 +93,17 @@
         </div>
     </div>
 
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-gradient-warning text-white">
-            <h6 class="mb-0"><i class="bi bi-funnel me-2"></i>Filter Contests</h6>
-        </div>
-        <div class="card-body">
-            <div class="btn-group" role="group">
-                <a href="?status=live" class="btn <%= status === 'live' ? 'btn-success' : 'btn-outline-success' %>">
-                    <i class="bi bi-broadcast me-1"></i>Live <span class="badge bg-light text-dark ms-1"><%= liveCount %></span>
-                </a>
-                <a href="?status=upcoming" class="btn <%= status === 'upcoming' ? 'btn-info' : 'btn-outline-info' %>">
-                    <i class="bi bi-clock me-1"></i>Upcoming <span class="badge bg-light text-dark ms-1"><%= upcomingCount %></span>
-                </a>
-                <a href="?status=completed" class="btn <%= status === 'completed' ? 'btn-warning' : 'btn-outline-warning' %>">
-                    <i class="bi bi-check-circle me-1"></i>Completed <span class="badge bg-light text-dark ms-1"><%= completedCount %></span>
-                </a>
-                <a href="/contests" class="btn <%= !status ? 'btn-dark' : 'btn-outline-dark' %>">
-                    <i class="bi bi-list me-1"></i>All <span class="badge bg-light text-dark ms-1"><%= pageCount %></span>
-                </a>
-            </div>
-        </div>
-    </div>
+    <%- include('../partials/list_filters', {
+        basePath: '/contests', dateLabel: 'Session date',
+        sortLabels: { latest: 'Newest first', oldest: 'Oldest first' },
+        tabs: [
+            { value: '', label: 'All', icon: 'list', color: 'dark' },
+            { value: 'live', label: 'Live', icon: 'broadcast', color: 'success' },
+            { value: 'upcoming', label: 'Upcoming', icon: 'clock', color: 'info' },
+            { value: 'completed', label: 'Completed', icon: 'check-circle', color: 'warning' },
+            { value: 'cancelled', label: 'Cancelled', icon: 'x-octagon', color: 'danger' },
+        ],
+    }) %>
 
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-gradient-warning text-white">
@@ -237,7 +227,7 @@
                                     </button>
                                     <% } %>
                                     <form action="/contests/<%= contest.display_id %>?_method=DELETE" method="POST" class="d-inline">
-                                        <button type="submit" class="btn btn-outline-danger" title="Delete Contest" onclick="return confirm('Delete this contest?')">
+                                        <button type="submit" class="btn btn-outline-danger" title="Delete Contest" onclick="return confirm('Delete this contest?<%= ['active', 'live', 'upcoming'].includes(contest.status || 'active') ? ' Joined users are refunded their entry fee first.' : '' %>')">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>
@@ -256,7 +246,7 @@
                     Showing <%= fromItem %> to <%= toItem %> of <%= total %> contests
                 </div>
                 <div>
-                    <%- include('../partials/pagination', { pages, page, extraQuery: status ? 'status=' + encodeURIComponent(status) : '' }) %>
+                    <%- include('../partials/pagination', { pages, page, extraQuery: filters.queryString }) %>
                 </div>
             </div>
         </div>

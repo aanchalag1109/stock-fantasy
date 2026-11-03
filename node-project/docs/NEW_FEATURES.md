@@ -175,3 +175,37 @@ These were missed in the conversion and restored from PHP; they are marked `PHP 
 - **New files:** `src/services/announcement.service.js`, `src/admin/views/testing/create_basket.ejs`, `src/admin/views/cron/_rows.ejs`
 - **Modified:** `src/admin/controllers/{misc,pages,users}.controller.js`, `src/admin/routes/{pages,api}.routes.js`, `src/admin/views/announcements/create.ejs`, `src/admin/views/templates/edit.ejs`, `src/admin/views/testing/{contest_detail,user_session_contests}.ejs`, `src/admin/views/cron/index.ejs`, `src/admin/views/banners/create.ejs`, `src/admin/views/users/show.ejs`
 - **Tests:** `tests/admin/php-parity-{announcements,templates,testing,users,small-items}.test.js`
+
+## 12. Admin sidebar reorganised (client feedback)
+- **Sections:** Main · Sessions & Contests · Banners & Notifications · Payments & Transactions · Analytics · Bots · Users & Admin Management · App & System.
+- **Hidden sections:** a section is hidden when the admin's role can't open any of its links.
+- **Renamed:**
+  - Payment Orders → **Deposit Orders**
+  - Test Users → **Bot Users**
+  - Testing → **Bot Contests**
+  - Market Type Category → **Market Categories**
+  - Manage Banners → **Banners**
+  - Page titles and role-permission labels follow the new names. URLs are unchanged.
+- **Back button:** shown at the top of the sidebar on every page except the dashboard. It goes to the previous admin page, or to the dashboard when there is none.
+- **Removed:** the header notification bell, which was a dummy (a hardcoded "new user" alert, with links that went nowhere).
+- **Modified:** `src/admin/views/partials/sidebar.ejs`, `src/admin/views/layouts/main.ejs`, `src/admin/controllers/pages.controller.js`, `src/admin/views/payments/index.ejs`, `src/admin/views/testing/{test_users,contest_detail}.ejs`, `src/admin/access/permissions.js`
+- **Tests:** `tests/admin/sidebar-layout.test.js`
+
+## 13. Sessions & Contests: filters, cancel and refund-safe delete (client feedback)
+- **Filters on both lists:**
+  - Status tabs with real totals; previously the counts covered only the 8 rows on the current page, and "Upcoming" was always 0.
+  - A date range in IST, inclusive: session start date for sessions, the session's date for contests.
+  - A sort: sessions are Latest/Oldest by start time; contests are Newest/Oldest by creation date, with pinned contests kept on top.
+  - Filters are kept across pagination and tab changes.
+- **Contest statuses:** Live, Upcoming and Completed follow the contest's session and exclude cancelled contests. **Cancelled** (new) is the contest's own status.
+- **Cancel:**
+  - The Sessions list now has a Cancel button for upcoming, live and draft sessions. It uses the same refund flow as the session page and Live Management (section 9).
+  - Contest cancel with refund is unchanged (section 9).
+- **Delete:**
+  - Deleting a contest that is still open (active or live) first cancels it and refunds every joined user.
+  - Deleting a session does the same for its open contests, then detaches its contests, as PHP's `ON DELETE SET NULL` did.
+  - Completed contests are deleted without a refund, as in PHP, because their results may already be paid.
+  - If a refund fails, nothing is deleted.
+- **New files:** `src/admin/helpers/list-filters.js`, `src/admin/views/partials/list_filters.ejs`
+- **Modified:** `src/admin/controllers/{sessions,contests}.controller.js`, `src/admin/views/{sessions,contests}/index.ejs`, `src/services/contest-cancellation.service.js` (`refundBeforeDelete`)
+- **Tests:** `tests/admin/php-parity-contests-sessions.test.js` (filters and delete suites)

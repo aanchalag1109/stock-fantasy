@@ -1,14 +1,14 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3">Test Users List</h1>
+        <h1 class="h3">Bot Users</h1>
         <form action="/testing/generate-users" method="POST" class="d-inline" onsubmit="return confirm('Generate 100 random test users?');">
             <button type="submit" class="btn btn-primary">
-                <i class="bi bi-plus-circle me-2"></i>Generate 100 Test Users
+                <i class="bi bi-plus-circle me-2"></i>Generate 100 Bot Users
             </button>
         </form>
     </div>
     <div class="card shadow-sm">
-        <div class="card-header fw-bold">All Test Users</div>
+        <div class="card-header fw-bold">All Bot Users</div>
         <div class="card-body p-0">
             <form method="POST" action="/testing/bulk-delete-users" id="bulkForm">
                 <div class="p-3">
