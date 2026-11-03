@@ -1,0 +1,204 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin → Assets list (filter, bulk move / status / delete) %>
+<%
+  const canCreate = can('assets.create');
+  const canEdit = can('assets.edit');
+  const canDelete = can('assets.delete');
+  const marketColors = { us: 'primary', uk: 'info', indian: 'success', crypto: 'warning' };
+  const markets = ['indian', 'us', 'uk', 'crypto'];
+  const fromItem = total ? ((page - 1) * pageSize) + 1 : 0;
+  const toItem = Math.min(page * pageSize, total);
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-list-columns text-primary me-2"></i>Assets</h1>
+            <p class="text-muted mb-0">Stocks and crypto offered in each market category. Sessions are built from these lists.</p>
+        </div>
+        <% if (canCreate) { %>
+        <a href="/market-assets/create<%= q.category ? '?category=' + q.category : '' %>" class="btn btn-primary btn-lg">
+            <i class="bi bi-plus-circle me-2"></i>Add Asset
+        </a>
+        <% } %>
+    </div>
+
+    <% if (brokenLogos > 0) { %>
+    <div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div><i class="bi bi-image me-2"></i><strong><%= brokenLogos %></strong> asset(s) have a missing or broken logo (e.g. old <code>localhost/storage</code> links from the PHP server).</div>
+        <% if (canEdit) { %>
+        <form method="POST" action="/market-assets/fix-logos" onsubmit="return confirm('Replace <%= brokenLogos %> missing/broken logo(s) with the standard logo for each market?')">
+            <button type="submit" class="btn btn-sm btn-warning"><i class="bi bi-magic me-1"></i>Fix broken logos</button>
+        </form>
+        <% } %>
+    </div>
+    <% } %>
+
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <form method="GET" action="/market-assets" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small text-muted mb-1">Category</label>
+                    <select name="category" class="form-select form-select-sm">
+                        <option value="">All categories</option>
+                        <% markets.forEach(function (m) { const group = categories.filter(function (c) { return c.market === m; }); if (!group.length) return; %>
+                        <optgroup label="<%= marketLabels[m] %>">
+                            <% group.forEach(function (c) { %>
+                            <option value="<%= c._id %>" <%= q.category === String(c._id) ? 'selected' : '' %>><%= c.name %> (<%= c.count %>)</option>
+                            <% }) %>
+                        </optgroup>
+                        <% }) %>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">Market</label>
+                    <select name="market" class="form-select form-select-sm">
+                        <option value="">All markets</option>
+                        <% markets.forEach(function (m) { %>
+                        <option value="<%= m %>" <%= q.market === m ? 'selected' : '' %>><%= marketLabels[m] %></option>
+                        <% }) %>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">Status</label>
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="">Any status</option>
+                        <option value="active" <%= q.status === 'active' ? 'selected' : '' %>>Active</option>
+                        <option value="inactive" <%= q.status === 'inactive' ? 'selected' : '' %>>Inactive</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted mb-1">Search</label>
+                    <input type="text" name="search" value="<%= q.search %>" class="form-control form-control-sm" placeholder="Symbol or name, e.g. AAPL">
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>Apply</button>
+                    <a href="/market-assets" class="btn btn-sm btn-outline-secondary" title="Clear filters"><i class="bi bi-x-lg"></i></a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <form method="POST" action="/market-assets/bulk" id="bulkForm" onsubmit="return confirmBulk()">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="fw-semibold"><%= total %> asset(s)</div>
+                <% if (canEdit || canDelete) { %>
+                <div class="d-flex align-items-center gap-2 flex-wrap" id="bulkBar">
+                    <span class="small text-muted"><span id="selectedCount">0</span> selected</span>
+                    <select name="action" id="bulkAction" class="form-select form-select-sm" style="width:auto">
+                        <option value="">Bulk action…</option>
+                        <% if (canEdit) { %>
+                        <option value="move">Move to category</option>
+                        <option value="activate">Mark active</option>
+                        <option value="deactivate">Mark inactive</option>
+                        <% } %>
+                        <% if (canDelete) { %><option value="delete">Delete</option><% } %>
+                    </select>
+                    <select name="target_category" id="targetCategory" class="form-select form-select-sm d-none" style="width:auto">
+                        <option value="">Move to…</option>
+                        <% markets.forEach(function (m) { const group = categories.filter(function (c) { return c.market === m; }); if (!group.length) return; %>
+                        <optgroup label="<%= marketLabels[m] %>">
+                            <% group.forEach(function (c) { %><option value="<%= c._id %>"><%= c.name %></option><% }) %>
+                        </optgroup>
+                        <% }) %>
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-dark" id="bulkApply" disabled>Apply</button>
+                </div>
+                <% } %>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:36px"><% if (canEdit || canDelete) { %><input type="checkbox" id="selectAll" class="form-check-input"><% } %></th>
+                                <th>Symbol</th>
+                                <th>Name</th>
+                                <th>Category</th>
+                                <th>Status</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% if (!assets.length) { %>
+                            <tr><td colspan="6" class="text-center text-muted py-5"><i class="bi bi-inbox display-6 d-block mb-2"></i>No assets match these filters.</td></tr>
+                            <% } %>
+                            <% assets.forEach(function (a) { const m = a.category ? a.category.market : null; %>
+                            <tr>
+                                <td><% if (canEdit || canDelete) { %><input type="checkbox" name="asset_ids[]" value="<%= a._id %>" class="form-check-input asset-checkbox"><% } %></td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <% if (a.image_url) { %><img src="<%= a.image_url %>" alt="" style="width:24px;height:24px;object-fit:contain" class="rounded" onerror="this.style.display='none'"><% } %>
+                                        <span class="fw-bold font-monospace"><%= a.symbol %></span>
+                                    </div>
+                                </td>
+                                <td><%= a.name %></td>
+                                <td>
+                                    <% if (a.category) { %>
+                                        <span class="badge bg-<%= marketColors[m] || 'secondary' %>"><%= a.category.name %></span>
+                                    <% } else { %>
+                                        <span class="badge bg-danger">No category</span>
+                                    <% } %>
+                                </td>
+                                <td><span class="badge <%= a.status === 'inactive' ? 'bg-secondary' : 'bg-success' %>"><%= a.status === 'inactive' ? 'Inactive' : 'Active' %></span></td>
+                                <td class="text-center">
+                                    <div class="btn-group btn-group-sm">
+                                        <% if (canEdit) { %>
+                                        <a href="/market-assets/<%= a._id %>/edit" class="btn btn-outline-primary" title="Edit / move"><i class="bi bi-pencil"></i></a>
+                                        <% } %>
+                                        <% if (canDelete) { %>
+                                        <button type="submit" form="delete-<%= a._id %>" class="btn btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                        <% } %>
+                                    </div>
+                                </td>
+                            </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <% if (pages > 1) { %>
+            <div class="card-footer bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="text-muted small">Showing <%= fromItem %> to <%= toItem %> of <%= total %> assets</div>
+                <div><%- include('../partials/pagination', { pages, page, extraQuery: queryString }) %></div>
+            </div>
+            <% } %>
+        </div>
+    </form>
+
+    <%# Delete forms live outside the bulk form (forms cannot be nested). %>
+    <% if (canDelete) { assets.forEach(function (a) { %>
+    <form id="delete-<%= a._id %>" action="/market-assets/<%= a._id %>?_method=DELETE" method="POST" class="d-none"
+          onsubmit="return confirm('Delete <%= a.symbol %> from <%= a.category ? a.category.name : 'the list' %>? Existing sessions keep their own copy and are not affected.')"></form>
+    <% }) } %>
+
+    <p class="text-muted small mt-3 mb-0">
+        <i class="bi bi-info-circle me-1"></i>Editing, moving or deleting an asset only changes what can be picked for new sessions. Sessions and templates that already include it keep their own copy.
+        US symbols are checked on Twelve Data when added or changed.
+    </p>
+</div>
+<script>
+(function () {
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('.asset-checkbox'));
+    var all = document.getElementById('selectAll');
+    var action = document.getElementById('bulkAction');
+    var target = document.getElementById('targetCategory');
+    var apply = document.getElementById('bulkApply');
+    function refresh() {
+        var n = boxes.filter(function (b) { return b.checked; }).length;
+        var counter = document.getElementById('selectedCount');
+        if (counter) counter.textContent = n;
+        if (target) target.classList.toggle('d-none', !action || action.value !== 'move');
+        if (apply) apply.disabled = !n || !action.value || (action.value === 'move' && !target.value);
+    }
+    if (all) all.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = all.checked; }); refresh(); });
+    boxes.forEach(function (b) { b.addEventListener('change', refresh); });
+    if (action) action.addEventListener('change', refresh);
+    if (target) target.addEventListener('change', refresh);
+    window.confirmBulk = function () {
+        var n = boxes.filter(function (b) { return b.checked; }).length;
+        if (action.value === 'delete') return confirm('Delete ' + n + ' asset(s)? Existing sessions are not affected.');
+        if (action.value === 'move') return confirm('Move ' + n + ' asset(s) to ' + target.options[target.selectedIndex].text + '?');
+        return true;
+    };
+})();
+</script>

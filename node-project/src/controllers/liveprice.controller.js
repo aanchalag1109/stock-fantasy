@@ -4,29 +4,12 @@ const axios = require('axios');
 const Asset = require('../models/asset.model');
 const config = require('../config/env');
 const logger = require('../config/logger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: US symbols are quoted by Twelve Data, Indian by RapidAPI
+const priceFeed = require('../services/contest-automation/price-feed');
 
 // In-memory price cache
 const priceCache = { stocks: {}, crypto: {}, updatedAt: null };
 const CACHE_DURATION_MS = (config.PRICE_CACHE_DURATION || 60) * 1000;
-
-async function fetchStockPrice(symbol) {
-  try {
-    const response = await axios.get(
-      'https://indian-stock-market-data-nse-bse-bcd-mcx-cds-nfo.p.rapidapi.com/v1/rapidapi/stock/quote',
-      {
-        headers: {
-          'x-rapidapi-key': config.RAPIDAPI_KEY,
-          'x-rapidapi-host': 'indian-stock-market-data-nse-bse-bcd-mcx-cds-nfo.p.rapidapi.com',
-        },
-        params: { tradingSymbol: symbol, exchange: 'NSE' },
-        timeout: 30000,
-      }
-    );
-    return response.data;
-  } catch {
-    return null;
-  }
-}
 
 async function fetchCryptoListings(limit = 100) {
   try {
@@ -84,17 +67,17 @@ const getStockLivePrice = async (req, res) => {
     const { symbol } = req.query;
     if (!symbol) return res.status(400).json({ success: false, error: 'symbol required' });
 
-    const data = await fetchStockPrice(symbol);
+    const data = await priceFeed.stockQuote(symbol, { market: req.query.market });
     if (!data) return res.status(404).json({ success: false, error: 'Stock not found' });
 
     return res.json({
       success: true,
-      symbol: data.tradingSymbol || symbol,
-      name: data.companyName || symbol,
-      price: data.lastPrice || 0,
-      change: data.change || 0,
-      change_percent: data.pChange || 0,
-      volume: data.totalTradedVolume || 0,
+      symbol: data.symbol,
+      name: data.name,
+      price: data.price,
+      change: data.change,
+      change_percent: data.change_percent,
+      volume: data.volume,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

@@ -1,0 +1,141 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin → Assets add / edit form (with Twelve Data check for US) %>
+<%
+  const editing = !!asset;
+  const markets = ['indian', 'us', 'uk', 'crypto'];
+  const hints = {
+    indian: 'NSE trading symbol, e.g. RELIANCE, TCS, HDFCBANK. Priced by RapidAPI (NSE).',
+    us: 'US ticker, e.g. AAPL, MSFT, BRK.B. Checked and priced by Twelve Data.',
+    uk: 'London Stock Exchange symbol ending in .L, e.g. SHEL.L. Note: UK prices are not available on the current plan.',
+    crypto: 'Coin symbol followed by -USD, e.g. BTC-USD, ETH-USD. Priced by CoinMarketCap.',
+  };
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-<%= editing ? 'pencil-square text-warning' : 'plus-circle-fill text-primary' %> me-2"></i><%= editing ? 'Edit Asset' : 'Add Asset' %></h1>
+            <p class="text-muted mb-0"><%= editing ? 'Change details or move ' + asset.symbol + ' to another category' : 'Add a stock or coin to a market category' %></p>
+        </div>
+        <a href="/market-assets" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Assets</a>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4">
+                    <form action="<%= editing ? '/market-assets/' + asset._id + '?_method=PUT' : '/market-assets' %>" method="POST" id="assetForm">
+                        <div class="mb-3">
+                            <label for="category_id" class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+                            <select name="category_id" id="category_id" class="form-select" required>
+                                <option value="">Choose a category</option>
+                                <% markets.forEach(function (m) { const group = categories.filter(function (c) { return c.market === m; }); if (!group.length) return; %>
+                                <optgroup label="<%= marketLabels[m] %>">
+                                    <% group.forEach(function (c) { %>
+                                    <option value="<%= c._id %>" data-market="<%= c.market %>" <%= values.category_id === String(c._id) ? 'selected' : '' %>><%= c.name %></option>
+                                    <% }) %>
+                                </optgroup>
+                                <% }) %>
+                            </select>
+                            <% if (editing) { %><div class="form-text">Change the category to move this asset.</div><% } %>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="symbol" class="form-label fw-semibold">Symbol <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="text" name="symbol" id="symbol" value="<%= values.symbol %>" class="form-control font-monospace text-uppercase" maxlength="25" required autocomplete="off">
+                                <button type="button" class="btn btn-outline-primary d-none" id="checkBtn"><i class="bi bi-search me-1"></i>Check on Twelve Data</button>
+                            </div>
+                            <div class="form-text" id="symbolHint">Choose a category first.</div>
+                            <div class="small mt-1" id="checkResult"></div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="name" class="form-label fw-semibold">Name <span class="text-danger" id="nameRequired">*</span></label>
+                            <input type="text" name="name" id="name" value="<%= values.name %>" class="form-control" maxlength="255">
+                            <div class="form-text" id="nameHint">Company or coin name shown in the app.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="image_url" class="form-label fw-semibold">Logo URL</label>
+                            <div class="d-flex align-items-center gap-2">
+                                <img id="logoPreview" src="" alt="" class="border rounded bg-white d-none" style="width:40px;height:40px;object-fit:contain">
+                                <input type="text" name="image_url" id="image_url" value="<%= values.image_url %>" class="form-control" placeholder="Leave empty for the standard logo">
+                            </div>
+                            <div class="form-text">Leave empty (or keep an old <code>localhost</code> link) and the standard logo for the market is used on save.</div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="status" class="form-label fw-semibold">Status</label>
+                            <select name="status" id="status" class="form-select">
+                                <option value="active" <%= values.status !== 'inactive' ? 'selected' : '' %>>Active (can be picked for new sessions)</option>
+                                <option value="inactive" <%= values.status === 'inactive' ? 'selected' : '' %>>Inactive (hidden from session creation)</option>
+                            </select>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-<%= editing ? 'warning' : 'primary' %>"><i class="bi bi-save me-1"></i><%= editing ? 'Save Changes' : 'Add Asset' %></button>
+                            <a href="/market-assets" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4 mt-3 mt-lg-0">
+            <div class="card border-0 bg-light">
+                <div class="card-body small">
+                    <h6 class="fw-semibold"><i class="bi bi-info-circle me-1"></i>Good to know</h6>
+                    <ul class="mb-0 ps-3">
+                        <li>A symbol can be in several categories (e.g. Small and Large Cap), but only once per category.</li>
+                        <li>US symbols are verified on Twelve Data when saved, so typos are caught. Leave the name empty to use the official company name.</li>
+                        <li>Changes apply to new sessions only. Existing sessions keep their own copy.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var hints = <%- JSON.stringify(hints) %>;
+    var category = document.getElementById('category_id');
+    var symbol = document.getElementById('symbol');
+    var checkBtn = document.getElementById('checkBtn');
+    var result = document.getElementById('checkResult');
+    var name = document.getElementById('name');
+    function market() { var o = category.options[category.selectedIndex]; return o ? o.getAttribute('data-market') : ''; }
+    function refresh() {
+        var m = market();
+        document.getElementById('symbolHint').textContent = m ? hints[m] : 'Choose a category first.';
+        checkBtn.classList.toggle('d-none', m !== 'us');
+        document.getElementById('nameRequired').classList.toggle('d-none', m === 'us');
+        document.getElementById('nameHint').textContent = m === 'us' ? 'Optional for US stocks: filled from Twelve Data if left empty.' : 'Company or coin name shown in the app.';
+        result.textContent = '';
+    }
+    category.addEventListener('change', refresh);
+    symbol.addEventListener('input', function () { symbol.value = symbol.value.toUpperCase(); result.textContent = ''; });
+    checkBtn.addEventListener('click', function () {
+        if (!symbol.value.trim()) { result.className = 'small mt-1 text-danger'; result.textContent = 'Enter a symbol first.'; return; }
+        result.className = 'small mt-1 text-muted'; result.textContent = 'Checking…';
+        fetch('/market-assets/check-symbol?symbol=' + encodeURIComponent(symbol.value.trim()) + '&category_id=' + encodeURIComponent(category.value), { headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                result.className = 'small mt-1 ' + (data.found ? 'text-success' : (data.checked ? 'text-danger' : 'text-warning'));
+                result.textContent = (data.found ? '✓ ' : (data.checked ? '✗ ' : '')) + data.message;
+                if (data.found && !name.value.trim()) name.value = data.name;
+            })
+            .catch(function () { result.className = 'small mt-1 text-warning'; result.textContent = 'Could not check right now.'; });
+    });
+    // Logo preview
+    var logo = document.getElementById('image_url');
+    var preview = document.getElementById('logoPreview');
+    function showLogo() {
+        var url = logo.value.trim();
+        var usable = /^https?:\/\//i.test(url) && !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(url);
+        preview.classList.toggle('d-none', !usable);
+        if (usable) preview.src = url;
+    }
+    preview.addEventListener('error', function () { preview.classList.add('d-none'); });
+    logo.addEventListener('input', showLogo);
+    showLogo();
+    refresh();
+})();
+</script>

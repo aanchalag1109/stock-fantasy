@@ -60,6 +60,11 @@ module.exports = {
   CONTEST_AUTOMATION_ENABLED: process.env.CONTEST_AUTOMATION_ENABLED !== 'false',
   STOCK_PRICE_REQUEST_DELAY_MS: Number.isFinite(parseInt(process.env.STOCK_PRICE_REQUEST_DELAY_MS, 10)) ? parseInt(process.env.STOCK_PRICE_REQUEST_DELAY_MS, 10) : 500,
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: US stock prices via Twelve Data (twelvedata.com).
+  // The key lives only in .env. Credits/minute must match the Twelve Data plan (Basic = 8).
+  TWELVE_DATA_API_KEY: process.env.TWELVE_DATA_API_KEY || '',
+  TWELVE_DATA_CREDITS_PER_MINUTE: parseInt(process.env.TWELVE_DATA_CREDITS_PER_MINUTE, 10) || 8,
+
   PRICE_CACHE_DURATION: parseInt(process.env.PRICE_CACHE_DURATION, 10) || 60,
   PRICE_FETCH_TIMEOUT: parseInt(process.env.PRICE_FETCH_TIMEOUT, 10) || 10
 };

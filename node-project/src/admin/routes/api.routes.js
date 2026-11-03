@@ -62,28 +62,17 @@ router.get('/v1/stock-live-price', requireAdmin, requirePermission('sessions.cre
   try {
     const symbol = req.query.symbol;
     if (!symbol) return res.status(404).json({ success: false, error: 'Stock not found' });
-    const response = await axios.get(
-      'https://indian-stock-market-data-nse-bse-bcd-mcx-cds-nfo.p.rapidapi.com/v1/rapidapi/stock/quote',
-      {
-        headers: {
-          'x-rapidapi-host': 'indian-stock-market-data-nse-bse-bcd-mcx-cds-nfo.p.rapidapi.com',
-          'x-rapidapi-key': config.RAPIDAPI_KEY,
-        },
-        params: { tradingSymbol: symbol, exchange: 'NSE' },
-        timeout: 30000,
-        validateStatus: () => true,
-      }
-    );
-    const data = response.status >= 200 && response.status < 300 ? response.data : null;
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: US symbols are quoted by Twelve Data, Indian by RapidAPI
+    const data = await require('../../services/contest-automation/price-feed').stockQuote(symbol, { market: req.query.market });
     if (!data) return res.status(404).json({ success: false, error: 'Stock not found' });
     res.json({
       success: true,
-      symbol: data.tradingSymbol || symbol,
-      name: data.companyName || symbol,
-      price: data.lastPrice || 0,
-      change: data.change || 0,
-      change_percent: data.pChange || 0,
-      volume: data.totalTradedVolume || 0,
+      symbol: data.symbol,
+      name: data.name,
+      price: data.price,
+      change: data.change,
+      change_percent: data.change_percent,
+      volume: data.volume,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

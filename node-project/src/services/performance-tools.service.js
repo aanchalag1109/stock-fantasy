@@ -61,7 +61,14 @@ async function cryptoReferencePrice(symbol, at) {
   }
 }
 
-async function stockReferencePrice(symbol) {
+async function stockReferencePrice(symbol, asset = {}) {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: US assets are checked against Twelve Data
+  const priceFeed = require('./contest-automation/price-feed');
+  if (priceFeed.isUsStock(asset)) {
+    const quote = await priceFeed.stockQuote(symbol, { market: 'us' });
+    return quote ? { price: quote.price, source: 'Twelve Data (Current)', error: null } : { price: 0, source: 'Twelve Data', error: `No price data available for ${symbol}` };
+  }
+  if (priceFeed.isUkStock(asset)) return { price: 0, source: 'None', error: `No price provider for UK stock ${symbol}` };
   try {
     for (const exchange of ['NSE', 'BSE']) {
       const res = await get(`https://${NSE_HOST}/v1/rapidapi/stock/quote`, {
@@ -88,7 +95,7 @@ async function verifyHistoricalPrices(sessionId) {
     for (const [type, field, at] of [['start', 'start_price', session.start_time], ['end', 'end_price', session.end_time]]) {
       const ours = num(asset[field]);
       if (!(ours > 0)) continue;
-      const ref = /-USD$/i.test(asset.asset_symbol) ? await cryptoReferencePrice(asset.asset_symbol, at) : await stockReferencePrice(asset.asset_symbol);
+      const ref = /-USD$/i.test(asset.asset_symbol) ? await cryptoReferencePrice(asset.asset_symbol, at) : await stockReferencePrice(asset.asset_symbol, asset);
       const row = {
         asset_symbol: asset.asset_symbol,
         price_type: type,

@@ -24,6 +24,8 @@ const MODULES = [
   { key: 'contests', label: 'Contests', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit, cancel & pin', delete: 'Delete' } },
   { key: 'live_management', label: 'Live Management', group: 'Games', actions: { view: 'View', manage: 'Start / end & distribute / cleanup' } },
   { key: 'market_categories', label: 'Market Type Categories', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' } },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Assets admin page (stocks/crypto in each market category)
+  { key: 'assets', label: 'Assets (stocks & crypto)', group: 'Games', actions: { view: 'View', create: 'Add', edit: 'Edit & move', delete: 'Delete' } },
   { key: 'pending_prizes', label: 'Pending Prizes', group: 'Games', actions: { view: 'View', distribute: 'Distribute prizes' } },
   { key: 'performance', label: 'Performance', group: 'Reports', actions: { view: 'View', manage: 'RUN ALL & Calculate Results (pays prizes)' } },
   { key: 'contest_analysis', label: 'Contest Analysis', group: 'Reports', actions: { view: 'View' } },
@@ -89,6 +91,7 @@ const LANDING_PAGES = [
   ['pending_prizes.view', '/pending-prizes'],
   ['templates.view', '/templates'],
   ['market_categories.view', '/market_type_categories'],
+  ['assets.view', '/market-assets'],
   ['kyc.view', '/kyc'],
   ['tickets.view', '/tickets'],
   ['announcements.view', '/announcements'],

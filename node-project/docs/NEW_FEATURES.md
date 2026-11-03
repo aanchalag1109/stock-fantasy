@@ -209,3 +209,65 @@ These were missed in the conversion and restored from PHP; they are marked `PHP 
 - **New files:** `src/admin/helpers/list-filters.js`, `src/admin/views/partials/list_filters.ejs`
 - **Modified:** `src/admin/controllers/{sessions,contests}.controller.js`, `src/admin/views/{sessions,contests}/index.ejs`, `src/services/contest-cancellation.service.js` (`refundBeforeDelete`)
 - **Tests:** `tests/admin/php-parity-contests-sessions.test.js` (filters and delete suites)
+
+## 14. US stock prices via Twelve Data
+- **Provider:** [Twelve Data](https://twelvedata.com) prices assets in the "… Cap US" categories. Indian stocks stay on RapidAPI (NSE) and crypto stays on CoinMarketCap.
+- **Where it is used:**
+  - Session start and end prices, live scores every 15 min, Refetch Missing Prices and RUN ALL, all through `price-feed.getPrices`.
+  - The app's `GET /api/v1/prices/stock?symbol=`.
+  - The admin live price on the session create page.
+  - The legacy contest start/end price save.
+  - Performance → Verify All Prices.
+- **Routing a bare symbol:** endpoints that receive only a symbol look up its category in Assets (cached for 10 min). A symbol listed only under US categories goes to Twelve Data. Anything else stays on NSE as before. Callers may also pass `market=us|indian`.
+- **Plan limits:**
+  - Each symbol costs 1 credit. The Basic plan allows 8 per minute and 800 per day.
+  - Requests are batched and spaced to stay within `TWELVE_DATA_CREDITS_PER_MINUTE`. A 429 waits a minute and retries once.
+  - On a paid plan, raise the setting.
+- **UK (LSE) stocks are not priced:** Twelve Data requires the Grow plan or higher for them. They are reported as unsupported and score 0, as before.
+- **Configuration:** `TWELVE_DATA_API_KEY` and `TWELVE_DATA_CREDITS_PER_MINUTE` go in `.env`. The key is not stored in the code.
+- **New files:** `src/services/market-data/twelve-data.js`
+- **Modified:**
+  - `src/services/contest-automation/price-feed.js`: US routing, `stockQuote`, `stockMarketOf`
+  - `src/controllers/liveprice.controller.js`
+  - `src/admin/routes/api.routes.js`
+  - `src/controllers/mobile-legacy.controller.js`
+  - `src/services/performance-tools.service.js`
+  - `src/config/env.js`
+  - `.env.example`
+- **Tests:** `tests/market-data/twelve-data.test.js`, `tests/contest-automation/price-feed.test.js`
+
+## 15. Admin → Assets (manage stocks & crypto per category)
+- **Page:** Sessions & Contests → **Assets** (`/market-assets`). It lists all 1,274 assets.
+  - Filters: category (with counts), market (Indian / US / UK / Crypto), status, and search by symbol or name.
+  - 25 per page.
+- **Add / Edit:**
+  - **Fields:** category, symbol, name, logo URL and status. Inactive assets are hidden from session creation.
+  - **Uniqueness:** a symbol is unique per category; the same stock may be in Small, Mid and Large Cap.
+  - **Symbol formats per market:** crypto `BTC-USD`; UK must end in `.L`; US and Indian are plain tickers.
+  - Changing the category on Edit moves the asset.
+- **US symbol check:**
+  - New or changed US symbols are verified with Twelve Data's free `/stocks` lookup, which uses no price credits, so typos like `APPL` are rejected.
+  - If the name is left empty, the official company name is filled in.
+  - A **Check on Twelve Data** button checks while typing.
+  - If Twelve Data can't be reached, the asset is saved with a warning instead of blocking.
+- **Bulk actions:** move to a category, mark active or inactive, and delete.
+  - Moves are limited to the same market (e.g. Small → Large Cap US).
+  - Symbols already in the target category are skipped and reported.
+- **Existing sessions are unaffected:** sessions and templates keep their own copy of each asset; changes only apply to new sessions. The symbol → market cache used for live quotes is refreshed after every change.
+- **Permissions:** new `assets.view / create / edit / delete` in Roles & Permissions. Super admins have them automatically.
+- **Schema fix:** `Asset.symbol` was declared `unique`, but real data has the same symbol in several categories, and the index never existed in the database. The flag was removed.
+- **New files:** `src/admin/controllers/assets.controller.js`, `src/admin/routes/assets.routes.js`, `src/admin/views/assets/{index,form}.ejs`
+- **Modified:** `src/services/market-data/twelve-data.js` (`lookupUsSymbol`), `src/models/asset.model.js`, `src/admin/access/permissions.js`, `src/admin/app.js`, `src/admin/views/partials/sidebar.ejs`
+- **Tests:** `tests/admin/assets.test.js`
+
+## 16. Logos for Indian stocks (and standard logos for every market)
+- **Problem:** all 291 Indian asset logos pointed to `http://localhost/storage/stocks/*.png`, files that existed only on the old PHP machine and aren't in the project. They were broken in the app and the admin panel.
+- **Fix:** Indian logos now use the same public CDN as US and UK: `financialmodelingprep.com/image-stock/<SYMBOL>.NS.png`. It was checked live and covers 97 of 97 symbols; M&M uses Mahindra's `MAHMF` logo.
+- **Assets page:**
+  - A warning shows how many logos are missing or broken, with a **Fix broken logos** button (`assets.edit`) that fills in the standard logo for each market.
+  - When adding or editing, an empty or `localhost` logo is replaced with the standard one; a custom URL is kept.
+  - The form shows a logo preview.
+- **App:** it reads `image_url` from the assets (`/api/v1/market/assets`), so fixed logos appear there with no app change.
+- **New files:** `src/services/market-data/logos.js`
+- **Modified:** `src/admin/controllers/assets.controller.js`, `src/admin/routes/assets.routes.js`, `src/admin/views/assets/{index,form}.ejs`
+- **Tests:** `tests/admin/assets.test.js` (logos suite)

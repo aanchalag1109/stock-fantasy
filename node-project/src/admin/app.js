@@ -77,6 +77,8 @@ const probcoinConversionRoutes = require('./routes/probcoin-conversion.routes');
 const liveManagementRoutes = require('./routes/live-management.routes');
 // PHP PARITY: Performance contest page tools (RUN ALL, verify/analyze prices, Calculate Results)
 const performanceToolsRoutes = require('./routes/performance-tools.routes');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin → Assets
+const assetsRoutes = require('./routes/assets.routes');
 
 adminApp.use('/', authRoutes);
 adminApp.use('/dashboard', dashboardRoutes);
@@ -109,6 +111,8 @@ adminApp.use('/android-app-update', appUpdateSettingsRoutes);
 adminApp.use('/ios-app-update', iosAppUpdateSettingsRoutes);
 // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT/INR to ProbCoin Conversion Settings
 adminApp.use('/probcoin-conversion', probcoinConversionRoutes);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin → Assets
+adminApp.use('/market-assets', assetsRoutes);
 // PHP PARITY: Live Management (must precede pagesRoutes)
 adminApp.use('/', liveManagementRoutes);
 adminApp.use('/', performanceToolsRoutes);

@@ -36,16 +36,23 @@ test('Indian stocks are quoted on NSE; failures give no price (never a fake one)
   assert.ok(calls.every((c) => c.params.exchange === 'NSE'));
 });
 
-test('US/UK stocks are reported unsupported and never sent to the NSE API', async () => {
-  responder = () => ({ status: 200, data: { lastPrice: 10 } });
+test('US stocks go to Twelve Data in one batch; UK stays unsupported; neither is sent to NSE', async () => {
+  config.TWELVE_DATA_API_KEY = 'test-key';
+  responder = (url) => (url.includes('twelvedata')
+    ? { status: 200, data: { AAPL: { price: '339.11' }, 'BRK.B': { price: '557.23' } } }
+    : { status: 200, data: { lastPrice: 10 } });
   const { prices, unsupported } = await feed.getPrices({ market_type: 'stock' }, [
     { asset_symbol: 'AAPL', category_name: 'Large Cap US' },
+    { asset_symbol: 'BRK.B', category_name: 'Mid Cap US' },
     { asset_symbol: 'SHEL.L', category_name: 'Large Cap UK' },
     { asset_symbol: 'TCS', category_name: 'Large Cap Indian' },
   ]);
-  assert.deepEqual(unsupported, ['AAPL', 'SHEL.L']);
-  assert.deepEqual([...prices.keys()], ['TCS']);
-  assert.deepEqual(calls.map((c) => c.params.tradingSymbol), ['TCS']);
+  assert.deepEqual(unsupported, ['SHEL.L']);
+  assert.deepEqual(Object.fromEntries(prices), { AAPL: 339.11, 'BRK.B': 557.23, TCS: 10 });
+  const twelve = calls.filter((c) => c.url.includes('twelvedata'));
+  assert.equal(twelve.length, 1);
+  assert.equal(twelve[0].params.symbol, 'AAPL,BRK.B');
+  assert.deepEqual(calls.filter((c) => c.params.tradingSymbol).map((c) => c.params.tradingSymbol), ['TCS']);
 });
 
 test('crypto prices come from one batched CoinMarketCap quotes request', async () => {

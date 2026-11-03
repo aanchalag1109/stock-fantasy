@@ -74,10 +74,17 @@ async function savePrices(req, res, kind) {
         const row = listings.find((item) => item.symbol === cryptoSymbol);
         if (row) price = row.price;
       } else {
-        try {
-          const quote = await stockQuote(symbol);
-          price = num(quote && (quote.lastPrice != null ? quote.lastPrice : quote.price));
-        } catch { price = 0; }
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: US assets via Twelve Data; UK has no provider
+        const priceFeed = require('../services/contest-automation/price-feed');
+        if (priceFeed.isUsStock(asset)) {
+          const quote = await priceFeed.stockQuote(symbol, { market: 'us' });
+          price = num(quote && quote.price);
+        } else if (!priceFeed.isUkStock(asset)) {
+          try {
+            const quote = await stockQuote(symbol);
+            price = num(quote && (quote.lastPrice != null ? quote.lastPrice : quote.price));
+          } catch { price = 0; }
+        }
       }
       if (price > 0) {
         docs.push({
