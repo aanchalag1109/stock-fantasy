@@ -1,74 +1,165 @@
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-1"><i class="bi bi-broadcast-pin text-danger me-2"></i>Live Contest Management</h1>
-            <p class="text-muted mb-0">Sessions that are live or about to start, and their contests</p>
-        </div>
-    </div>
-    <div class="card shadow-sm mb-4">
-        <div class="card-header">Active Sessions</div>
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-dark">
-                    <tr>
-                        <th>ID</th>
-                        <th>Session Name</th>
-                        <th>Market Type</th>
-                        <th>Status</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Contests</th>
-                        <th>Participants</th>
-                        <th>Prize Pool</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <% sessions.forEach(s => {
-                        const related = contests.filter(c => String(c.league_session_id && c.league_session_id._id ? c.league_session_id._id : c.league_session_id) === String(s._id));
-                        const participants = related.reduce((sum, c) => sum + Number(c.total_participants || c.participants || 0), 0);
-                        const pool = related.reduce((sum, c) => sum + Number(c.prize_pool || 0), 0);
-                    %>
-                    <tr>
-                        <td><%= s.old_id || String(s._id).slice(-6) %></td>
-                        <td class="fw-semibold"><%= s.name %></td>
-                        <td><%= s.market_type %></td>
-                        <td><span class="badge bg-<%= s.status === 'live' ? 'success' : 'warning' %>"><%= s.status %></span></td>
-                        <td><%= s.start_time ? new Date(s.start_time).toLocaleString('en-IN') : '—' %></td>
-                        <td><%= s.end_time ? new Date(s.end_time).toLocaleString('en-IN') : '—' %></td>
-                        <td><%= related.length %></td>
-                        <td><%= participants %></td>
-                        <td>₹<%= pool.toLocaleString('en-IN') %></td>
-                        <td><a class="btn btn-sm btn-outline-primary" href="/league_sessions/<%= s._id %>">Open</a></td>
-                    </tr>
-                    <% }) %>
-                    <% if (!sessions.length) { %><tr><td colspan="10" class="text-center py-4 text-muted">No live or upcoming sessions</td></tr><% } %>
-                </tbody>
-            </table>
-        </div>
-    </div>
+<%#
+  PHP PARITY — restored from PHP admin/contests/live_management.blade.php (the Node conversion
+  only had a static table). Same layout and actions: status filter, 10s auto-refresh, overview
+  cards, View Detail, Start, End & Distribute, Start Contests, Update Scores, Cleanup Orphaned.
+  NEW IMPLEMENTATION — NODE.JS PROJECT: "Cancel Session" button (client request; refunds users).
+%>
+<%
+  const canManage = can('live_management.manage');
+  const canCancel = can('sessions.cancel');
+%>
+<div class="container-fluid" id="liveManagementPage">
+    <div id="lmAlerts"></div>
     <div class="card shadow-sm">
-        <div class="card-header">Live / Upcoming Contests</div>
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    <tr><th>ID</th><th>Category</th><th>Entry Fee</th><th>Participants</th><th>Prize Pool</th><th>Status</th><th>Actions</th></tr>
-                </thead>
-                <tbody>
-                    <% contests.forEach(c => { %>
-                    <tr>
-                        <td><%= c.old_id || String(c._id).slice(-6) %></td>
-                        <td><%= c.category %></td>
-                        <td>₹<%= Number(c.entry_fee || 0).toLocaleString('en-IN') %></td>
-                        <td><%= c.participants || 0 %></td>
-                        <td>₹<%= Number(c.prize_pool || 0).toLocaleString('en-IN') %></td>
-                        <td><span class="badge bg-<%= c.status === 'live' ? 'success' : 'warning' %>"><%= c.status %></span></td>
-                        <td><a class="btn btn-sm btn-primary" href="/contests/<%= c._id %>">Details</a></td>
-                    </tr>
-                    <% }) %>
-                    <% if (!contests.length) { %><tr><td colspan="7" class="text-center py-4 text-muted">No contests</td></tr><% } %>
-                </tbody>
-            </table>
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h1 class="h4 mb-0"><i class="bi bi-broadcast-pin text-danger me-2"></i>Live Contest Management</h1>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <select class="form-select form-select-sm" id="statusFilter" style="width:auto;" aria-label="Filter sessions by status">
+                    <option value="all">All Sessions</option>
+                    <option value="upcoming">Upcoming</option>
+                    <option value="live" selected>Live</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+                <button class="btn btn-success btn-sm" onclick="refreshData()"><i class="bi bi-arrow-repeat"></i> Refresh</button>
+                <% if (canManage) { %>
+                <button class="btn btn-primary btn-sm" onclick="runAction('/api/live/start-contests', null, this)"><i class="bi bi-play-fill"></i> Start Contests</button>
+                <button class="btn btn-warning btn-sm" onclick="runAction('/api/live/update-scores', null, this)"><i class="bi bi-calculator"></i> Update Scores</button>
+                <button class="btn btn-secondary btn-sm" onclick="runAction('/api/fix-orphaned-contests', 'Are you sure you want to fix all orphaned contests?', this)"><i class="bi bi-brush"></i> Cleanup Orphaned</button>
+                <% } %>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-4">
+                <div class="col-md-3"><div class="p-3 rounded text-white bg-info"><div class="small">Live Sessions</div><div class="h3 mb-0" id="liveSessionsCount">0</div></div></div>
+                <div class="col-md-3"><div class="p-3 rounded text-white bg-success"><div class="small">Live Contests</div><div class="h3 mb-0" id="liveContestsCount">0</div></div></div>
+                <div class="col-md-3"><div class="p-3 rounded text-dark bg-warning"><div class="small">Total Participants</div><div class="h3 mb-0" id="totalParticipants">0</div></div></div>
+                <div class="col-md-3"><div class="p-3 rounded text-white bg-danger"><div class="small">Total Prize Pool</div><div class="h3 mb-0" id="totalPrizePool">₹0</div></div></div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle" id="liveSessionsTable">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#</th><th>Session Name</th><th>Market Type</th><th>Status</th><th>Start Time</th>
+                            <th>End Time</th><th>Contests</th><th>Participants</th><th>Prize Pool</th><th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionsTableBody">
+                        <tr><td colspan="10" class="text-center text-muted py-4">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+(function () {
+    var CAN_MANAGE = <%= canManage ? 'true' : 'false' %>;
+    var CAN_CANCEL = <%= canCancel ? 'true' : 'false' %>;
+    var refreshTimer = null;
+
+    function esc(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function money(n) { return '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+    function when(d) {
+        if (!d) return 'N/A';
+        return new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(d));
+    }
+    function badge(status) {
+        return { live: 'success', upcoming: 'warning', completed: 'secondary', completing: 'info', cancelled: 'danger' }[status] || 'light';
+    }
+
+    window.showAlert = function (message, type) {
+        var box = document.createElement('div');
+        box.className = 'alert alert-' + (type === 'success' ? 'success' : 'danger') + ' alert-dismissible fade show';
+        box.innerHTML = '<span></span><button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+        box.querySelector('span').textContent = message;
+        document.getElementById('lmAlerts').prepend(box);
+        setTimeout(function () { box.remove(); }, 6000);
+    };
+
+    function loadLiveData() {
+        var status = document.getElementById('statusFilter').value;
+        fetch('/api/live-sessions-data?status=' + encodeURIComponent(status), { headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                document.getElementById('liveSessionsCount').textContent = data.live_sessions_count || 0;
+                document.getElementById('liveContestsCount').textContent = data.live_contests_count || 0;
+                document.getElementById('totalParticipants').textContent = data.total_participants || 0;
+                document.getElementById('totalPrizePool').textContent = money(data.total_prize_pool);
+                renderSessions(data.sessions || []);
+            })
+            .catch(function () { showAlert('Failed to load live data', 'error'); });
+    }
+
+    function renderSessions(sessions) {
+        var tbody = document.getElementById('sessionsTableBody');
+        if (!sessions.length) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No sessions</td></tr>';
+            return;
+        }
+        tbody.innerHTML = sessions.map(function (s, i) {
+            var actions = '<a class="btn btn-sm btn-info" href="/session-contests/' + esc(s._id) + '" target="_blank"><i class="bi bi-eye"></i> View Detail</a> ';
+            if (CAN_MANAGE && s.status === 'upcoming') {
+                actions += '<button class="btn btn-sm btn-warning" data-action="start" data-id="' + esc(s._id) + '"><i class="bi bi-play-fill"></i> Start</button> ';
+            }
+            if (CAN_MANAGE && (s.status === 'live' || s.status === 'completing')) {
+                actions += '<button class="btn btn-sm btn-danger" data-action="complete" data-id="' + esc(s._id) + '"><i class="bi bi-check2-all"></i> End &amp; Distribute</button> ';
+            }
+            if (CAN_CANCEL && ['upcoming', 'live', 'draft'].indexOf(s.status) !== -1) {
+                actions += '<button class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="' + esc(s._id) + '" data-name="' + esc(s.name) + '"><i class="bi bi-x-octagon"></i> Cancel Session</button>';
+            }
+            return '<tr class="' + (s.status === 'live' ? 'table-success' : '') + '">'
+                + '<td>' + (i + 1) + '</td>'
+                + '<td><strong>' + esc(s.name || 'Unnamed Session') + '</strong></td>'
+                + '<td><span class="badge bg-' + (s.market_type === 'crypto' ? 'warning text-dark' : 'info') + '">' + esc((s.market_type || 'N/A').toUpperCase()) + '</span></td>'
+                + '<td><span class="badge bg-' + badge(s.status) + '">' + esc((s.status || 'N/A').toUpperCase()) + '</span></td>'
+                + '<td>' + esc(when(s.start_time)) + '</td>'
+                + '<td>' + esc(when(s.end_time)) + '</td>'
+                + '<td>' + (s.contests_count || 0) + '</td>'
+                + '<td>' + (s.participants_count || 0) + '</td>'
+                + '<td>' + money(s.total_prize_pool) + '</td>'
+                + '<td class="text-nowrap">' + actions + '</td></tr>';
+        }).join('');
+    }
+
+    window.runAction = function (url, confirmText, btn) {
+        if (confirmText && !confirm(confirmText)) return;
+        var original = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...'; }
+        fetch(url, { method: 'POST', headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
+            .then(function (res) {
+                var b = res.body || {};
+                var msg = b.message || (b.sessions_started !== undefined
+                    ? 'Started ' + (b.contests_started || 0) + ' contests and ' + (b.sessions_started || 0) + ' sessions'
+                    : (res.ok ? 'Done' : 'Request failed'));
+                showAlert(msg, res.ok && b.success !== false ? 'success' : 'error');
+                loadLiveData();
+            })
+            .catch(function () { showAlert('Request failed', 'error'); })
+            .finally(function () { if (btn) { btn.disabled = false; btn.innerHTML = original; } });
+    };
+
+    document.getElementById('sessionsTableBody').addEventListener('click', function (e) {
+        var btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        var id = btn.getAttribute('data-id');
+        var act = btn.getAttribute('data-action');
+        if (act === 'start') runAction('/api/start-session/' + id, 'Are you sure you want to start this session?', btn);
+        if (act === 'complete') runAction('/api/manual-complete-session/' + id, 'Are you sure you want to end this session and DISTRIBUTE PRIZES? This cannot be undone.', btn);
+        if (act === 'cancel') runAction('/api/cancel-session/' + id,
+            'Cancel session "' + btn.getAttribute('data-name') + '"?\n\nAll its contests will be cancelled and every joined user refunded their entry fee. This cannot be undone.', btn);
+    });
+
+    window.refreshData = function () { loadLiveData(); showAlert('Data refreshed successfully!', 'success'); };
+    document.getElementById('statusFilter').addEventListener('change', loadLiveData);
+    loadLiveData();
+    refreshTimer = setInterval(loadLiveData, 10000); // PHP: refresh every 10 seconds
+    window.addEventListener('beforeunload', function () { clearInterval(refreshTimer); });
+})();
+</script>

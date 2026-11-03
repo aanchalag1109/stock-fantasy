@@ -1,0 +1,209 @@
+<%#
+  PHP PARITY — restored from PHP admin/testing/create_basket.blade.php: pick exactly max_stocks
+  assets (UP/DOWN) covering every category, choose multipliers (one α = 2x, one β = 1.5x, others 1x)
+  and save a standalone basket. Saves through POST /testing/create-basket (PHP used a hard-coded
+  127.0.0.1 URL) for each selected test user.
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Basket - ProbTrade</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background: white; min-height: 100vh; padding-bottom: 70px; }
+        .header { background: #0055FF; color: white; padding: 16px; display: flex; align-items: center; gap: 12px; }
+        .header h1 { font-size: 18px; font-weight: 600; flex: 1; text-align: center; }
+        .back-btn { background: none; border: none; color: white; font-size: 24px; cursor: pointer; }
+        .users { padding: 10px 16px; font-size: 13px; background: #fff8e1; border-bottom: 1px solid #eee; }
+        .portfolio-boxes { padding: 16px; border-bottom: 1px solid #e0e0e0; }
+        .boxes-container { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
+        .portfolio-box { min-width: 80px; height: 48px; border: 1.5px solid #ccc; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
+        .portfolio-box.filled { background: #e3f2fd; border-color: #0055FF; }
+        .tabs { display: flex; border-bottom: 2px solid #e0e0e0; overflow-x: auto; }
+        .tab { flex: 1; padding: 12px; text-align: center; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 500; color: #666; white-space: nowrap; }
+        .tab.active { color: #0055FF; border-bottom-color: #0055FF; }
+        .asset-list { padding: 12px 16px; background: #f5f5f5; min-height: 400px; }
+        .asset-item { background: white; border: 1.5px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; }
+        .asset-item.selected { border-color: #0055FF; background: #f0f7ff; }
+        .asset-info { flex: 1; }
+        .asset-name { font-weight: bold; font-size: 16px; margin-bottom: 4px; }
+        .asset-sector { font-size: 12px; color: #666; display: flex; align-items: center; gap: 8px; }
+        .prediction-badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; color: white; }
+        .prediction-badge.up { background: #4caf50; } .prediction-badge.down { background: #f44336; }
+        .asset-actions { display: flex; gap: 6px; }
+        .action-btn { width: 50px; height: 28px; border: none; border-radius: 6px; cursor: pointer; color: white; font-size: 18px; }
+        .action-btn.up { background: #81c784; } .action-btn.up.active { background: #388e3c; }
+        .action-btn.down { background: #e57373; } .action-btn.down.active { background: #d32f2f; }
+        .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 10px 12px; border-top: 1px solid #e0e0e0; display: flex; justify-content: flex-end; }
+        .next-btn { background: #0055FF; color: white; border: none; padding: 12px 40px; border-radius: 16px; font-weight: bold; font-size: 15px; cursor: pointer; }
+        .next-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 1000; }
+        .modal.show { display: flex; align-items: center; justify-content: center; }
+        .modal-content { background: white; border-radius: 16px; padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .modal-header { font-size: 20px; font-weight: bold; margin-bottom: 16px; text-align: center; }
+        .multiplier-item { background: #f5f5f5; border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; }
+        .multiplier-options { display: flex; gap: 8px; margin-left: auto; }
+        .multiplier-btn { width: 40px; height: 40px; border: 2px solid #ccc; border-radius: 8px; background: white; cursor: pointer; font-weight: bold; font-size: 18px; }
+        .multiplier-btn.alpha.active { background: #ff9800; border-color: #ff9800; color: white; }
+        .multiplier-btn.beta.active { background: #2196f3; border-color: #2196f3; color: white; }
+        .multiplier-btn.one.active { background: #4caf50; border-color: #4caf50; color: white; }
+        .multiplier-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .save-btn { width: 100%; background: #0055FF; color: white; border: none; padding: 14px; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; margin-top: 16px; }
+        .loading { text-align: center; padding: 40px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <button class="back-btn" onclick="goBack()" aria-label="Back">←</button>
+            <h1>Create Basket</h1>
+            <span style="width: 24px;"></span>
+        </div>
+        <div class="users">
+            <% if (users.length) { %>
+                For: <% users.forEach((u, i) => { %><strong><%= u.name %></strong><%= i < users.length - 1 ? ', ' : '' %><% }) %>
+            <% } else { %>
+                <span style="color:#c00">No test user found — generate test users first.</span>
+            <% } %>
+        </div>
+        <div class="portfolio-boxes"><div class="boxes-container" id="portfolioBoxes"></div></div>
+        <div class="tabs" id="tabs"></div>
+        <div class="asset-list" id="assetList"><div class="loading">Loading assets...</div></div>
+        <div class="bottom-bar"><button class="next-btn" id="nextBtn" onclick="showMultiplierModal()" disabled>NEXT</button></div>
+    </div>
+    <div class="modal" id="multiplierModal">
+        <div class="modal-content">
+            <div class="modal-header">Select Multipliers</div>
+            <div id="multiplierList"></div>
+            <button class="save-btn" id="saveBtn" onclick="saveBasket()">SAVE BASKET</button>
+        </div>
+    </div>
+    <script>
+        var CONTEST_ID = <%- JSON.stringify(String(contest._id)) %>;
+        var SESSION_ID = <%- JSON.stringify(String(session._id)) %>;
+        var USER_IDS = <%- JSON.stringify(users.map((u) => String(u._id))) %>;
+        var categories = <%- JSON.stringify(categories) %>;
+        var maxAssets = <%= Number(maxStocks) || 10 %>;
+        var allAssets = [], selectedAssets = [], currentTab = 0, multipliers = {};
+
+        function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+        function init() {
+            categories.sort(function (a, b) {
+                var x = a.name.toLowerCase(), y = b.name.toLowerCase();
+                if (x.indexOf('large') !== -1) return -1;
+                if (y.indexOf('large') !== -1) return 1;
+                if (x.indexOf('mid') !== -1) return -1;
+                if (y.indexOf('mid') !== -1) return 1;
+                return 0;
+            });
+            allAssets = categories.reduce(function (list, c) { return list.concat(c.assets); }, []);
+            if (!allAssets.length) { document.getElementById('assetList').innerHTML = '<div class="loading" style="color:red;">No assets found for this session</div>'; return; }
+            renderTabs(); renderAssets(); updatePortfolioBoxes();
+        }
+        function renderTabs() {
+            document.getElementById('tabs').innerHTML = categories.map(function (cat, i) {
+                return '<div class="tab ' + (i === currentTab ? 'active' : '') + '" data-tab="' + i + '">' + esc(cat.name) + '</div>';
+            }).join('');
+        }
+        document.getElementById('tabs').addEventListener('click', function (e) {
+            var t = e.target.closest('[data-tab]');
+            if (!t) return;
+            currentTab = Number(t.getAttribute('data-tab'));
+            renderTabs(); renderAssets();
+        });
+        function renderAssets() {
+            var list = (categories[currentTab] || {}).assets || [];
+            document.getElementById('assetList').innerHTML = list.map(function (asset) {
+                var sel = selectedAssets.find(function (s) { return s.name === asset.name; });
+                var p = sel ? sel.prediction : '';
+                return '<div class="asset-item ' + (sel ? 'selected' : '') + '"><div class="asset-info"><div class="asset-name">' + esc(asset.name) + '</div>'
+                    + '<div class="asset-sector">' + esc(asset.sector) + (p ? ' <span class="prediction-badge ' + p.toLowerCase() + '">' + p + '</span>' : '') + '</div></div>'
+                    + '<div class="asset-actions"><button class="action-btn up ' + (p === 'UP' ? 'active' : '') + '" data-asset="' + esc(asset.name) + '" data-p="UP">↑</button>'
+                    + '<button class="action-btn down ' + (p === 'DOWN' ? 'active' : '') + '" data-asset="' + esc(asset.name) + '" data-p="DOWN">↓</button></div></div>';
+            }).join('');
+        }
+        document.getElementById('assetList').addEventListener('click', function (e) {
+            var b = e.target.closest('button[data-asset]');
+            if (b) selectAsset(b.getAttribute('data-asset'), b.getAttribute('data-p'));
+        });
+        function selectAsset(name, prediction) {
+            var asset = allAssets.find(function (a) { return a.name === name; });
+            var i = selectedAssets.findIndex(function (s) { return s.name === name; });
+            if (i >= 0) {
+                if (selectedAssets[i].prediction === prediction) selectedAssets.splice(i, 1);
+                else selectedAssets[i].prediction = prediction;
+            } else {
+                if (selectedAssets.length >= maxAssets) { alert('Maximum ' + maxAssets + ' assets allowed'); return; }
+                selectedAssets.push(Object.assign({}, asset, { prediction: prediction }));
+            }
+            renderAssets(); updatePortfolioBoxes(); updateNextButton();
+        }
+        function updatePortfolioBoxes() {
+            var html = '';
+            for (var i = 0; i < maxAssets; i += 1) {
+                var a = selectedAssets[i];
+                html += '<div class="portfolio-box ' + (a ? 'filled' : '') + '">' + (a ? esc(a.name) : (i + 1)) + '</div>';
+            }
+            document.getElementById('portfolioBoxes').innerHTML = html;
+        }
+        function updateNextButton() {
+            var allCats = categories.every(function (c) { return selectedAssets.some(function (s) { return s.sector === c.name; }); });
+            document.getElementById('nextBtn').disabled = selectedAssets.length !== maxAssets || !allCats || !USER_IDS.length;
+        }
+        function showMultiplierModal() {
+            selectedAssets.forEach(function (a) { if (!multipliers[a.name]) multipliers[a.name] = 1; });
+            var vals = Object.keys(multipliers).filter(function (k) { return selectedAssets.some(function (s) { return s.name === k; }); }).map(function (k) { return multipliers[k]; });
+            var alphaCount = vals.filter(function (m) { return m === 2; }).length;
+            var betaCount = vals.filter(function (m) { return m === 1.5; }).length;
+            document.getElementById('multiplierList').innerHTML = selectedAssets.map(function (a) {
+                var m = multipliers[a.name];
+                return '<div class="multiplier-item"><div><div style="font-weight:bold;">' + esc(a.name) + '</div><div style="font-size:12px;color:#666;">' + esc(a.sector) + '</div></div>'
+                    + '<div class="multiplier-options">'
+                    + '<button class="multiplier-btn alpha ' + (m === 2 ? 'active' : '') + '" data-m="2" data-asset="' + esc(a.name) + '" ' + (m !== 2 && alphaCount >= 1 ? 'disabled' : '') + '>α</button>'
+                    + '<button class="multiplier-btn beta ' + (m === 1.5 ? 'active' : '') + '" data-m="1.5" data-asset="' + esc(a.name) + '" ' + (m !== 1.5 && betaCount >= 1 ? 'disabled' : '') + '>β</button>'
+                    + '<button class="multiplier-btn one ' + (m === 1 ? 'active' : '') + '" data-m="1" data-asset="' + esc(a.name) + '">1x</button>'
+                    + '</div></div>';
+            }).join('');
+            document.getElementById('multiplierModal').classList.add('show');
+        }
+        document.getElementById('multiplierList').addEventListener('click', function (e) {
+            var b = e.target.closest('button[data-m]');
+            if (!b || b.disabled) return;
+            multipliers[b.getAttribute('data-asset')] = Number(b.getAttribute('data-m'));
+            showMultiplierModal();
+        });
+        function saveBasket() {
+            var assets = selectedAssets.map(function (a) { return { name: a.name, sector: a.sector, category_id: a.category_id, prediction: a.prediction, symbol: a.name }; });
+            var mults = selectedAssets.map(function (a, index) { return { index: index, asset_name: a.name, multiplier: multipliers[a.name] || 1, prediction: a.prediction, selected: true }; });
+            var btn = document.getElementById('saveBtn');
+            btn.disabled = true; btn.textContent = 'SAVING...';
+            var saved = [], failed = [];
+            USER_IDS.reduce(function (chain, userId) {
+                return chain.then(function () {
+                    return fetch('/testing/create-basket', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({ user_id: userId, session_id: SESSION_ID, is_standalone: 1, assets: assets, multipliers: mults })
+                    }).then(function (r) { return r.json(); }).then(function (res) {
+                        if (res.success) saved.push(res.serial_no || res.basket_id); else failed.push(res.message || 'failed');
+                    }).catch(function (err) { failed.push(err.message); });
+                });
+            }, Promise.resolve()).then(function () {
+                if (!failed.length) {
+                    alert('Basket saved! Serial: ' + saved.join(', '));
+                    window.location.href = '/testing/contest/' + CONTEST_ID;
+                } else {
+                    alert('Saved: ' + saved.length + ', failed: ' + failed.length + ' (' + failed[0] + ')');
+                    btn.disabled = false; btn.textContent = 'SAVE BASKET';
+                }
+            });
+        }
+        function goBack() { window.location.href = '/testing/contest/' + CONTEST_ID; }
+        init();
+    </script>
+</body>
+</html>

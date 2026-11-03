@@ -38,6 +38,8 @@
                 <a href="?status=upcoming" class="btn <%= status === 'upcoming' ? 'btn-info' : 'btn-outline-info' %>"><i class="bi bi-clock me-1"></i>Upcoming</a>
                 <a href="?status=completed" class="btn <%= status === 'completed' ? 'btn-warning' : 'btn-outline-warning' %>"><i class="bi bi-check-circle me-1"></i>Completed</a>
                 <a href="?status=draft" class="btn <%= status === 'draft' ? 'btn-secondary' : 'btn-outline-secondary' %>"><i class="bi bi-file-earmark me-1"></i>Draft</a>
+                <%# NEW IMPLEMENTATION — NODE.JS PROJECT: sessions cancelled via Cancel Session / deactivation %>
+                <a href="?status=cancelled" class="btn <%= status === 'cancelled' ? 'btn-danger' : 'btn-outline-danger' %>"><i class="bi bi-x-octagon me-1"></i>Cancelled</a>
                 <a href="/league_sessions" class="btn <%= !status ? 'btn-dark' : 'btn-outline-dark' %>"><i class="bi bi-list me-1"></i>All</a>
             </div>
         </div>

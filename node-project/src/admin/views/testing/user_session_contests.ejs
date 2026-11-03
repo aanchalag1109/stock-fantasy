@@ -27,6 +27,8 @@
                                     <td><%= contest.participants || 0 %></td>
                                     <td>
                                         <a href="/testing/contest/<%= contest._id %>" class="btn btn-xs btn-outline-primary">Detail</a>
+                                        <%# PHP PARITY: assign one of the user's baskets to this contest %>
+                                        <button type="button" class="btn btn-xs btn-outline-success" onclick="openSelectBasket('<%= contest._id %>')">Select Basket</button>
                                     </td>
                                 </tr>
                                 <% }) %>
@@ -238,4 +240,53 @@ async function deleteBasket(basketId) {
         else alert('Error: ' + data.message);
     } catch(e) { alert('Error'); }
 }
+</script>
+
+<%# PHP PARITY — "Select Basket" modal (PHP testing/user-session-contests.blade.php) %>
+<div class="modal fade" id="selectBasketModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Select Basket for Contest</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body" id="basketSelectionList"><div class="text-center text-muted">Loading...</div></div>
+    </div></div>
+</div>
+<script>
+(function () {
+    var currentContestId = null;
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    window.openSelectBasket = function (contestId) {
+        currentContestId = contestId;
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('selectBasketModal')).show();
+        var box = document.getElementById('basketSelectionList');
+        box.innerHTML = '<div class="text-center text-muted">Loading...</div>';
+        fetch('/testing/baskets/<%= user._id %>/<%= session._id %>', { headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (baskets) {
+                var free = (baskets || []).filter(function (b) { return !b.contest_id || b.is_standalone; });
+                if (!free.length) { box.innerHTML = '<div class="text-center text-muted">No available baskets found. Create a basket first.</div>'; return; }
+                box.innerHTML = '<div class="list-group">' + free.map(function (b) {
+                    var assets = Array.isArray(b.assets) ? b.assets : [];
+                    return '<button type="button" class="list-group-item list-group-item-action" data-basket="' + esc(b._id) + '">'
+                        + '<div class="d-flex w-100 justify-content-between"><h6 class="mb-1">Basket ' + esc(b.serial_no || b._id) + '</h6><small>' + (b.created_at ? new Date(b.created_at).toLocaleDateString('en-IN') : '') + '</small></div>'
+                        + '<p class="mb-1"><strong>Assets:</strong> ' + esc(assets.map(function (a) { return a.symbol || a.name; }).join(', ')) + '</p>'
+                        + '<small class="text-muted">' + assets.length + ' assets • Score: ' + esc(b.total_score || 0) + '</small></button>';
+                }).join('') + '</div>';
+            })
+            .catch(function () { box.innerHTML = '<div class="text-center text-danger">Error loading baskets</div>'; });
+    };
+    document.getElementById('basketSelectionList').addEventListener('click', function (e) {
+        var item = e.target.closest('[data-basket]');
+        if (!item || !currentContestId) return;
+        fetch('/testing/assign-basket', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ basket_id: item.getAttribute('data-basket'), contest_id: currentContestId })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('selectBasketModal')).hide();
+                alert('Basket assigned to contest successfully!');
+                location.reload();
+            } else { alert('Error: ' + data.message); }
+        }).catch(function () { alert('Error assigning basket to contest'); });
+    });
+})();
 </script>

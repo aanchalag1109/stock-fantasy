@@ -430,7 +430,7 @@ describe('Players module cannot be used to escalate privileges', () => {
   test('a non-super admin cannot grant is_admin', async () => {
     const support = await loginAs('support');
     await support.post('/users').type('form').send({
-      name: 'New', email: 'new@test.local', password: 'password123', password_confirmation: 'password123', is_admin: '1',
+      name: 'New', email: 'new@test.local', mobile: '9812345678', country_code: '+91', password: 'password123', password_confirmation: 'password123', is_admin: '1',
     });
     assert.equal(db.users.find((u) => u.email === 'new@test.local').is_admin, false);
 

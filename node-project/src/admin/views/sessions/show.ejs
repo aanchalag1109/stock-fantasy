@@ -44,14 +44,29 @@
                 <i class="bi bi-pencil me-1"></i>Edit Session
             </a>
             <% } %>
+            <%# PHP PARITY: "Refetch Missing Prices" (PHP league_sessions/show.blade.php) %>
+            <% if (can('sessions.edit') && ['live', 'completing', 'completed'].includes(st)) { %>
+            <button class="btn btn-warning ms-2" id="refetchPricesBtn"><i class="bi bi-arrow-repeat me-1"></i>Refetch Missing Prices</button>
+            <% } %>
+            <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Cancel Session + refund all users (client request) %>
+            <% if (can('sessions.cancel') && ['upcoming', 'live', 'draft'].includes(st)) { %>
+            <button class="btn btn-outline-danger ms-2" id="cancelSessionBtn"><i class="bi bi-x-octagon me-1"></i>Cancel Session</button>
+            <% } %>
         </div>
     </div>
+    <div id="sessionActionAlert"></div>
 
     <div class="alert alert-<%= st === 'upcoming' ? 'info' : 'warning' %> border-0 shadow-sm mb-4">
         <i class="bi bi-<%= st === 'upcoming' ? 'clock' : 'check-circle' %>-fill me-2"></i>
         <strong><%= st.charAt(0).toUpperCase() + st.slice(1) %> Session:</strong>
         <% if (st === 'upcoming') { %>
             This session is scheduled to start at <%= sched(session.start_time) %>
+        <% } else if (st === 'live') { %>
+            This session is live
+        <% } else if (st === 'cancelled') { %>
+            This session was cancelled and joined users were refunded
+        <% } else if (st === 'draft') { %>
+            This session is a draft
         <% } else { %>
             This session has been completed
         <% } %>
@@ -232,3 +247,34 @@
     </div>
     <% } %>
 </div>
+
+<script>
+(function () {
+    function post(url, confirmText, btn) {
+        if (confirmText && !confirm(confirmText)) return;
+        var original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Working...';
+        fetch(url, { method: 'POST', headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+            .then(function (res) {
+                var box = document.getElementById('sessionActionAlert');
+                box.className = 'alert alert-' + (res.ok && res.body.success ? 'success' : 'danger');
+                box.textContent = res.body.message || (res.ok ? 'Done' : 'Request failed');
+                if (res.ok && res.body.success) setTimeout(function () { location.reload(); }, 1500);
+            })
+            .catch(function () { alert('Request failed'); })
+            .finally(function () { btn.disabled = false; btn.innerHTML = original; });
+    }
+    var refetch = document.getElementById('refetchPricesBtn');
+    if (refetch) refetch.addEventListener('click', function () {
+        post('/league_sessions/<%= session._id %>/refetch-prices', 'Fetch the prices that are still missing for this session?', refetch);
+    });
+    var cancel = document.getElementById('cancelSessionBtn');
+    if (cancel) cancel.addEventListener('click', function () {
+        post('/league_sessions/<%= session._id %>/cancel', 'Cancel this session?
+
+All its contests will be cancelled and every joined user refunded their entry fee. This cannot be undone.', cancel);
+    });
+})();
+</script>

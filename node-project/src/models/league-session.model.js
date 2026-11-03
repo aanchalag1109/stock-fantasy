@@ -33,7 +33,10 @@ const leagueSessionSchema = new mongoose.Schema({
   // NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation. Set only by the automation
   // when it has captured this session's prices; sessions without them are never auto-scored.
   start_prices_captured_at: { type: Date, default: null },
-  end_prices_captured_at: { type: Date, default: null }
+  end_prices_captured_at: { type: Date, default: null },
+  // PHP PARITY (Performance → RUN ALL): true while a RUN ALL job drives this session, so the
+  // scheduled automation leaves it alone (no double status flips, price captures or refunds).
+  run_all_active: { type: Boolean, default: false }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

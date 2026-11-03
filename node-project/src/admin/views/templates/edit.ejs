@@ -1,29 +1,47 @@
+<%#
+  PHP PARITY — restored from PHP admin/templates/edit.blade.php: besides the name fields, the
+  template's assets can be changed (category tabs with stock/crypto checkboxes, pre-ticked).
+%>
+<%
+  let assetsData = template.assets_data;
+  if (typeof assetsData === 'string') { try { assetsData = JSON.parse(assetsData); } catch (e) { assetsData = {}; } }
+  const selected = Object.values(assetsData || {}).flat().map((a) => a && a.asset_symbol).filter(Boolean);
+%>
 <div class="container-fluid">
     <h1 class="h3 mb-4">Edit Template</h1>
     <div class="card shadow-sm">
         <div class="card-body">
-            <form method="POST" action="/templates/<%= template._id %>?_method=PUT">
+            <form method="POST" action="/templates/<%= template._id %>?_method=PUT" id="templateForm">
+                <input type="hidden" name="assets_loaded" id="assets_loaded" value="0">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label">Template Name</label>
-                        <input class="form-control" name="template_name" value="<%= template.template_name %>" required>
+                        <label class="form-label" for="template_name">Template Name</label>
+                        <input class="form-control" id="template_name" name="template_name" value="<%= template.template_name %>" required>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Session Name</label>
-                        <input class="form-control" name="name" value="<%= template.name %>" required>
+                        <label class="form-label" for="name">Session Name</label>
+                        <input class="form-control" id="name" name="name" value="<%= template.name %>" required>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Market Type</label>
-                        <select class="form-select" name="market_type">
+                        <label class="form-label" for="market_type">Market Type</label>
+                        <select class="form-select" id="market_type" name="market_type">
                             <option value="stock" <%= template.market_type === 'stock' ? 'selected' : '' %>>Stock</option>
                             <option value="crypto" <%= template.market_type === 'crypto' ? 'selected' : '' %>>Crypto</option>
                         </select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Max Assets</label>
-                        <input class="form-control" type="number" name="max_stocks" value="<%= template.max_stocks || 5 %>">
+                        <label class="form-label" for="max_stocks">Max Assets</label>
+                        <input class="form-control" type="number" id="max_stocks" name="max_stocks" value="<%= template.max_stocks || 5 %>">
                     </div>
                 </div>
+
+                <h6 class="mt-4 mb-2"><i class="bi bi-collection me-2"></i>Assets</h6>
+                <div class="card border-0 bg-light"><div class="card-body">
+                    <ul class="nav nav-pills mb-3" id="categoryTabs"></ul>
+                    <div class="tab-content" id="categoryTabContent"><div class="text-muted">Loading assets…</div></div>
+                    <div class="form-text">Selected: <strong id="selectedCount"><%= selected.length %></strong></div>
+                </div></div>
+
                 <div class="mt-4">
                     <button class="btn btn-primary" type="submit">Save</button>
                     <a href="/templates" class="btn btn-secondary">Cancel</a>
@@ -32,3 +50,48 @@
         </div>
     </div>
 </div>
+
+<script>
+(function () {
+    var SELECTED = new Set(<%- JSON.stringify(selected) %>);
+    var market = document.getElementById('market_type');
+    var tabs = document.getElementById('categoryTabs');
+    var content = document.getElementById('categoryTabContent');
+    var loaded = document.getElementById('assets_loaded');
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function count() { document.getElementById('selectedCount').textContent = content.querySelectorAll('input[type=checkbox]:checked').length; }
+    function load() {
+        loaded.value = '0';
+        tabs.innerHTML = '';
+        content.innerHTML = '<div class="text-muted">Loading assets…</div>';
+        fetch('/api/categories/' + encodeURIComponent(market.value), { headers: { Accept: 'application/json' } })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(function (categories) {
+                return Promise.all(categories.map(function (cat) {
+                    return fetch('/api/assets/' + encodeURIComponent(cat.id), { headers: { Accept: 'application/json' } })
+                        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                        .then(function (assets) { return { cat: cat, assets: assets }; });
+                }));
+            })
+            .then(function (groups) {
+                tabs.innerHTML = groups.map(function (g, i) {
+                    return '<li class="nav-item"><button class="nav-link' + (i === 0 ? ' active' : '') + '" type="button" data-bs-toggle="tab" data-bs-target="#tcat-' + esc(g.cat.id) + '">' + esc(g.cat.name) + '</button></li>';
+                }).join('');
+                content.innerHTML = groups.map(function (g, i) {
+                    var boxes = g.assets.map(function (a) {
+                        var id = 't_' + g.cat.id + '_' + String(a.symbol).replace(/[^A-Za-z0-9]/g, '_');
+                        return '<div class="col-md-3 col-6"><div class="form-check"><input class="form-check-input" type="checkbox" id="' + esc(id) + '" name="asset_selection[]" value="' + esc(g.cat.id) + ':' + esc(a.symbol) + '"' + (SELECTED.has(a.symbol) ? ' checked' : '') + '>'
+                            + '<label class="form-check-label small" for="' + esc(id) + '">' + esc(a.symbol) + ' <span class="text-muted">' + esc(a.name || '') + '</span></label></div></div>';
+                    }).join('') || '<div class="text-muted">No assets in this category</div>';
+                    return '<div class="tab-pane fade' + (i === 0 ? ' show active' : '') + '" id="tcat-' + esc(g.cat.id) + '"><div class="row g-1">' + boxes + '</div></div>';
+                }).join('') || '<div class="text-muted">No categories for this market type</div>';
+                loaded.value = '1';
+                count();
+            })
+            .catch(function () { content.innerHTML = '<div class="text-danger">Failed to load assets — saving keeps the current assets.</div>'; });
+    }
+    content.addEventListener('change', count);
+    market.addEventListener('change', load);
+    load();
+})();
+</script>

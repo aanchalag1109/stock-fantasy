@@ -5,6 +5,8 @@
     <div class="form-group"><label class="form-label">Upload Image</label><input type="file" name="image" class="form-control" accept="image/*"/></div>
     <div class="form-group"><label class="form-label">Or Image URL</label><input type="text" name="image_url" class="form-control" placeholder="https://..."/></div>
     <div class="form-group"><label class="form-label">Link (optional)</label><input type="text" name="link" class="form-control" placeholder="https://..."/></div>
+    <%# PHP PARITY: status chosen on create (PHP banners/create.blade.php) %>
+    <div class="form-group"><label class="form-label">Status</label><select name="status" class="form-control" required><option value="active" selected>Active</option><option value="inactive">Inactive</option></select></div>
     <div class="form-actions"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Banner</button><a href="/banners" class="btn btn-secondary">Cancel</a></div>
   </form>
 </div>

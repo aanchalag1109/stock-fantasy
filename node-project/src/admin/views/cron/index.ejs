@@ -12,7 +12,7 @@
         </div>
         <div class="col-md-6 text-end">
             <div class="d-flex justify-content-end gap-2">
-                <button onclick="location.reload()" class="btn btn-outline-primary btn-sm" type="button">
+                <button onclick="fetchLogs()" class="btn btn-outline-primary btn-sm" type="button">
                     <i class="bi bi-arrow-clockwise me-1"></i>Refresh Now
                 </button>
                 <form action="/cron-logs/clear?_method=DELETE" method="POST" onsubmit="return confirm('Are you sure you want to clear all logs?');" class="d-inline">
@@ -34,28 +34,8 @@
                             <th class="pe-4 text-end">Diff</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <% logs.forEach(log => { %>
-                        <tr>
-                            <td class="ps-4"><%= (log.run_time || log.created_at) ? new Date(log.run_time || log.created_at).toLocaleString('en-IN') : '—' %></td>
-                            <td><%= log.type || log.job_name || 'api' %></td>
-                            <td>
-                                <% if (log.success !== false && log.status !== 'failed') { %><span class="badge bg-success">Success</span>
-                                <% } else { %><span class="badge bg-danger">Failed</span><% } %>
-                            </td>
-                            <td class="text-truncate" style="max-width:320px;"><%= log.response || (typeof log.output === 'string' ? log.output : '') || '—' %></td>
-                            <td class="pe-4 text-end"><%= log.duration_ms ? log.duration_ms + 'ms' : '—' %></td>
-                        </tr>
-                        <% }) %>
-                        <% if (!logs.length) { %>
-                        <tr>
-                            <td colspan="5" class="text-center py-5 text-muted">
-                                <div class="mb-3"><i class="bi bi-clock-history display-4 opacity-25"></i></div>
-                                <h5>No processed logs found</h5>
-                                <p class="small mb-0">The system is waiting for the next cron cycle.</p>
-                            </td>
-                        </tr>
-                        <% } %>
+                    <tbody id="logsTableBody">
+                        <%- include('_rows', { logs }) %>
                     </tbody>
                 </table>
             </div>
@@ -66,8 +46,19 @@
     </div>
 </div>
 <script>
-(function tick() {
-    const el = document.getElementById('lastUpdated');
-    if (el) el.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
-})();
+// PHP PARITY: refresh the log table over AJAX every 20 s (PHP cron_logs/index.blade.php)
+function fetchLogs() {
+    const indicator = document.getElementById('updateIndicator');
+    indicator.classList.remove('d-none');
+    fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('logsTableBody').innerHTML = data.html;
+            document.getElementById('lastUpdated').textContent = data.last_updated;
+        })
+        .catch(err => console.error('Error fetching logs:', err))
+        .finally(() => setTimeout(() => indicator.classList.add('d-none'), 500));
+}
+document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+setInterval(fetchLogs, 20000);
 </script>

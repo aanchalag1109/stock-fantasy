@@ -101,15 +101,16 @@
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label class="form-label fw-semibold text-muted">Date of Birth</label>
-                                <div class="form-control-plaintext">Not provided</div>
+                                <%# PHP PARITY: real profile values instead of fixed placeholders %>
+                                <div class="form-control-plaintext"><%= user.date_of_birth && !isNaN(new Date(user.date_of_birth)) ? new Date(user.date_of_birth).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric', timeZone: 'UTC' }) : 'Not provided' %></div>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label fw-semibold text-muted">Gender</label>
-                                <div class="form-control-plaintext">Not specified</div>
+                                <div class="form-control-plaintext"><%= user.gender ? String(user.gender).charAt(0).toUpperCase() + String(user.gender).slice(1) : 'Not specified' %></div>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label fw-semibold text-muted">Address</label>
-                                <div class="form-control-plaintext">Not provided</div>
+                                <div class="form-control-plaintext"><%= user.address || 'Not provided' %></div>
                             </div>
                         </div>
                     </div>

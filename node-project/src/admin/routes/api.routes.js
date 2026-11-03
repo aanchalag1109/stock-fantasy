@@ -25,7 +25,7 @@ router.get('/live-contests-count', requireAdmin, requirePermission('live_managem
 });
 
 // PHP admin/api/categories/{type} returns id + name. id is the MySQL category id.
-router.get('/categories/:type', requireAdmin, requirePermission('sessions.create', 'sessions.edit'), async (req, res) => {
+router.get('/categories/:type', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'templates.edit'), async (req, res) => {
   const categories = await MarketTypeCategory.find({ category_type: req.params.type, status: 'active' })
     .sort({ old_id: 1, _id: 1 })
     .select('old_id name')
@@ -34,7 +34,7 @@ router.get('/categories/:type', requireAdmin, requirePermission('sessions.create
 });
 
 // PHP admin/api/assets/{categoryId} filters by the numeric category id.
-router.get('/assets/:categoryId', requireAdmin, requirePermission('sessions.create', 'sessions.edit'), async (req, res) => {
+router.get('/assets/:categoryId', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'templates.edit'), async (req, res) => {
   const categoryId = String(req.params.categoryId);
   const categoryKeys = [];
   if (/^\d+$/.test(categoryId)) {
@@ -172,46 +172,7 @@ router.get('/users/search', requireAdmin, requirePermission('users.view'), async
 
 // ── Performance APIs ────────────────────────────────────────────────────────
 
-// Live sessions data (mirrors PHP LiveManagementController::getLiveSessionsData)
-router.get('/live-sessions-data', requireAdmin, requirePermission('live_management.view'), async (req, res) => {
-  try {
-    const status = req.query.status || 'all';
-    const match = {};
-    if (status !== 'all') match.status = status;
-    const sessions = await LeagueSession.aggregate([
-      { $match: match },
-      { $addFields: { id_missing: { $cond: [{ $ifNull: ['$old_id', null] }, 0, 1] } } },
-      { $sort: { id_missing: 1, start_time: -1 } },
-      { $project: { id_missing: 0 } },
-    ]);
-    const sessionKeys = sessions.flatMap(s => [s._id, s.old_id].filter(k => k != null));
-    const contestRows = sessionKeys.length
-      ? await Contest.aggregate([
-          { $match: { league_session_id: { $in: sessionKeys } } },
-          { $group: { _id: '$league_session_id', count: { $sum: 1 }, total_prize: { $sum: '$prize_pool' } } },
-        ])
-      : [];
-    const contestMap = new Map(contestRows.map(r => [String(r._id), r]));
-    const sessionsOut = sessions.map(s => {
-      const row = contestMap.get(String(s._id)) || contestMap.get(String(s.old_id)) || { count: 0, total_prize: 0 };
-      return {
-        id:               s.old_id || String(s._id),
-        _id:              String(s._id),
-        name:             s.name,
-        market_type:      s.market_type,
-        status:           s.status,
-        start_time:       s.start_time,
-        end_time:         s.end_time,
-        max_stocks:       s.max_stocks,
-        contests_count:   row.count,
-        total_prize_pool: row.total_prize || 0,
-      };
-    });
-    res.json({ success: true, sessions: sessionsOut });
-  } catch (err) {
-    res.json({ success: false, error: err.message, sessions: [] });
-  }
-});
+// PHP PARITY: /api/live-sessions-data moved to live-management.routes.js (adds participants + overview stats)
 
 // Session details (mirrors PHP /api/sessions/:id)
 router.get('/sessions/:id', requireAdmin, requirePermission('sessions.view'), async (req, res) => {

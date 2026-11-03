@@ -222,4 +222,5 @@ const paymentReturn = async (req, res) => {
   return res.redirect(`probtrade://payment-pending?order_id=${orderId}`);
 };
 
-module.exports = { createOrder, lgpayCallback, paymentReturn };
+// generateSignature is also used by the admin Payment Orders "Verify" (PHP PARITY)
+module.exports = { createOrder, lgpayCallback, paymentReturn, generateSignature };

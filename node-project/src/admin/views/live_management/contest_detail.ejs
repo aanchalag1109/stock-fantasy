@@ -1,0 +1,100 @@
+<%#
+  PHP PARITY — restored from PHP admin/contests/live_contest_detail.blade.php: contest summary,
+  participants ranked by score, and a portfolio modal (assets, multiplier, start/current price,
+  change %, weighted score). Data: /api/contest-details/:id and /api/portfolio-details/:entryId.
+%>
+<div class="container-fluid">
+    <div id="cdAlerts"></div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h4 mb-0"><i class="bi bi-trophy me-2"></i>Live Contest Detail</h1>
+        <div>
+            <button class="btn btn-success btn-sm" onclick="loadContest()"><i class="bi bi-arrow-repeat"></i> Refresh</button>
+            <a href="/live-management" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+        </div>
+    </div>
+    <div class="card shadow-sm mb-3"><div class="card-body" id="contestSummary">Loading…</div></div>
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-striped table-sm align-middle mb-0">
+                <thead class="table-light"><tr><th>Rank</th><th>User</th><th>Portfolio</th><th>Score</th><th>Actions</th></tr></thead>
+                <tbody id="participantsBody"><tr><td colspan="5" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="portfolioModal" tabindex="-1">
+    <div class="modal-dialog modal-xl"><div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title"><i class="bi bi-pie-chart me-2"></i>Portfolio Details</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="portfolioBody"></div>
+    </div></div>
+</div>
+
+<script>
+(function () {
+    var CONTEST_ID = <%- JSON.stringify(String(contestId)) %>;
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function money(n) { return '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+    function num(n, d) { return Number(n || 0).toFixed(d == null ? 2 : d); }
+
+    window.loadContest = function () {
+        fetch('/api/contest-details/' + encodeURIComponent(CONTEST_ID), { headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) throw new Error(data.error || 'Contest not found');
+                var c = data.contest;
+                document.getElementById('contestSummary').innerHTML =
+                    '<div class="row"><div class="col-md-8"><h5 class="mb-1">Contest #' + esc(c.id) + ' — ' + esc(c.category) + '</h5>'
+                    + '<div class="text-muted">Session: ' + esc(c.session_name || 'N/A') + ' (' + esc(c.market_type || '') + ')</div></div>'
+                    + '<div class="col-md-4 text-md-end"><div>Entry Fee: <strong>' + money(c.entry_fee) + '</strong></div>'
+                    + '<div>Prize Pool: <strong>' + money(c.prize_pool) + '</strong></div>'
+                    + '<div>Participants: <strong>' + data.participants_count + '</strong> · Status: <span class="badge bg-secondary">' + esc(c.status) + '</span></div></div></div>';
+                var rows = data.participants.map(function (p) {
+                    var symbols = (p.assets || []).map(function (a) { return a.symbol || a.name || 'N/A'; });
+                    var score = Number(p.total_score || 0);
+                    return '<tr><td><span class="badge bg-' + (p.rank <= 3 ? 'warning text-dark' : 'secondary') + '">#' + esc(p.rank) + '</span></td>'
+                        + '<td><strong>' + esc(p.user_name) + '</strong><br><small class="text-muted">ID: ' + esc(p.user_id) + '</small></td>'
+                        + '<td><small>' + esc(symbols.join(', ') || 'No assets') + '</small><br><span class="badge bg-info">' + symbols.length + ' assets</span></td>'
+                        + '<td><span class="fw-bold text-' + (score >= 0 ? 'success' : 'danger') + '">' + num(score) + '</span></td>'
+                        + '<td><button class="btn btn-sm btn-outline-primary" data-entry="' + esc(p.id) + '"><i class="bi bi-graph-up"></i> Portfolio</button></td></tr>';
+                });
+                document.getElementById('participantsBody').innerHTML = rows.join('') || '<tr><td colspan="5" class="text-center text-muted py-4">No participants yet</td></tr>';
+            })
+            .catch(function (err) {
+                document.getElementById('contestSummary').textContent = err.message;
+                document.getElementById('participantsBody').innerHTML = '';
+            });
+    };
+
+    document.getElementById('participantsBody').addEventListener('click', function (e) {
+        var btn = e.target.closest('button[data-entry]');
+        if (!btn) return;
+        fetch('/api/portfolio-details/' + encodeURIComponent(btn.getAttribute('data-entry')), { headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) throw new Error(data.error || 'Portfolio not found');
+                var p = data.participant;
+                var rows = (data.assets || []).map(function (a) {
+                    var cls = function (v) { return Number(v) >= 0 ? 'text-success' : 'text-danger'; };
+                    return '<tr><td><strong>' + esc(a.name) + '</strong><br><span class="badge bg-dark">' + esc(a.symbol) + '</span></td>'
+                        + '<td>' + esc(a.prediction) + '</td><td>' + esc(a.multiplier) + 'x</td>'
+                        + '<td>' + num(a.start_price, 4) + '</td><td>' + num(a.current_price, 4) + '</td>'
+                        + '<td class="' + cls(a.change_percent) + '">' + (a.change_percent >= 0 ? '+' : '') + num(a.change_percent) + '%</td>'
+                        + '<td class="fw-bold ' + cls(a.weighted_score) + '">' + (a.weighted_score >= 0 ? '+' : '') + num(a.weighted_score) + '%</td></tr>';
+                }).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">No assets found in portfolio</td></tr>';
+                document.getElementById('portfolioBody').innerHTML =
+                    '<div class="row mb-3"><div class="col-md-6"><h6>User: ' + esc(p.user_name) + '</h6><h4>Total Score: ' + num(p.total_score) + '</h4></div>'
+                    + '<div class="col-md-6"><div>Rank: <strong>' + esc(p.rank || 'N/A') + '</strong></div><div>Assets: ' + (data.assets || []).length + '</div></div></div>'
+                    + '<div class="table-responsive"><table class="table"><thead><tr><th>Asset</th><th>Prediction</th><th>Multiplier</th><th>Start Price</th><th>Current/End Price</th><th>Change %</th><th>Weighted</th></tr></thead><tbody>'
+                    + rows + '</tbody></table></div>';
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('portfolioModal')).show();
+            })
+            .catch(function (err) { alert(err.message); });
+    });
+
+    loadContest();
+})();
+</script>

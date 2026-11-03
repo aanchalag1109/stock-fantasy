@@ -25,39 +25,21 @@
 const LeagueSession = require('../../models/league-session.model');
 const Contest = require('../../models/contest.model');
 const logger = require('../../config/logger');
-const { publicId, num } = require('../../helpers/mobile-compat');
-const { notify } = require('../notifications/notification.service');
+const { publicId } = require('../../helpers/mobile-compat');
 const scoring = require('./contest-scoring');
-const { creditOnce } = require('./ledger');
+const { cancelContest } = require('../contest-cancellation.service');
 
 const MIN_PARTICIPANTS = 10; // PHP: contests with fewer than 10 entries are cancelled
 
+// Same cancellation + refund as the admin Cancel button (services/contest-cancellation.service.js);
+// the claim also requires the contest to be still uncalculated.
 async function cancelAndRefund(contest) {
-  // Claim atomically: only one run/process may cancel and refund a contest.
-  const claimed = await Contest.findOneAndUpdate(
-    { _id: contest._id, status: { $ne: 'cancelled' }, is_calculated: { $ne: true }, prizes_distributed: { $ne: true } },
-    { $set: { status: 'cancelled', is_calculated: true } },
-  );
-  if (!claimed) return 0;
-
-  const fee = num(contest.entry_fee);
-  const label = publicId(contest);
-  let refunded = 0;
-  if (fee > 0) {
-    for (const entry of await scoring.contestEntries(contest)) {
-      const txId = `REFUND_${label}_E${entry.old_id != null ? entry.old_id : entry._id}`;
-      const result = await creditOnce({
-        userRef: entry.user_id,
-        balance: 'deposit_balance',
-        amount: fee,
-        transaction: { type: 'deposit', contest_id: label, transaction_id: txId, description: `Contest #${label} cancelled - Entry fee refunded` },
-      });
-      if (!result.credited) continue;
-      refunded += 1;
-      notify('refund_credited', { user: result.user, dedupeKey: `refund:txn:${result.transaction._id}`, params: { amount: fee, contestLabel: label }, data: { screen: 'wallet', contest_id: label } });
-    }
-  }
-  logger.info(`[contest-automation] contest ${label} cancelled (<${MIN_PARTICIPANTS} entries); ${refunded} entry fee(s) refunded`);
+  const result = await cancelContest(contest, {
+    claimFilter: { is_calculated: { $ne: true } },
+    reason: `fewer than ${MIN_PARTICIPANTS} entries`,
+  });
+  if (!result.success) return 0;
+  await Contest.updateOne({ _id: contest._id }, { $set: { is_calculated: true } });
   return 1;
 }
 
@@ -75,6 +57,7 @@ async function runContestResults() {
     status: 'completed',
     start_prices_captured_at: { $ne: null },
     end_prices_captured_at: { $ne: null },
+    run_all_active: { $ne: true }, // PHP PARITY: a RUN ALL job pays this session itself
   }).lean();
   let calculated = 0;
   let cancelled = 0;

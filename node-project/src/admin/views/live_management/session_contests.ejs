@@ -1,0 +1,61 @@
+<%#
+  PHP PARITY — restored from PHP admin/contests/session_contests.blade.php ("View Detail" in
+  Live Management): the session's contests with joined counts and a link to each contest's
+  live detail page.
+%>
+<%
+  const money = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  const when = (d) => d ? new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(d)) : 'N/A';
+  const badge = { live: 'success', upcoming: 'warning', completed: 'secondary', cancelled: 'danger', active: 'primary' };
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h4 mb-0"><i class="bi bi-collection me-2"></i><%= session.name %> — Contests</h1>
+        <a href="/live-management" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Live Management</a>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100"><div class="card-body">
+                <h6>Session Info</h6>
+                <table class="table table-sm mb-0">
+                    <tr><td><strong>Name:</strong></td><td><%= session.name %></td></tr>
+                    <tr><td><strong>Market Type:</strong></td><td><%= session.market_type %></td></tr>
+                    <tr><td><strong>Status:</strong></td><td><span class="badge bg-<%= badge[session.status] || 'light' %>"><%= session.status %></span></td></tr>
+                    <tr><td><strong>Max Stocks:</strong></td><td><%= session.max_stocks %></td></tr>
+                    <tr><td><strong>Time (IST):</strong></td><td><%= when(session.start_time) %> → <%= when(session.end_time) %></td></tr>
+                </table>
+            </div></div>
+        </div>
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100"><div class="card-body">
+                <h6>Statistics</h6>
+                <table class="table table-sm mb-0">
+                    <tr><td><strong>Total Contests:</strong></td><td><%= contests.length %></td></tr>
+                    <tr><td><strong>Total Participants:</strong></td><td><%= total_participants %></td></tr>
+                    <tr><td><strong>Total Prize Pool:</strong></td><td><%= money(total_prize_pool) %></td></tr>
+                </table>
+            </div></div>
+        </div>
+    </div>
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle mb-0">
+                <thead class="table-light"><tr><th>ID</th><th>Category</th><th>Entry Fee</th><th>Participants</th><th>Prize Pool</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>
+                <% if (!contests.length) { %><tr><td colspan="7" class="text-center text-muted py-4">No contests in this session</td></tr><% } %>
+                <% contests.forEach(c => { %>
+                    <tr>
+                        <td><%= c.old_id != null ? c.old_id : String(c._id).slice(-6) %></td>
+                        <td><%= c.category %></td>
+                        <td><%= money(c.entry_fee) %></td>
+                        <td><%= c.joined_count %> / <%= c.participants || 0 %></td>
+                        <td><%= money(c.prize_pool) %></td>
+                        <td><span class="badge bg-<%= badge[c.status] || 'light' %>"><%= c.status %></span></td>
+                        <td><a href="/live-contest-detail/<%= c._id %>" class="btn btn-sm btn-success" target="_blank"><i class="bi bi-box-arrow-up-right"></i> View Detail</a></td>
+                    </tr>
+                <% }) %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

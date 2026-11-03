@@ -22,7 +22,7 @@ const hasStartPrices = (entry) => entry.starting_prices && typeof entry.starting
   && Object.keys(entry.starting_prices).length > 0;
 
 async function runLiveScores() {
-  const sessions = await LeagueSession.find({ status: 'live', start_prices_captured_at: { $ne: null } }).lean();
+  const sessions = await LeagueSession.find({ status: 'live', start_prices_captured_at: { $ne: null }, run_all_active: { $ne: true } }).lean();
   let contestsUpdated = 0;
   for (const session of sessions) {
     const { prices } = await priceFeed.getPrices(session, session.assets || []);

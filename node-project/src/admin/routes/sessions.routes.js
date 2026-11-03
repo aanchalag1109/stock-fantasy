@@ -52,4 +52,8 @@ router.get('/:id', requireAdmin, requirePermission('sessions.view'), s.show);
 router.get('/:id/edit', requireAdmin, requirePermission('sessions.edit'), s.edit);
 router.put('/:id', requireAdmin, requirePermission('sessions.edit'), s.update);
 router.delete('/:id', requireAdmin, requirePermission('sessions.delete'), s.destroy);
+// PHP PARITY: "Refetch Missing Prices" (PHP league_sessions/{id}/refetch-prices)
+router.post('/:id/refetch-prices', requireAdmin, requirePermission('sessions.edit'), s.refetchPrices);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: cancel session + refund all joined users (client request)
+router.post('/:id/cancel', requireAdmin, requirePermission('sessions.cancel'), s.cancel);
 module.exports = router;

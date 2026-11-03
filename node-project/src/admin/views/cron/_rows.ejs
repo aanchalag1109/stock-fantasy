@@ -1,0 +1,21 @@
+                        <% logs.forEach(log => { %>
+                        <tr>
+                            <td class="ps-4"><%= (log.run_time || log.created_at) ? new Date(log.run_time || log.created_at).toLocaleString('en-IN') : '—' %></td>
+                            <td><%= log.type || log.job_name || 'api' %></td>
+                            <td>
+                                <% if (log.success !== false && log.status !== 'failed') { %><span class="badge bg-success">Success</span>
+                                <% } else { %><span class="badge bg-danger">Failed</span><% } %>
+                            </td>
+                            <td class="text-truncate" style="max-width:320px;"><%= log.response || (typeof log.output === 'string' ? log.output : '') || '—' %></td>
+                            <td class="pe-4 text-end"><%= log.duration_ms ? log.duration_ms + 'ms' : '—' %></td>
+                        </tr>
+                        <% }) %>
+                        <% if (!logs.length) { %>
+                        <tr>
+                            <td colspan="5" class="text-center py-5 text-muted">
+                                <div class="mb-3"><i class="bi bi-clock-history display-4 opacity-25"></i></div>
+                                <h5>No processed logs found</h5>
+                                <p class="small mb-0">The system is waiting for the next cron cycle.</p>
+                            </td>
+                        </tr>
+                        <% } %>

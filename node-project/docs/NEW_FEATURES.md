@@ -19,6 +19,8 @@ files it creates or changes.
 | 6 | [Android & iOS Force Update](#6-android--ios-force-update) | `/android-app-update`, `/ios-app-update` | `app_update_settings.*` |
 | 7 | [USDT/INR to ProbCoin Conversion Settings](#7-usdtinr-to-probcoin-conversion-settings) | `/probcoin-conversion` | `probcoin_conversion.*` |
 | 8 | [Contest Automation](#8-contest-automation-port-of-the-php-scheduler) | `/pending-prizes` (payout) | `pending_prizes.distribute` |
+| 9 | [Session Cancel + PHP parity for Contests / Sessions / Live Management](#9-session-cancel--php-parity-for-contests-sessions-and-live-management) | `/live-management`, `/league_sessions/:id` | `sessions.cancel`, `live_management.manage` |
+| 10 | [PHP parity: Payment Orders + Performance contest tools](#10-php-parity-payment-orders-and-performance-contest-tools) | `/payments`, `/performance/:id` | `payments.approve`, `performance.manage` |
 
 Shared conventions:
 - **Settings:** stored in the existing `settings` collection (`Setting` model, unique `key`). Values are read fresh on every use, so admin changes apply on the next request.
@@ -103,3 +105,73 @@ Ports the PHP Laravel scheduler (`app/Console/Kernel.php`), which Node was missi
 - **New files:** `src/services/contest-automation/{price-feed,contest-scoring,session-lifecycle.job,live-scores.job,results.job,prize-payout.service,ledger,job-lock}.js`, `src/models/job-lock.model.js`
 - **Modified:** `src/scheduler.js`, `src/config/env.js`, `.env.example`, `src/models/league-session.model.js` (capture markers), `src/models/contest.model.js` (`payout_started_at`), `src/admin/controllers/pages.controller.js` (Pending Prizes distribute)
 - **Tests:** `tests/contest-automation/contest-automation.test.js`, `tests/contest-automation/price-feed.test.js`
+
+## 9. Session Cancel + PHP parity for Contests, Sessions and Live Management
+**New (client request):** cancelling a session cancels every contest in it and refunds every joined user's entry fee to `deposit_balance`. The session becomes `status: cancelled`, `active: false`. It is available from three places: Live Management → **Cancel Session**, the session page → **Cancel Session**, and the session edit form (setting a live session to Inactive, as in PHP). PHP's own refund for this path did not work; it credited a non-existent `entry_fee` to a `coins` column.
+
+**Restored from PHP** (missed in the conversion; marked `PHP PARITY` in code):
+- **Live Management:** the full page with its status filter, 10 s auto-refresh, overview cards, **Start**, **End & Distribute**, **Start Contests**, **Update Scores**, **Cleanup Orphaned** and **View Detail** (session contests page, contest detail with participants and a portfolio modal).
+- **Sessions:**
+  - The edit page follows PHP's rules per status: upcoming → times only; live → rename or deactivate; draft → everything, including assets.
+  - Times are shown and saved in IST. Previously each save shifted a session by 5 h 30 m.
+  - **Refetch Missing Prices** button on the session page.
+- **Contests → Cancel** is now safe:
+  - The contest is claimed atomically, so it cannot be refunded twice.
+  - Refunds use deterministic `REFUND_<contest>_E<entry>` transaction ids, so an interrupted cancel can be resumed.
+  - Cancel and Pin work for contests whose session was deleted. `league_session_id` is nullable again, as in PHP; 192 such contests previously failed Cancel/Pin/Edit, after some refunds had already been paid.
+- **Bug fix:** session **create** dropped all selected assets, because multer parses `stocks[22][]` into a sparse array.
+
+Differences from PHP (deliberate): End & Distribute pays through the Pending Prizes payout instead of PHP's legacy calculateResults call. Refetch only fills start prices of started sessions and end prices of completed ones. Assets, market type and max stocks of a live session are locked. Cancelled contests are never moved back to live or completed.
+- **New files:** `src/services/contest-cancellation.service.js`, `src/services/session-management.service.js`, `src/admin/controllers/live-management.controller.js`, `src/admin/routes/live-management.routes.js`, `src/admin/views/live_management/{session_contests,contest_detail}.ejs`
+- **Modified:** `src/admin/controllers/{contests,sessions}.controller.js`, `src/admin/routes/{sessions,pages,api}.routes.js`, `src/admin/views/live_management/index.ejs`, `src/admin/views/sessions/{edit,show,index}.ejs`, `src/models/contest.model.js`, `src/admin/access/permissions.js`, `src/admin/app.js`, `src/services/contest-automation/{results.job,session-lifecycle.job}.js`
+- **Tests:** `tests/admin/php-parity-contests-sessions.test.js`
+
+## 10. PHP parity: Payment Orders and Performance contest tools
+These were missed in the conversion and restored from PHP; they are marked `PHP PARITY` in code.
+- **Payment Orders** (PHP `Admin\PaymentController`):
+  - **Search** covers the order id *or* the user's name, mobile or email.
+  - **Approve** works only on pending orders. It credits `deposit_balance` and creates a deposit transaction (`Admin Approved`, `transaction_id` = order id).
+  - **Reject** works only on pending orders. It records a failed deposit transaction (`Admin Rejected`).
+  - **Verify** asks LG Pay and reports PAID, PENDING or FAILED without changing anything.
+  - Previously Approve credited nothing and Verify changed the status.
+  - Added in Node: the pending check is atomic and the credit is keyed on the order id, so an order can never be credited twice.
+- **Performance contest page** (PHP `performance/show.blade.php`):
+  - **How It Works** shows eight system checks, the calculation steps 1–6, the prize breakdown, user-wise prizes, the full leaderboard and price-timing validation.
+  - **Verify All Prices via API** compares saved prices with API prices; most sources are *current* prices, as in PHP.
+  - **Analyze Error Reasons** looks for missing, late, extreme or unchanged prices.
+  - **Calculate Results** runs the same routine as `POST /api/v1/calculate-results`, which credits prizes once.
+  - **RUN ALL** takes a start and end time (today, IST). It waits, captures the prices, takes the session live, then pays this contest and completes the session. Its log is polled live, and **Stop** works.
+- **Deliberate differences from PHP:**
+  - Stop really stops a running job; PHP only removed queued jobs.
+  - RUN ALL pays through the Pending Prizes payout, so tied ranks share prizes and nothing is paid twice.
+  - While a RUN ALL job runs, the session is flagged `run_all_active` and the scheduler leaves it alone.
+  - BTC and ETH are no longer always reported as "extreme"; PHP compared rupee ranges with USD prices.
+- **New files:** `src/services/payment-orders.service.js`, `src/services/run-all.service.js`, `src/services/performance-tools.service.js`, `src/models/run-all-job.model.js`, `src/admin/routes/performance-tools.routes.js`, `src/admin/views/performance/_how_it_works.ejs`
+- **Modified:** `src/admin/controllers/pages.controller.js` (payments, performance diagnostics), `src/admin/routes/pages.routes.js`, `src/admin/views/performance/contest.ejs`, `src/controllers/payment.controller.js` (exports `generateSignature`), `src/models/league-session.model.js` (`run_all_active`), `src/services/contest-automation/{session-lifecycle,live-scores,results}.job.js` (skip `run_all_active` sessions), `src/admin/access/permissions.js` (`performance.manage`), `src/admin/app.js`
+- **Tests:** `tests/admin/php-parity-payments-performance.test.js`
+
+## 11. PHP parity: Announcements, Templates, Testing, Players and smaller admin gaps
+These were missed in the conversion and restored from PHP; they are marked `PHP PARITY` in code.
+- **Announcements** (PHP `AnnouncementController`):
+  - The create form has a description, a type (update, alert or promo) and *send to* (all users or selected users, with search and select all).
+  - Saving creates one notification per recipient and sends an FCM push. Invalid tokens are cleared.
+  - Messages match PHP: "Announcement created and sent to all users!" or "…sent to N users!".
+- **Templates → Edit:** the asset picker is back. Assets are only rebuilt when the picker actually loaded, so a failed load can't wipe a template.
+- **Testing:**
+  - **Create Basket** opens the manual basket builder (`/testing/create-basket`). It defaults to the first test user, or to the test users selected on the contest page.
+  - **Select Basket** assigns an existing basket to a contest (`POST /testing/assign-basket`).
+- **Players:**
+  - **Create** validates like PHP: unique email, mobile of 10–15 digits, country code prepended to the mobile, duplicate mobile rejected, password of at least 8 characters.
+  - **Show** displays the real date of birth, gender and address instead of fixed placeholders.
+- **Cron Check** sorts by run time (newest first), shows 50 per page and refreshes the table over AJAX every 20 s.
+- **Banners → Create** has a status select. Title and status are validated as in PHP.
+- **Profile:**
+  - Name and email are required and the email must be unique.
+  - A new password must have at least 8 characters.
+- **Tickets → Reply:** the message is required, and replying to an open ticket marks it *pending*.
+- **Not ported:**
+  - Wallet *remove* and the withdrawal *refund* type have no UI in either app.
+  - `/performance/sessions` is not linked from the PHP menu.
+- **New files:** `src/services/announcement.service.js`, `src/admin/views/testing/create_basket.ejs`, `src/admin/views/cron/_rows.ejs`
+- **Modified:** `src/admin/controllers/{misc,pages,users}.controller.js`, `src/admin/routes/{pages,api}.routes.js`, `src/admin/views/announcements/create.ejs`, `src/admin/views/templates/edit.ejs`, `src/admin/views/testing/{contest_detail,user_session_contests}.ejs`, `src/admin/views/cron/index.ejs`, `src/admin/views/banners/create.ejs`, `src/admin/views/users/show.ejs`
+- **Tests:** `tests/admin/php-parity-{announcements,templates,testing,users,small-items}.test.js`

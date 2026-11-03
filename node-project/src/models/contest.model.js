@@ -18,7 +18,9 @@ const prizeTierSchema = new mongoose.Schema({
 const contestSchema = new mongoose.Schema({
   old_id: { type: Number, index: true },
   name: { type: String, default: '' },
-  league_session_id: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+  // PHP PARITY: nullable as in PHP (contests.league_session_id ... onDelete('set null')). Contests whose
+  // session was deleted keep a null id; `required` made every save() on them fail (incl. Cancel/Pin/Edit).
+  league_session_id: { type: mongoose.Schema.Types.Mixed, default: null, index: true },
   category: { 
     type: String, 
     enum: ['mega', 'equal', 'practice', 'guaranteed'], 
@@ -58,6 +60,9 @@ const contestSchema = new mongoose.Schema({
   prize_distribution: { type: mongoose.Schema.Types.Mixed, default: null },
   // NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation — lease taken while a prize payout runs
   payout_started_at: { type: Date, default: null },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: set when a cancellation starts refunding, so an interrupted
+  // refund can be resumed safely (refunds use deterministic REFUND_<contest>_E<entry> transaction ids).
+  refunds_started_at: { type: Date, default: null },
   prizes: [prizeTierSchema]
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }

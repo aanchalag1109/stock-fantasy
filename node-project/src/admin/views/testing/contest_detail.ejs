@@ -4,9 +4,15 @@
             <h1 class="h3">Contest Detail</h1>
             <p class="text-muted mb-0"><%= contest.session_name || '' %></p>
         </div>
-        <a href="/testing/session/<%= contest.session_id %>/contests" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-2"></i>Back to Contests
-        </a>
+        <div>
+            <%# PHP PARITY: manual basket builder (PHP testing/contest_detail.blade.php) %>
+            <a href="/testing/create-basket?contest=<%= contest._id %>&session=<%= contest.session_id %>" class="btn btn-success me-2">
+                <i class="bi bi-plus-circle me-2"></i>Create Basket
+            </a>
+            <a href="/testing/session/<%= contest.session_id %>/contests" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-2"></i>Back to Contests
+            </a>
+        </div>
     </div>
 
     <!-- Contest Info -->
@@ -80,6 +86,10 @@
                         <button class="btn btn-sm btn-primary" onclick="selectByCount()">Select</button>
                         <button class="btn btn-sm btn-success" onclick="joinContestForSelected()" id="joinContestBtn" disabled>
                             <i class="bi bi-box-arrow-in-right me-1"></i>Join Contest
+                        </button>
+                        <%# PHP PARITY: "Create Baskets" for the selected test users %>
+                        <button class="btn btn-sm btn-dark" onclick="createBasketsForSelected()" id="createBasketsBtn" disabled>
+                            <i class="bi bi-plus-circle me-1"></i>Create Baskets
                         </button>
                     </div>
                 </div>
@@ -164,6 +174,15 @@ function selectByCount() {
 function updateJoinBtn() {
     const checked = document.querySelectorAll('.user-checkbox:checked').length;
     document.getElementById('joinContestBtn').disabled = checked === 0;
+    const createBtn = document.getElementById('createBasketsBtn'); // PHP PARITY
+    if (createBtn) createBtn.disabled = checked === 0;
+}
+
+// PHP PARITY: open the manual basket builder for the selected test users
+function createBasketsForSelected() {
+    const selected = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
+    if (!selected.length) return;
+    window.location.href = '/testing/create-basket?contest=<%= contest._id %>&session=<%= contest.session_id %>&users=' + selected.join(',');
 }
 
 async function joinContestForSelected() {

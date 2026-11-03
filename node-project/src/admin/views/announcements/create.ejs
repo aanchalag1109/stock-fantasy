@@ -1,17 +1,94 @@
-<div class="card" style="max-width:550px;">
-  <div class="card-header"><div class="card-title">Create Announcement</div><a href="/announcements" class="btn btn-secondary btn-sm">← Back</a></div>
-  <form method="POST" action="/announcements">
-    <div class="form-group"><label class="form-label">Title</label><input type="text" name="title" class="form-control" placeholder="Announcement title" required/></div>
-    <div class="form-group"><label class="form-label">Message</label><textarea name="message" class="form-control" rows="4" placeholder="Announcement content..."></textarea></div>
-    <div class="form-grid">
-      <div class="form-group"><label class="form-label">Type</label>
-        <select name="type" class="form-control">
-          <option value="info">Info</option><option value="warning">Warning</option><option value="success">Success</option>
-        </select>
-      </div>
-      <div class="form-group"><label class="form-label">Start Date</label><input type="date" name="start_date" class="form-control"/></div>
-      <div class="form-group"><label class="form-label">End Date</label><input type="date" name="end_date" class="form-control"/></div>
+<%#
+  PHP PARITY — restored from PHP admin/announcements/create.blade.php: title, description, type
+  (update/alert/promo) and "Send To" all users or specific users (searchable list with Select All).
+%>
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-megaphone me-2"></i>Create Announcement</h5>
+                    <a href="/announcements" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/announcements" id="announcementForm">
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title</label>
+                            <input type="text" id="title" name="title" class="form-control" maxlength="255" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea id="description" name="description" class="form-control" rows="5" required></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="type" class="form-label">Type</label>
+                            <select id="type" name="type" class="form-select" required>
+                                <option value="update">Update</option>
+                                <option value="alert">Alert</option>
+                                <option value="promo">Promo</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="send_to" class="form-label">Send To</label>
+                            <select id="send_to" name="send_to" class="form-select" required>
+                                <option value="all">All Users</option>
+                                <option value="specific">Specific Users</option>
+                            </select>
+                            <div class="form-text">Every recipient gets an in-app notification and a push notification.</div>
+                        </div>
+                        <div class="mb-3" id="user_selection" style="display:none;">
+                            <label for="userSearch" class="form-label">Select Users</label>
+                            <input type="text" id="userSearch" class="form-control mb-2" placeholder="Search by name or mobile...">
+                            <div class="border rounded p-3" style="height:250px; overflow-y:auto;">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="select_all">
+                                    <label class="form-check-label fw-bold" for="select_all">Select All Users</label>
+                                </div>
+                                <hr>
+                                <% users.forEach(u => { %>
+                                <div class="form-check mb-1 user-item" data-name="<%= String(u.name || '').toLowerCase() %>" data-mobile="<%= u.mobile || '' %>">
+                                    <input class="form-check-input user-checkbox" type="checkbox" name="user_ids[]" value="<%= u._id %>" id="user_<%= u._id %>">
+                                    <label class="form-check-label" for="user_<%= u._id %>"><%= u.name %> (<%= u.mobile || 'no mobile' %>)</label>
+                                </div>
+                                <% }) %>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="/announcements" class="btn btn-outline-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Create &amp; Send</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="form-actions"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Create</button><a href="/announcements" class="btn btn-secondary">Cancel</a></div>
-  </form>
 </div>
+
+<script>
+(function () {
+    var sendTo = document.getElementById('send_to');
+    var box = document.getElementById('user_selection');
+    function toggle() { box.style.display = sendTo.value === 'specific' ? 'block' : 'none'; }
+    sendTo.addEventListener('change', toggle);
+    toggle();
+    document.getElementById('select_all').addEventListener('change', function () {
+        var on = this.checked;
+        document.querySelectorAll('.user-item').forEach(function (item) {
+            if (item.style.display !== 'none') item.querySelector('.user-checkbox').checked = on;
+        });
+    });
+    document.getElementById('userSearch').addEventListener('keyup', function () {
+        var q = this.value.toLowerCase();
+        document.querySelectorAll('.user-item').forEach(function (item) {
+            var hit = item.dataset.name.indexOf(q) !== -1 || item.dataset.mobile.indexOf(q) !== -1;
+            item.style.display = hit ? '' : 'none';
+        });
+    });
+    document.getElementById('announcementForm').addEventListener('submit', function (e) {
+        if (sendTo.value === 'specific' && !document.querySelectorAll('.user-checkbox:checked').length) {
+            e.preventDefault();
+            alert('Select at least one user.');
+        }
+    });
+})();
+</script>

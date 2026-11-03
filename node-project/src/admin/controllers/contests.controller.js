@@ -7,8 +7,8 @@ const ContestEntry = require('../../models/contest-entry.model');
 const User = require('../../models/user.model');
 const Transaction = require('../../models/transaction.model');
 const { render } = require('../helpers/render');
-// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
-const { notify } = require('../../services/notifications/notification.service');
+// PHP PARITY: contest cancel + refund (also sends refund notifications) — shared with session cancel
+const { cancelContest: cancelContestService } = require('../../services/contest-cancellation.service');
 
 const PAGE_SIZE = 8;
 const CATEGORIES = ['mega', 'equal', 'practice', 'guaranteed'];
@@ -613,38 +613,14 @@ const bulkDelete = async (req, res) => {
   }
 };
 
+// PHP PARITY — Contests → Cancel: refunds every entry fee and marks the contest cancelled.
+// Logic lives in services/contest-cancellation.service.js (shared with session cancel).
 const cancel = async (req, res) => {
   try {
     const contest = await findContest(req.params.id);
     if (!contest) return res.status(404).json({ success: false, message: 'Not found' });
-    if (contest.status === 'cancelled') {
-      return res.status(400).json({ success: false, message: 'Already cancelled' });
-    }
-    const entryFee = Number(contest.entry_fee || 0);
-    const keys = [contest._id];
-    if (contest.old_id != null) keys.push(contest.old_id);
-    const entries = await ContestEntry.find({ contest_id: { $in: keys } }).select('user_id').lean();
-    const label = publicId(contest);
-    for (const entry of entries) {
-      const user = await findUser(entry.user_id);
-      if (!user) continue;
-      user.deposit_balance = Number(user.deposit_balance || 0) + entryFee;
-      await user.save();
-      const refundTxn = await Transaction.create({
-        user_id: user._id,
-        type: 'deposit',
-        amount: entryFee,
-        status: 'success',
-        description: `Contest #${label} cancelled - Entry fee refunded`,
-      });
-      // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
-      if (entryFee > 0) {
-        notify('refund_credited', { user, dedupeKey: `refund:txn:${refundTxn._id}`, params: { amount: entryFee, contestLabel: label }, data: { screen: 'wallet', contest_id: label } });
-      }
-    }
-    contest.status = 'cancelled';
-    await contest.save();
-    return res.json({ success: true, message: 'Contest cancelled and users refunded' });
+    const result = await cancelContestService(contest, { reason: `admin ${req.adminAccess ? req.adminAccess.email : ''}`.trim() });
+    return res.status(result.success ? 200 : (result.already ? 400 : 409)).json(result);
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -654,13 +630,13 @@ const togglePin = async (req, res) => {
   try {
     const contest = await findContest(req.params.id);
     if (!contest) return res.status(404).json({ success: false, message: 'Not found' });
-    contest.is_pinned = !contest.is_pinned;
-    contest.pin_order = contest.is_pinned ? phpInt(req.body.pin_order, 0) : 0;
-    await contest.save();
+    // Atomic update instead of save(): works for migrated contests that fail full validation.
+    const isPinnedNow = !contest.is_pinned;
+    await Contest.updateOne({ _id: contest._id }, { $set: { is_pinned: isPinnedNow, pin_order: isPinnedNow ? phpInt(req.body.pin_order, 0) : 0 } });
     return res.json({
       success: true,
-      is_pinned: !!contest.is_pinned,
-      message: contest.is_pinned ? 'Contest pinned to top.' : 'Contest unpinned.',
+      is_pinned: isPinnedNow,
+      message: isPinnedNow ? 'Contest pinned to top.' : 'Contest unpinned.',
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });

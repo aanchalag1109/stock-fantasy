@@ -126,16 +126,16 @@ async function captureEnd(session, now) {
 
 async function runSessionLifecycle(now = new Date()) {
   const toLive = await LeagueSession.updateMany(
-    { status: 'upcoming', start_time: { $lte: now }, end_time: { $gt: now } },
+    { status: 'upcoming', start_time: { $lte: now }, end_time: { $gt: now }, run_all_active: { $ne: true } },
     { $set: { status: 'live' } },
   );
   const toCompleted = await LeagueSession.updateMany(
-    { status: 'live', end_time: { $lte: now } },
+    { status: 'live', end_time: { $lte: now }, run_all_active: { $ne: true } },
     { $set: { status: 'completed' } },
   );
 
   let started = 0;
-  for (const session of await LeagueSession.find({ status: 'live', start_prices_captured_at: null }).lean()) {
+  for (const session of await LeagueSession.find({ status: 'live', start_prices_captured_at: null, run_all_active: { $ne: true } }).lean()) {
     if (await captureStart(session, now)) started += 1;
   }
 
@@ -144,6 +144,7 @@ async function runSessionLifecycle(now = new Date()) {
     status: 'completed',
     start_prices_captured_at: { $ne: null },
     end_prices_captured_at: null,
+    run_all_active: { $ne: true },
     end_time: { $gte: new Date(now.getTime() - FETCH_WINDOW_MS - 5 * 60 * 1000) },
   }).lean();
   for (const session of recent) {
@@ -153,4 +154,4 @@ async function runSessionLifecycle(now = new Date()) {
   return { to_live: toLive.modifiedCount || 0, to_completed: toCompleted.modifiedCount || 0, started, ended };
 }
 
-module.exports = { runSessionLifecycle, FETCH_WINDOW_MS };
+module.exports = { runSessionLifecycle, FETCH_WINDOW_MS, captureStart, fillMissingPrices, copyToEntries };

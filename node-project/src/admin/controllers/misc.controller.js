@@ -8,6 +8,9 @@ const Setting = require('../../models/setting.model');
 const CronLog = require('../../models/cron-log.model');
 const User = require('../../models/user.model');
 const { render } = require('../helpers/render');
+// PHP PARITY: announcements create (notifications + push)
+const announcementService = require('../../services/announcement.service');
+const logger = require('../../config/logger');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -38,11 +41,15 @@ const tickets = {
     res.redirect('/tickets');
   },
   reply: async (req, res) => {
+    // PHP PARITY: message is required; replying to an open ticket moves it to "pending" (PHP TicketController::reply)
+    const message = String(req.body.message || '').trim();
+    if (!message) { req.flash('error', 'The message field is required.'); return res.redirect('/tickets/' + req.params.id); }
     const ticket = await Ticket.findById(req.params.id);
     if (!ticket) { req.flash('error', 'Not found'); return res.redirect('/tickets'); }
-    ticket.replies.push({ admin_id: req.session.admin?.id, message: req.body.message });
+    ticket.replies.push({ admin_id: req.session.admin?.id, message });
+    if (ticket.status === 'open') ticket.status = 'pending';
     await ticket.save();
-    req.flash('success', 'Reply sent');
+    req.flash('success', 'Reply sent!');
     res.redirect('/tickets/' + req.params.id);
   },
 };
@@ -77,9 +84,18 @@ const banners = {
   store: (req, res) => {
     bannerUpload(req, res, async (err) => {
       if (err) { req.flash('error', err.message); return res.redirect('/banners/create'); }
+      // PHP PARITY: title required (max 255) and status must be active/inactive (PHP BannerController::store)
+      const title = String(req.body.title || '').trim();
+      const status = req.body.status;
+      let invalid = null;
+      if (!title) invalid = 'The title field is required.';
+      else if (title.length > 255) invalid = 'The title must not be greater than 255 characters.';
+      else if (!status) invalid = 'The status field is required.';
+      else if (!['active', 'inactive'].includes(status)) invalid = 'The selected status is invalid.';
+      if (invalid) { req.flash('error', invalid); return res.redirect('/banners/create'); }
       try {
-        await Banner.create({ title: req.body.title, image: req.file ? 'uploads/banners/' + req.file.filename : req.body.image_url, link: req.body.link, status: 'active' });
-        req.flash('success', 'Banner created!');
+        await Banner.create({ title, image: req.file ? 'uploads/banners/' + req.file.filename : req.body.image_url, link: req.body.link, status });
+        req.flash('success', 'Banner created successfully.');
         res.redirect('/banners');
       } catch (e) { req.flash('error', e.message); res.redirect('/banners/create'); }
     });
@@ -128,13 +144,24 @@ const announcements = {
     const items = await Announcement.find().sort({ created_at: -1 }).lean();
     render(res, 'announcements/index', { title: 'Announcements', items, admin: req.session.admin });
   },
-  create: (req, res) => render(res, 'announcements/create', { title: 'Create Announcement', admin: req.session.admin }),
+  // PHP PARITY — create: pick all or specific users; store notifies each recipient and pushes (FCM).
+  // Logic: services/announcement.service.js
+  create: async (req, res) => {
+    const users = await User.find({}).sort({ name: 1 }).select('_id name mobile').lean();
+    render(res, 'announcements/create', { title: 'Create Announcement', users, old: {}, admin: req.session.admin });
+  },
   store: async (req, res) => {
     try {
-      await Announcement.create({ title: req.body.title, message: req.body.message, type: req.body.type || 'info', start_date: req.body.start_date, end_date: req.body.end_date });
-      req.flash('success', 'Announcement created!');
-      res.redirect('/announcements');
-    } catch (e) { req.flash('error', e.message); res.redirect('/announcements/create'); }
+      const { values, errors } = await announcementService.validate(req.body);
+      if (errors.length) {
+        req.flash('error', errors[0]);
+        return res.redirect('/announcements/create');
+      }
+      const result = await announcementService.createAndSend(values);
+      logger.info(`[announcements] ${req.adminAccess ? req.adminAccess.email : 'admin'} created announcement ${result.announcement._id} for ${result.recipients} user(s)`);
+      req.flash('success', result.message);
+      return res.redirect('/announcements');
+    } catch (e) { req.flash('error', e.message); return res.redirect('/announcements/create'); }
   },
   show: async (req, res) => {
     const announcement = await Announcement.findById(req.params.id).lean();
@@ -203,13 +230,19 @@ const settings = {
 // ─── CRON LOGS ────────────────────────────────────────────────────────────────
 const cron = {
   index: async (req, res) => {
-    const { page = 1 } = req.query;
-    const limit = 30; const skip = (page - 1) * limit;
+    // PHP PARITY: newest run_time first, 50 per page; AJAX polls get { html, last_updated } (PHP CronLogController::index)
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = 50; const skip = (page - 1) * limit;
     const [logs, total] = await Promise.all([
-      CronLog.find().sort({ created_at: -1 }).skip(skip).limit(limit).lean(),
+      CronLog.find().sort({ run_time: -1, created_at: -1 }).skip(skip).limit(limit).lean(),
       CronLog.countDocuments(),
     ]);
-    render(res, 'cron/index', { title: 'Cron Check Logs', logs, total, pages: Math.ceil(total / limit), page: parseInt(page), admin: req.session.admin });
+    if (req.xhr) {
+      const html = await require('ejs').renderFile(path.join(__dirname, '../views/cron/_rows.ejs'), { logs });
+      const last_updated = new Date().toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Kolkata' });
+      return res.json({ html, last_updated });
+    }
+    render(res, 'cron/index', { title: 'Cron Check Logs', logs, total, pages: Math.ceil(total / limit), page, admin: req.session.admin });
   },
   clear: async (req, res) => {
     await CronLog.deleteMany({});

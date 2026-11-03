@@ -15,6 +15,20 @@
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
           <h5 class="mb-0"><i class="bi bi-calculator-fill me-2"></i>Contest Calculation Results</h5>
           <div class="d-flex flex-wrap gap-2 align-items-center">
+            <%# PHP PARITY: "How It Works" and RUN ALL (PHP performance/show.blade.php header) %>
+            <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#workingModal">
+              <i class="bi bi-info-circle me-1"></i>How It Works
+            </button>
+            <% if (can('performance.manage')) { %>
+            <div class="d-flex align-items-center gap-2 p-2 bg-dark rounded">
+              <input type="time" id="runAllStartTime" class="form-control form-control-sm" style="width:120px" aria-label="RUN ALL start time (IST)">
+              <span class="text-white small">to</span>
+              <input type="time" id="runAllEndTime" class="form-control form-control-sm" style="width:120px" aria-label="RUN ALL end time (IST)">
+              <button class="btn btn-warning btn-sm fw-bold" id="runAllBtn"><i class="bi bi-lightning-charge-fill"></i> RUN ALL</button>
+              <span class="badge bg-danger" id="runAllStatusBadge" style="display:none">RUNNING</span>
+              <button class="btn btn-outline-danger btn-sm" id="stopRunAllBtn" style="display:none"><i class="bi bi-stop-fill"></i> Stop</button>
+            </div>
+            <% } %>
             <button class="btn btn-info btn-sm" onclick="showPricesModal()">
               <i class="bi bi-currency-exchange me-1"></i>Show Prices
             </button>
@@ -127,6 +141,12 @@
               <h5 class="mb-0"><i class="bi bi-trophy-fill me-2"></i>Prize Distribution</h5>
             </div>
             <div class="card-body">
+              <%# PHP PARITY: "Calculate Results" — same routine as POST /api/v1/calculate-results (credits prizes once) %>
+              <% if (can('performance.manage')) { %>
+              <div class="mb-3">
+                <button class="btn btn-sm btn-warning" id="calculateResultsBtn"><i class="bi bi-calculator"></i> Calculate Results</button>
+              </div>
+              <% } %>
               <% if (flexibleDistribution && flexibleDistribution.length > 0) { %>
               <div class="row">
                 <% flexibleDistribution.forEach(dist => { %>
@@ -172,6 +192,8 @@
     </div>
   </div>
 </div>
+
+<%- include('_how_it_works') %>
 
 <!-- Prices Modal -->
 <div class="modal fade" id="pricesModal" tabindex="-1">
@@ -406,4 +428,129 @@ function getPrizeForRank(rank) {
   }
   return 0;
 }
+</script>
+
+<script>
+// PHP PARITY — RUN ALL, Calculate Results, Verify/Analyze prices (PHP performance/show.blade.php scripts)
+(function () {
+  var cid = <%- JSON.stringify(String(contest._id)) %>;
+  var sid = <%- JSON.stringify(String(contest.session_id || '')) %>;
+  var logUrl = '/api/run-all-log/' + cid;
+  function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function postJson(url, body) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json(); });
+  }
+
+  // ── RUN ALL ──
+  var runBtn = document.getElementById('runAllBtn');
+  function running(on) {
+    var b = document.getElementById('runAllStatusBadge'); if (b) b.style.display = on ? 'inline-block' : 'none';
+    var s = document.getElementById('stopRunAllBtn'); if (s) s.style.display = on ? 'inline-block' : 'none';
+    if (!runBtn) return;
+    runBtn.disabled = on;
+    runBtn.innerHTML = on ? '<span class="spinner-border spinner-border-sm me-1"></span>Running...' : '<i class="bi bi-lightning-charge-fill"></i> RUN ALL';
+  }
+  function logBox(lines, footer) {
+    var d = document.getElementById('runAllLog');
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'runAllLog';
+      d.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1a1a2e;color:#00ff88;padding:15px 20px;border-radius:10px;z-index:9999;font-family:monospace;font-size:13px;max-width:420px;max-height:300px;overflow-y:auto;box-shadow:0 4px 20px rgba(0,0,0,0.5)';
+      document.body.appendChild(d);
+    }
+    d.innerHTML = '<b>⚡ RUN ALL</b><br><hr style="border-color:#333">' + lines.map(esc).join('<br>') + (footer || '');
+    d.scrollTop = d.scrollHeight;
+  }
+  function poll() {
+    var iv = setInterval(function () {
+      fetch(logUrl).then(function (r) { return r.json(); }).then(function (data) {
+        if (data.log) logBox(data.log);
+        if (data.status === 'done') {
+          clearInterval(iv); running(false);
+          logBox(data.log, '<br><b style="color:#ffff00">✅ ALL DONE!</b>');
+          setTimeout(function () { location.reload(); }, 2500);
+        } else if (data.status === 'failed' || data.status === 'not_started') {
+          clearInterval(iv); running(false);
+        }
+      }).catch(function () {});
+    }, 3000);
+  }
+  if (runBtn) runBtn.addEventListener('click', function () {
+    var st = document.getElementById('runAllStartTime').value;
+    var et = document.getElementById('runAllEndTime').value;
+    if (!st || !et) { alert('Please enter both a start time and an end time'); return; }
+    if (!confirm('RUN ALL from ' + st + ' to ' + et + ' (IST, today)?\n\nThe session goes live at the start time, and this contest\'s prizes are PAID at the end time.')) return;
+    running(true);
+    logBox(['Start: ' + st + ' | End: ' + et]);
+    postJson('/api/run-all/' + cid, { start_time: st, end_time: et }).then(function (data) {
+      if (data.success) { logBox(['Queued! Start: ' + data.start + ' End: ' + data.end, 'Polling...']); poll(); }
+      else { logBox(['Error: ' + (data.message || 'Failed')]); running(false); }
+    }).catch(function (e) { alert('Error: ' + e.message); running(false); });
+  });
+  var stopBtn = document.getElementById('stopRunAllBtn');
+  if (stopBtn) stopBtn.addEventListener('click', function () {
+    if (!confirm('Stop the RUN ALL job?')) return;
+    stopBtn.disabled = true;
+    postJson('/api/run-all-stop/' + cid).then(function (data) {
+      if (data.success) {
+        running(false);
+        fetch(logUrl).then(function (r) { return r.json(); }).then(function (d) { logBox(d.log || [], '<br><b style="color:#ff4444">Stopped by admin.</b>'); });
+      }
+    }).finally(function () { stopBtn.disabled = false; });
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    fetch(logUrl).then(function (r) { return r.json(); }).then(function (data) {
+      if (data.status === 'running' || data.status === 'queued') { running(true); logBox(data.log || []); poll(); }
+    }).catch(function () {});
+  });
+
+  // ── Calculate Results ──
+  var calcBtn = document.getElementById('calculateResultsBtn');
+  if (calcBtn) calcBtn.addEventListener('click', function () {
+    if (!confirm('Recalculate contest results based on current start/end prices?\n\nIf the contest has not been calculated yet, winners are credited.')) return;
+    calcBtn.disabled = true;
+    calcBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Calculating...';
+    postJson('/api/performance/' + cid + '/calculate-results').then(function (data) {
+      if (data.success) { alert(data.message); location.reload(); } else { alert('Error: ' + (data.error || data.message)); }
+    }).catch(function (e) { alert('Error: ' + e.message); })
+      .finally(function () { calcBtn.disabled = false; calcBtn.innerHTML = '<i class="bi bi-calculator"></i> Calculate Results'; });
+  });
+
+  // ── Verify prices via API / Analyze price errors ──
+  function withSpinner(btn, promise) {
+    var original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Working...';
+    return promise.finally(function () { btn.disabled = false; btn.innerHTML = original; });
+  }
+  var verifyBtn = document.getElementById('verifyPricesBtn');
+  if (verifyBtn) verifyBtn.addEventListener('click', function () {
+    var box = document.getElementById('verificationContent');
+    withSpinner(verifyBtn, postJson('/api/verify-historical-prices/' + sid).then(function (data) {
+      if (!data.success) { box.innerHTML = '<div class="alert alert-danger">' + esc(data.error || 'Verification failed') + '</div>'; return; }
+      var rows = data.verification_results.map(function (r) {
+        var bad = !r.api_error && Math.abs(r.difference_percent) > 5;
+        return '<tr class="' + (r.api_error ? 'table-secondary' : (bad ? 'table-danger' : 'table-success')) + '"><td><strong>' + esc(r.asset_symbol) + '</strong></td><td>' + esc(r.price_type) + '</td>'
+          + '<td class="text-end">' + Number(r.our_price).toFixed(4) + '</td><td class="text-end">' + (r.api_price ? Number(r.api_price).toFixed(4) : '-') + '</td>'
+          + '<td class="text-end">' + (r.api_error ? '-' : Number(r.difference_percent).toFixed(2) + '%') + '</td><td><small>' + esc(r.api_error || r.api_source) + '</small></td></tr>';
+      }).join('');
+      box.innerHTML = '<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Asset</th><th>Type</th><th class="text-end">Our Price</th><th class="text-end">API Price</th><th class="text-end">Diff %</th><th>Source / Error</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }).catch(function (e) { box.innerHTML = '<div class="alert alert-danger">' + esc(e.message) + '</div>'; }));
+  });
+  var analyzeBtn = document.getElementById('analyzeErrorsBtn');
+  if (analyzeBtn) analyzeBtn.addEventListener('click', function () {
+    var box = document.getElementById('errorAnalysisContent');
+    withSpinner(analyzeBtn, postJson('/api/analyze-price-errors/' + sid).then(function (data) {
+      if (!data.success) { box.innerHTML = '<div class="alert alert-danger">' + esc(data.error || 'Analysis failed') + '</div>'; return; }
+      if (!data.analysis_results.length) { box.innerHTML = '<div class="alert alert-success">✅ No price errors detected.</div>'; return; }
+      var tone = { critical: 'danger', data: 'danger', timing: 'warning', api: 'info' };
+      box.innerHTML = data.analysis_results.map(function (e) {
+        return '<div class="alert alert-' + (tone[e.error_category] || 'secondary') + '"><strong>' + esc(e.asset_symbol) + ' — ' + esc(e.price_type) + ': ' + esc(e.error_title) + '</strong>'
+          + '<div class="small mt-1"><strong>Root cause:</strong> ' + esc(e.root_cause) + '<br><strong>Impact:</strong> ' + esc(e.impact_level) + '<br><strong>Details:</strong> ' + esc(e.technical_details) + '</div>'
+          + '<ul class="small mb-0 mt-1">' + (e.solutions || []).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div>';
+      }).join('');
+    }).catch(function (e) { box.innerHTML = '<div class="alert alert-danger">' + esc(e.message) + '</div>'; }));
+  });
+})();
 </script>

@@ -5,7 +5,7 @@ const { requireAdmin } = require('../middleware/auth');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control (feature-level permissions)
 const { requirePermission } = require('../middleware/permission');
 const {
-  templates, performance, contestAnalysis, categories, liveManagement,
+  templates, performance, contestAnalysis, categories,
   pendingPrizes, payments, priceFeeds, testing, profile, referrals,
 } = require('../controllers/pages.controller');
 
@@ -31,15 +31,16 @@ router.get('/market_type_categories/:id/edit', requireAdmin, requirePermission('
 router.put('/market_type_categories/:id', requireAdmin, requirePermission('market_categories.edit'), categories.update);
 router.delete('/market_type_categories/:id', requireAdmin, requirePermission('market_categories.delete'), categories.destroy);
 
-router.get('/live-management', requireAdmin, requirePermission('live_management.view'), liveManagement.index);
+// PHP PARITY: /live-management moved to live-management.routes.js (full PHP page restored)
 router.get('/pending-prizes', requireAdmin, requirePermission('pending_prizes.view'), pendingPrizes.index);
 router.post('/pending-prizes/distribute-contest/:id', requireAdmin, requirePermission('pending_prizes.distribute'), pendingPrizes.distributeContest);
 router.post('/pending-prizes/distribute-session/:id', requireAdmin, requirePermission('pending_prizes.distribute'), pendingPrizes.distributeSession);
 
 router.get('/payments', requireAdmin, requirePermission('payments.view'), payments.index);
-router.post('/payments/:id/approve', requireAdmin, requirePermission('payments.approve'), payments.setStatus(1));
-router.post('/payments/:id/reject', requireAdmin, requirePermission('payments.approve'), payments.setStatus(-1));
-router.post('/payments/:id/verify', requireAdmin, requirePermission('payments.approve'), payments.setStatus(4));
+// PHP PARITY: approve / reject / verify behave exactly like PHP Admin\PaymentController
+router.post('/payments/:id/approve', requireAdmin, requirePermission('payments.approve'), payments.action('approve'));
+router.post('/payments/:id/reject', requireAdmin, requirePermission('payments.approve'), payments.action('reject'));
+router.post('/payments/:id/verify', requireAdmin, requirePermission('payments.approve'), payments.action('verify'));
 
 router.get('/live-price-feeds', requireAdmin, requirePermission('live_price_feeds.view'), priceFeeds.index);
 router.get('/live-price-feeds/stocks', requireAdmin, requirePermission('live_price_feeds.view'), priceFeeds.stocks);
@@ -54,6 +55,9 @@ router.post('/testing/bulk-delete-users-json', requireAdmin, requirePermission('
 router.get('/testing/session/:sessionId/contests', requireAdmin, requirePermission('testing.view'), testing.sessionContests);
 router.get('/testing/contest/:contestId', requireAdmin, requirePermission('testing.view'), testing.contestDetail);
 router.post('/testing/bulk-join-contest', requireAdmin, requirePermission('testing.manage'), testing.bulkJoinContest);
+// PHP PARITY: manual Create Basket page and "Select Basket" assignment (PHP TestingController / api.php)
+router.get('/testing/create-basket', requireAdmin, requirePermission('testing.manage'), testing.showCreateBasket);
+router.post('/testing/assign-basket', requireAdmin, requirePermission('testing.manage'), testing.assignBasket);
 router.post('/testing/create-basket', requireAdmin, requirePermission('testing.manage'), testing.createBasket);
 router.delete('/testing/delete-basket/:basketId', requireAdmin, requirePermission('testing.manage'), testing.deleteBasket);
 router.get('/testing/baskets/:userId/:sessionId', requireAdmin, requirePermission('testing.view'), testing.getBaskets);

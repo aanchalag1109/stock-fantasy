@@ -19,13 +19,13 @@
 
 const MODULES = [
   { key: 'dashboard', label: 'Dashboard', group: 'Overview', actions: { view: 'View dashboard' } },
-  { key: 'sessions', label: 'Leagues / Sessions', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit & change status', delete: 'Delete' } },
+  { key: 'sessions', label: 'Leagues / Sessions', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit & change status', delete: 'Delete', cancel: 'Cancel session & refund users' } },
   { key: 'templates', label: 'Saved Templates', group: 'Games', actions: { view: 'View', edit: 'Edit', delete: 'Delete' } },
   { key: 'contests', label: 'Contests', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit, cancel & pin', delete: 'Delete' } },
-  { key: 'live_management', label: 'Live Management', group: 'Games', actions: { view: 'View' } },
+  { key: 'live_management', label: 'Live Management', group: 'Games', actions: { view: 'View', manage: 'Start / end & distribute / cleanup' } },
   { key: 'market_categories', label: 'Market Type Categories', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' } },
   { key: 'pending_prizes', label: 'Pending Prizes', group: 'Games', actions: { view: 'View', distribute: 'Distribute prizes' } },
-  { key: 'performance', label: 'Performance', group: 'Reports', actions: { view: 'View' } },
+  { key: 'performance', label: 'Performance', group: 'Reports', actions: { view: 'View', manage: 'RUN ALL & Calculate Results (pays prizes)' } },
   { key: 'contest_analysis', label: 'Contest Analysis', group: 'Reports', actions: { view: 'View' } },
   { key: 'referrals', label: 'Referrals', group: 'Reports', actions: { view: 'View' } },
   { key: 'users', label: 'Players', group: 'Players', actions: { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete', wallet: 'Adjust wallet balance' } },

@@ -13,11 +13,13 @@ const Transaction = require('../../models/transaction.model');
 const ContestEntry = require('../../models/contest-entry.model');
 const ContestPerformancePrize = require('../../models/contest-performance-prize.model');
 const { render, renderStandalone } = require('../helpers/render');
-// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
-const { notify } = require('../../services/notifications/notification.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation (Pending Prizes payout)
 const prizePayout = require('../../services/contest-automation/prize-payout.service');
 const logger = require('../../config/logger');
+// PHP PARITY: Payment Orders actions
+const paymentOrders = require('../../services/payment-orders.service');
+// PHP PARITY: Performance "How It Works" diagnostics
+const performanceTools = require('../../services/performance-tools.service');
 
 function fmt(d) {
   if (!d) return '—';
@@ -36,13 +38,20 @@ const templates = {
     if (!template) { req.flash('error', 'Template not found'); return res.redirect('/templates'); }
     render(res, 'templates/edit', { title: 'Edit Template', template, admin: req.session.admin });
   },
+  // PHP PARITY — TemplateController::update also rebuilds the template's assets from the ticked
+  // stocks/cryptos, grouped by category name: { "<category>": [{ asset_symbol, asset_name,
+  // category_name, category_id }] } (the format session create reads).
   update: async (req, res) => {
-    await SessionTemplate.findByIdAndUpdate(req.params.id, {
+    const set = {
       template_name: req.body.template_name,
       name: req.body.name,
       market_type: req.body.market_type,
       max_stocks: parseInt(req.body.max_stocks, 10) || 5,
-    });
+    };
+    // Only replace the assets once the picker has loaded (assets_loaded=1), so a page error can
+    // never wipe them; unticking everything still clears them, as in PHP.
+    if (req.body.assets_loaded === '1') set.assets_data = await buildTemplateAssets(req.body.asset_selection);
+    await SessionTemplate.findByIdAndUpdate(req.params.id, set);
     req.flash('success', 'Template updated successfully!');
     res.redirect('/templates');
   },
@@ -52,6 +61,29 @@ const templates = {
     res.redirect('/templates');
   },
 };
+
+// PHP PARITY: posted asset_selection[] = "<categoryId>:<symbol>" → PHP assets_data grouping.
+async function buildTemplateAssets(selection) {
+  const picked = [].concat(selection || []).map((v) => String(v).match(/^(\d+):(.+)$/)).filter(Boolean);
+  const categoryIds = [...new Set(picked.map((m) => Number(m[1])))];
+  const symbols = [...new Set(picked.map((m) => m[2].trim()))];
+  const [categories, assets] = await Promise.all([
+    categoryIds.length ? MarketTypeCategory.find({ old_id: { $in: categoryIds } }).select('old_id name').lean() : [],
+    symbols.length ? Asset.find({ symbol: { $in: symbols } }).select('symbol name').lean() : [],
+  ]);
+  const categoryName = new Map(categories.map((c) => [String(c.old_id), c.name]));
+  const assetName = new Map(assets.map((a) => [a.symbol, a.name]));
+  const data = {};
+  picked.forEach(([, categoryId, rawSymbol]) => {
+    const name = categoryName.get(categoryId);
+    if (!name) return; // PHP skips unknown categories
+    const symbol = rawSymbol.trim();
+    if (!data[name]) data[name] = [];
+    if (data[name].some((row) => row.asset_symbol === symbol)) return;
+    data[name].push({ asset_symbol: symbol, asset_name: assetName.get(symbol) || symbol, category_name: name, category_id: categoryId });
+  });
+  return data;
+}
 
 async function findSession(id) {
   const mongoose = require('mongoose');
@@ -239,6 +271,22 @@ const performance = {
         end_prices_count:      Object.keys(endPrices).length,
       };
 
+      // PHP PARITY: "How It Works" modal (system checks, calculation steps, prices timing) —
+      // check 7 counts this contest's transactions for its participants, as PHP does.
+      const label = contest.old_id != null ? contest.old_id : contest._id;
+      const participantKeys = [...new Set(entries.map(e => e.user_id).filter(v => v != null))];
+      const transactionCount = participantKeys.length
+        ? await Transaction.countDocuments({
+            user_id: { $in: participantKeys },
+            $or: [
+              { contest_id: { $in: [...contestKeys, String(label)] } },
+              // label is a number or an ObjectId (letters/digits only), so it is safe inside the pattern
+              { description: new RegExp(`Contest #${label}\\b`) },
+            ],
+          })
+        : 0;
+      const diag = performanceTools.diagnostics({ contest, session, participants, stats, flexibleDistribution, transactionCount });
+
       await render(res, 'performance/contest', {
         title: `Contest #${contest.old_id || contest._id} — Calculation`,
         contest,
@@ -248,6 +296,7 @@ const performance = {
         participants,
         stats,
         flexibleDistribution,
+        diag,
         admin: req.session.admin,
       });
     } catch (err) {
@@ -800,36 +849,32 @@ const pendingPrizes = {
   },
 };
 
+// PHP PARITY — Payment Orders, ported from PHP Admin\PaymentController (search by order or user;
+// approve credits deposit_balance + deposit transaction; reject records a failed transaction;
+// verify queries LG Pay read-only). Logic: services/payment-orders.service.js
 const payments = {
   index: async (req, res) => {
     const { search = '', status = '', page = 1 } = req.query;
-    const filter = {};
-    if (status !== '') filter.payment_status = Number(status);
-    if (search) filter.order_id = { $regex: search, $options: 'i' };
+    const filter = await paymentOrders.indexFilter({ search, status });
     const limit = 20;
-    const skip = (Number(page) - 1) * limit;
+    const skip = (Math.max(1, Number(page) || 1) - 1) * limit;
     const [items, total] = await Promise.all([
       Payment.find(filter).sort({ created_at: -1 }).skip(skip).limit(limit).lean(),
       Payment.countDocuments(filter),
     ]);
-    const userIds = [...new Set(items.map(p => p.user_id).filter(Boolean))];
-    const users = await User.find({ _id: { $in: userIds } }).select('name mobile email').lean();
-    const userMap = Object.fromEntries(users.map(u => [String(u._id), u]));
-    items.forEach(p => { p.user = userMap[String(p.user_id)] || null; });
+    const userMap = await paymentOrders.usersFor(items);
+    items.forEach(p => { p.user = userMap.get(String(p.user_id)) || null; });
     render(res, 'payments/index', {
       title: 'Payment Orders', payments: items, total, pages: Math.ceil(total / limit), page: Number(page), search, status, admin: req.session.admin,
     });
   },
-  setStatus: (status) => async (req, res) => {
-    const previous = await Payment.findByIdAndUpdate(req.params.id, { payment_status: status });
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — admin rejected an order that was never credited.
-    // "Approve" only flips payment_status (no wallet credit), so it does not send a success notification.
-    if (status === -1 && previous && ![1, -1].includes(Number(previous.payment_status))) {
-      notify('deposit_failed', { user: previous.user_id, dedupeKey: `deposit_failed:payment:${previous.order_id}`, params: { amount: previous.amount, reference: previous.order_id }, data: { order_id: previous.order_id } });
-    }
-    const labels = { 1: 'Payment approved', 4: 'Payment marked for verification', '-1': 'Payment rejected' };
-    req.flash('success', labels[status] || 'Payment updated');
-    res.redirect('/payments');
+  // PHP back(): return to the page (with its filters) the admin came from.
+  action: (name) => async (req, res) => {
+    const result = await paymentOrders[name](req.params.id);
+    logger.info(`[payments] ${req.adminAccess ? req.adminAccess.email : 'admin'} ${name} ${req.params.id}: ${result.message}`);
+    req.flash(result.type, result.message);
+    const back = req.get('Referer');
+    res.redirect(back && /\/payments(\?|$)/.test(back) ? back : '/payments');
   },
 };
 
@@ -1083,6 +1128,46 @@ const testing = {
       res.status(500).json({ success: false, message: e.message });
     }
   },
+  // PHP PARITY — TestingController::showCreateBasket: manual basket builder (assets with UP/DOWN,
+  // α/β multipliers). PHP posted to a hard-coded http://127.0.0.1:8000/v1, so it only worked on a
+  // developer machine; here it saves through POST /testing/create-basket. PHP also ignored the
+  // ?users= list from "Create Baskets for Selected" (always the first test user) — the basket is
+  // now created for each selected test user.
+  showCreateBasket: async (req, res) => {
+    const contest = await findDoc(Contest, req.query.contest);
+    const session = await findDoc(LeagueSession, req.query.session || (contest && contest.league_session_id));
+    if (!contest || !session) { req.flash('error', 'Contest or session not found'); return res.redirect('/testing/my-game'); }
+    const wanted = String(req.query.users || '').split(',').map((v) => v.trim()).filter((v) => mongoose.isValidObjectId(v) && v.length === 24);
+    const users = wanted.length
+      ? await User.find({ _id: { $in: wanted }, is_test_user: true }).select('_id name mobile').lean()
+      : await User.find({ is_test_user: true }).sort({ _id: 1 }).limit(1).select('_id name mobile').lean();
+    const categories = {};
+    (session.assets || []).forEach((a) => {
+      if (!a.asset_symbol) return;
+      const name = a.category_name || 'Other';
+      if (!categories[name]) categories[name] = { name, id: a.category_id, assets: [] };
+      categories[name].assets.push({ name: a.asset_symbol, fullName: a.asset_name || a.asset_symbol, sector: name, category_id: a.category_id });
+    });
+    renderStandalone(res, 'testing/create_basket', {
+      contest, session, users, maxStocks: session.max_stocks || 10, categories: Object.values(categories),
+    });
+  },
+  // PHP PARITY — /api/assign-basket-to-contest ("Select Basket" on the user-session page): links an
+  // existing basket to a contest (contest_id set, no longer standalone), exactly as PHP did.
+  assignBasket: async (req, res) => {
+    try {
+      const { basket_id: basketId, contest_id: contestId } = req.body || {};
+      if (!basketId || !contestId) return res.status(400).json({ success: false, message: 'Basket ID and Contest ID are required' });
+      const basket = await findDoc(SavedBasket, basketId);
+      if (!basket) return res.status(404).json({ success: false, message: 'Basket not found' });
+      const contest = await findDoc(Contest, contestId);
+      if (!contest) return res.status(404).json({ success: false, message: 'Contest not found' });
+      await SavedBasket.updateOne({ _id: basket._id }, { $set: { contest_id: contest._id, is_standalone: false } });
+      return res.json({ success: true, message: 'Basket assigned to contest successfully' });
+    } catch (e) {
+      return res.status(500).json({ success: false, message: e.message });
+    }
+  },
   deleteBasket: async (req, res) => {
     try {
       await SavedBasket.findByIdAndDelete(req.params.basketId);
@@ -1202,11 +1287,20 @@ const profile = {
     render(res, 'profile/show', { title: 'My Profile', adminUser: adminUser || req.session.admin, admin: req.session.admin });
   },
   update: async (req, res) => {
-    const { name, email } = req.body;
+    // PHP PARITY: name/email required, valid, max 255, email unique (PHP ProfileController::update)
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
+    let invalid = null;
+    if (!name) invalid = 'The name field is required.';
+    else if (name.length > 255) invalid = 'The name must not be greater than 255 characters.';
+    else if (!email) invalid = 'The email field is required.';
+    else if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) invalid = 'The email must be a valid email address.';
+    else if (await User.exists({ email, _id: { $ne: req.session.admin.id } })) invalid = 'The email has already been taken.';
+    if (invalid) { req.flash('error', invalid); return res.redirect('/profile'); }
     await User.findByIdAndUpdate(req.session.admin.id, { name, email });
     req.session.admin.name = name;
     req.session.admin.email = email;
-    req.flash('success', 'Profile updated');
+    req.flash('success', 'Profile updated successfully.');
     res.redirect('/profile');
   },
   password: async (req, res) => {
@@ -1214,13 +1308,16 @@ const profile = {
     if (!user) { req.flash('error', 'Admin not found'); return res.redirect('/profile'); }
     const ok = await bcrypt.compare(req.body.current_password || '', user.password || '');
     if (!ok) { req.flash('error', 'Current password is incorrect'); return res.redirect('/profile'); }
-    if (!req.body.password || req.body.password !== req.body.password_confirmation) {
+    // PHP PARITY: password required, min 8, confirmed (PHP SettingsController::updatePassword)
+    if (!req.body.password) { req.flash('error', 'The password field is required.'); return res.redirect('/profile'); }
+    if (String(req.body.password).length < 8) { req.flash('error', 'The password must be at least 8 characters.'); return res.redirect('/profile'); }
+    if (req.body.password !== req.body.password_confirmation) {
       req.flash('error', 'New passwords do not match');
       return res.redirect('/profile');
     }
     user.password = await bcrypt.hash(req.body.password, 10);
     await user.save();
-    req.flash('success', 'Password updated');
+    req.flash('success', 'Password updated successfully.');
     res.redirect('/profile');
   },
 };

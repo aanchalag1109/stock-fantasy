@@ -31,24 +31,36 @@ const create = (req, res) => {
 
 const store = async (req, res) => {
   try {
-    const { name, email, mobile, password, password_confirmation, is_admin } = req.body;
-    if (!password || password.length < 8) {
-      req.flash('error', 'Password must be at least 8 characters');
-      return res.redirect('/users/create');
-    }
-    if (password !== password_confirmation) {
-      req.flash('error', 'Passwords do not match');
-      return res.redirect('/users/create');
-    }
+    const { password, password_confirmation, is_admin } = req.body;
+    // PHP PARITY — UserController::store validation: name, unique email, mobile 10–15 chars,
+    // country code; the saved mobile is country_code + mobile and must not already exist.
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const mobile = String(req.body.mobile || '').trim();
+    const countryCode = String(req.body.country_code || '').trim();
+    const fail = (message) => { req.flash('error', message); return res.redirect('/users/create'); };
+    if (!name) return fail('The name field is required.');
+    if (name.length > 255) return fail('The name must not be greater than 255 characters.');
+    if (!email) return fail('The email field is required.');
+    if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('The email must be a valid email address.');
+    if (!mobile) return fail('The mobile field is required.');
+    if (mobile.length < 10) return fail('The mobile must be at least 10 characters.');
+    if (mobile.length > 15) return fail('The mobile must not be greater than 15 characters.');
+    if (!countryCode) return fail('The country code field is required.');
+    if (!password || password.length < 8) return fail('Password must be at least 8 characters');
+    if (password !== password_confirmation) return fail('Passwords do not match');
+    if (await User.exists({ email })) return fail('The email has already been taken.');
+    const fullMobile = countryCode + mobile;
+    if (await User.exists({ mobile: fullMobile })) return fail('This mobile number is already registered.');
     await User.create({
       name,
       email,
-      mobile,
+      mobile: fullMobile,
       password: await bcrypt.hash(password, 10),
       // NEW IMPLEMENTATION — NODE.JS PROJECT: only super admins may grant admin access
       is_admin: isSuperAdmin(req) && (is_admin === '1' || is_admin === 'on'),
     });
-    req.flash('success', 'User created successfully');
+    req.flash('success', 'User created successfully!');
     res.redirect('/users');
   } catch (err) {
     req.flash('error', err.message);
