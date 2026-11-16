@@ -46,6 +46,13 @@ app.use(cors({
   credentials: false
 }));
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: PayRam webhook needs the exact raw bytes for its signature,
+// so it is registered before the JSON body parser.
+const payramController = require('./controllers/payram.controller');
+['/api/v1/payram/webhook', '/api/payram/webhook'].forEach((webhookPath) => {
+  app.post(webhookPath, express.raw({ type: '*/*', limit: '1mb' }), payramController.webhook);
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -98,6 +105,8 @@ app.use(`${API}/kyc`, kycRoutes);
 app.use(`${API}/tickets`, ticketRoutes);
 app.use(`${API}/stats`, statsRoutes);
 app.use(`${API}/cron`, cronRoutes);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: USDT deposits via PayRam
+app.use(`${API}/payram`, require('./routes/payram.routes'));
 
 // Also mount without version for backwards compat
 app.use('/api/auth', authRoutes);
@@ -114,6 +123,7 @@ app.use('/api/kyc', kycRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/payram', require('./routes/payram.routes')); // NEW IMPLEMENTATION — NODE.JS PROJECT: PayRam USDT deposits
 
 // ─────────────────────────────────────────────
 // 404 handler

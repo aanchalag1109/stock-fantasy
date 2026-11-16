@@ -114,6 +114,18 @@ router.get('/v1/crypto-live-price', requireAdmin, requirePermission('sessions.cr
   }
 });
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: TradingView chart pop-up — which market each symbol belongs to
+// (indian | us | uk | crypto), from the asset categories, so the chart uses the right exchange.
+router.get('/asset-markets', requireAdmin, requirePermission('assets.view', 'sessions.view', 'performance.view', 'live_management.view', 'contests.view'), async (req, res) => {
+  const priceFeed = require('../../services/contest-automation/price-feed');
+  const symbols = String(req.query.symbols || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 50);
+  const markets = {};
+  for (const symbol of symbols) {
+    markets[symbol] = /-USD$/i.test(symbol) ? 'crypto' : await priceFeed.stockMarketOf(symbol);
+  }
+  res.json({ success: true, markets });
+});
+
 // Session assets grouped by category (used by testing create basket)
 router.get('/session-assets/:id', requireAdmin, requirePermission('sessions.view', 'testing.view'), async (req, res) => {
   try {

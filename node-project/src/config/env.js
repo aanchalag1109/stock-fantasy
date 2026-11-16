@@ -65,6 +65,17 @@ module.exports = {
   TWELVE_DATA_API_KEY: process.env.TWELVE_DATA_API_KEY || '',
   TWELVE_DATA_CREDITS_PER_MINUTE: parseInt(process.env.TWELVE_DATA_CREDITS_PER_MINUTE, 10) || 8,
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT deposits via PayRam (self-hosted, https://docs.payram.com).
+  // apiUrl = the PayRam "Site URL" (dashboard → Settings → Site URL), without /api/v1.
+  PAYRAM: {
+    apiUrl: (process.env.PAYRAM_API_URL || '').trim(),
+    apiKey: (process.env.PAYRAM_API_KEY || '').trim(),
+    network: (process.env.PAYRAM_NETWORK || '').trim().toUpperCase(), // optional, e.g. TRX; blank = user chooses
+    minDepositUsdt: Number(process.env.PAYRAM_MIN_DEPOSIT_USDT) > 0 ? Number(process.env.PAYRAM_MIN_DEPOSIT_USDT) : 1,
+    maxDepositUsdt: Number(process.env.PAYRAM_MAX_DEPOSIT_USDT) > 0 ? Number(process.env.PAYRAM_MAX_DEPOSIT_USDT) : 10000,
+    timeoutSeconds: parseInt(process.env.PAYRAM_TIMEOUT_SECONDS, 10) || 20,
+  },
+
   PRICE_CACHE_DURATION: parseInt(process.env.PRICE_CACHE_DURATION, 10) || 60,
   PRICE_FETCH_TIMEOUT: parseInt(process.env.PRICE_FETCH_TIMEOUT, 10) || 10
 };

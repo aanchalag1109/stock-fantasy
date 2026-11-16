@@ -299,7 +299,7 @@ function buildPricesHtml(data) {
       <thead class="table-light sticky-top"><tr><th>Symbol</th><th>Start Price</th><th>Time</th></tr></thead>
       <tbody>${startPrices.map(p => `
         <tr>
-          <td class="fw-bold">${p.asset_symbol}</td>
+          <td class="fw-bold" data-tv-symbol="${p.asset_symbol}" title="Open chart">${p.asset_symbol}<i class="bi bi-graph-up tv-chart-icon"></i></td>
           <td class="text-success">₹${Number(p.start_price || 0).toLocaleString('en-IN')}</td>
           <td class="text-muted small">${p.start_price_fetched_at ? new Date(p.start_price_fetched_at).toLocaleString() : 'N/A'}</td>
         </tr>`).join('')}
@@ -316,7 +316,7 @@ function buildPricesHtml(data) {
         const cls  = change > 0 ? 'text-success' : change < 0 ? 'text-danger' : 'text-muted';
         const icon = change > 0 ? '↑' : change < 0 ? '↓' : '→';
         return `<tr>
-          <td class="fw-bold">${p.asset_symbol}</td>
+          <td class="fw-bold" data-tv-symbol="${p.asset_symbol}" title="Open chart">${p.asset_symbol}<i class="bi bi-graph-up tv-chart-icon"></i></td>
           <td class="text-danger">₹${Number(p.end_price || 0).toLocaleString('en-IN')}</td>
           <td class="${cls}">${icon} ${change.toFixed(2)}%</td>
           <td class="text-muted small">${p.end_price_fetched_at ? new Date(p.end_price_fetched_at).toLocaleString() : 'N/A'}</td>

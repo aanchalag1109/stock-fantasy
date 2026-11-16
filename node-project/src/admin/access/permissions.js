@@ -35,6 +35,8 @@ const MODULES = [
   { key: 'tickets', label: 'Support Tickets', group: 'Players', actions: { view: 'View', reply: 'Reply & close' } },
   { key: 'transactions', label: 'Transactions', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject' } },
   { key: 'payments', label: 'Deposit Orders', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject / verify' } },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT deposits via PayRam
+  { key: 'usdt_deposits', label: 'USDT Deposits (PayRam)', group: 'Finance', actions: { view: 'View', manage: 'Check with PayRam / approve / reject' } },
   { key: 'withdrawals', label: 'Withdrawal Requests', group: 'Finance', actions: { view: 'View', process: 'Approve / reject' } },
   { key: 'deposit_withdrawal_settings', label: 'Deposit & Withdrawal Settings', group: 'Finance', actions: { view: 'View', edit: 'Edit limits' } },
   // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT/INR to ProbCoin Conversion Settings
@@ -83,6 +85,7 @@ const LANDING_PAGES = [
   ['transactions.view', '/transactions'],
   ['withdrawals.view', '/withdrawal_requests'],
   ['payments.view', '/payments'],
+  ['usdt_deposits.view', '/usdt-deposits'],
   ['deposit_withdrawal_settings.view', '/deposit-withdrawal-settings'],
   ['probcoin_conversion.view', '/probcoin-conversion'],
   ['performance.view', '/performance'],

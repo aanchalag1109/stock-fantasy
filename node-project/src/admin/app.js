@@ -113,6 +113,8 @@ adminApp.use('/ios-app-update', iosAppUpdateSettingsRoutes);
 adminApp.use('/probcoin-conversion', probcoinConversionRoutes);
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin → Assets
 adminApp.use('/market-assets', assetsRoutes);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Admin → USDT Deposits (PayRam)
+adminApp.use('/usdt-deposits', require('./routes/payram-deposits.routes'));
 // PHP PARITY: Live Management (must precede pagesRoutes)
 adminApp.use('/', liveManagementRoutes);
 adminApp.use('/', performanceToolsRoutes);

@@ -159,7 +159,8 @@
                     var boxes = g.assets.map(function (a) {
                         var id = 'a_' + g.cat.id + '_' + String(a.symbol).replace(/[^A-Za-z0-9]/g, '_');
                         return '<div class="col-md-3 col-6"><div class="form-check"><input class="form-check-input" type="checkbox" id="' + esc(id) + '" name="asset_selection[]" value="' + esc(g.cat.id) + ':' + esc(a.symbol) + '"' + (SELECTED.has(a.symbol) ? ' checked' : '') + '>'
-                            + '<label class="form-check-label small" for="' + esc(id) + '">' + esc(a.symbol) + ' <span class="text-muted">' + esc(a.name || '') + '</span></label></div></div>';
+                            + '<label class="form-check-label small" for="' + esc(id) + '">' + esc(a.symbol) + ' <span class="text-muted">' + esc(a.name || '') + '</span></label>'
+                            + ' <i class="bi bi-graph-up tv-chart-icon" data-tv-symbol="' + esc(a.symbol) + '" data-tv-category="' + esc(g.cat.name) + '" data-tv-name="' + esc(a.name || '') + '" title="Open chart"></i></div></div>';
                     }).join('') || '<div class="text-muted">No assets in this category</div>';
                     return '<div class="tab-pane fade' + (i === 0 ? ' show active' : '') + '" id="cat-' + esc(g.cat.id) + '"><div class="row g-1">' + boxes + '</div></div>';
                 }).join('') || '<div class="text-muted">No categories for this market type</div>';

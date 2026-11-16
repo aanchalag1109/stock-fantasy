@@ -79,7 +79,7 @@
                 var p = data.participant;
                 var rows = (data.assets || []).map(function (a) {
                     var cls = function (v) { return Number(v) >= 0 ? 'text-success' : 'text-danger'; };
-                    return '<tr><td><strong>' + esc(a.name) + '</strong><br><span class="badge bg-dark">' + esc(a.symbol) + '</span></td>'
+                    return '<tr><td><strong>' + esc(a.name) + '</strong><br><span class="badge bg-dark" data-tv-symbol="' + esc(a.symbol) + '" title="Open chart">' + esc(a.symbol) + ' <i class="bi bi-graph-up"></i></span></td>'
                         + '<td>' + esc(a.prediction) + '</td><td>' + esc(a.multiplier) + 'x</td>'
                         + '<td>' + num(a.start_price, 4) + '</td><td>' + num(a.current_price, 4) + '</td>'
                         + '<td class="' + cls(a.change_percent) + '">' + (a.change_percent >= 0 ? '+' : '') + num(a.change_percent) + '%</td>'

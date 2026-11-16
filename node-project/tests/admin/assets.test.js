@@ -144,7 +144,7 @@ async function login(email = 'super@test.local') {
   await agent.post('/login').type('form').send({ email, password: 'secret123' });
   return agent;
 }
-const symbolsOn = (html) => [...html.matchAll(/<span class="fw-bold font-monospace">([^<]+)<\/span>/g)].map((m) => m[1]);
+const symbolsOn = (html) => [...html.matchAll(/<span class="fw-bold font-monospace"[^>]*>([^<]+)<\/span>/g)].map((m) => m[1]);
 const post = (agent, url, body) => agent.post(url).type('form').send(body);
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -384,5 +384,53 @@ describe('Admin → Assets: logos', () => {
     assert.doesNotMatch((await viewer.get('/market-assets')).text, /action="\/market-assets\/fix-logos"/);
     assert.equal((await viewer.post('/market-assets/fix-logos').set('Accept', 'application/json')).status, 403);
     assert.equal(db.Asset[3].image_url, 'http://localhost/storage/stocks/RELIANCE.png');
+  });
+});
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: TradingView chart pop-up on stock click
+describe('Admin → TradingView chart on stock click', () => {
+  beforeEach(() => { reset(); require('../../src/services/contest-automation/price-feed')._resetMarketCache(); });
+
+  test('admin pages include the chart pop-up; asset symbols open it with their market', async () => {
+    const admin = await login();
+    const page = (await admin.get('/market-assets')).text;
+    assert.match(page, /id="tvChartModal"/);
+    assert.match(page, /s3\.tradingview\.com\/external-embedding\/embed-widget-advanced-chart\.js/);
+    assert.match(page, /data-tv-symbol="AAPL" data-tv-market="us"/);
+    assert.match(page, /data-tv-symbol="RELIANCE" data-tv-market="indian"/);
+    assert.match(page, /data-tv-symbol="BTC-USD" data-tv-market="crypto"/);
+  });
+
+  test('/api/asset-markets resolves markets from the asset categories', async () => {
+    const admin = await login();
+    const res = await admin.get('/api/asset-markets?symbols=AAPL,RELIANCE,SHEL.L,BTC-USD');
+    assert.deepEqual(res.body.markets, { AAPL: 'us', RELIANCE: 'indian', 'SHEL.L': 'uk', 'BTC-USD': 'crypto' });
+    const viewer = await login('viewer@test.local');
+    assert.equal((await viewer.get('/api/asset-markets?symbols=AAPL')).status, 200, 'assets.view is enough');
+  });
+
+  test('our symbols map to the right TradingView symbols', async () => {
+    const admin = await login();
+    const page = (await admin.get('/market-assets')).text;
+    const source = page.match(/function tvSymbol\(symbol, market, exchange\) \{[\s\S]*?\n  \}/)[0];
+    const tvSymbol = new Function(`${source}; return tvSymbol;`)();
+    assert.equal(tvSymbol('RELIANCE', 'indian'), 'BSE:RELIANCE');
+    assert.equal(tvSymbol('RELIANCE', 'indian', 'NSE'), 'NSE:RELIANCE');
+    assert.equal(tvSymbol('BAJAJ-AUTO', 'indian', 'NSE'), 'NSE:BAJAJ_AUTO');
+    assert.equal(tvSymbol('M&M', 'indian', 'NSE'), 'NSE:M_M');
+    assert.equal(tvSymbol('AAPL', 'us'), 'AAPL');
+    assert.equal(tvSymbol('BRK.B', 'us'), 'BRK.B');
+    assert.equal(tvSymbol('SHEL.L', 'uk'), 'LSE:SHEL');
+    assert.equal(tvSymbol('BTC-USD', 'crypto'), 'BINANCE:BTCUSDT');
+    assert.equal(tvSymbol('USDT-USD', 'crypto'), 'CRYPTOCAP:USDT');
+  });
+
+  test('NSE and LSE are not used in the embedded chart (TradingView refuses them); UK opens on TradingView instead', async () => {
+    const admin = await login();
+    const page = (await admin.get('/market-assets')).text;
+    assert.match(page, /function embeddable\(market\) \{ return market !== 'uk'; \}/);
+    assert.match(page, /London Stock Exchange charts can.{1,2}t be shown here/);
+    assert.doesNotMatch(page, /data-tv-exchange="NSE"/, 'no NSE switch');
+    assert.match(page, /shown\.bs\.modal/, 'the chart is drawn once the pop-up is open (full height)');
   });
 });

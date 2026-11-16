@@ -1,0 +1,131 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin → USDT Deposits (PayRam) — list %>
+<%
+  const usdt = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pc = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  const when = (d) => d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  const STATUS = {
+    pending: ['secondary', 'Pending'], partially_paid: ['warning text-dark', 'Partially paid'], credited: ['success', 'Credited'],
+    review: ['danger', 'Needs review'], cancelled: ['dark', 'Cancelled'], failed: ['danger', 'Failed'],
+  };
+  const tabs = [['', 'All'], ['pending', 'Pending'], ['partially_paid', 'Partially paid'], ['credited', 'Credited'], ['review', 'Needs review'], ['cancelled', 'Cancelled'], ['failed', 'Failed']];
+  const fromItem = total ? ((page - 1) * pageSize) + 1 : 0;
+  const toItem = Math.min(page * pageSize, total);
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-0"><i class="bi bi-currency-bitcoin text-success me-2"></i>USDT Deposits</h1>
+            <small class="text-muted">ProbCoin purchases paid in USDT via PayRam. INR deposits are under <a href="/payments">Deposit Orders</a>.</small>
+        </div>
+    </div>
+
+    <% if (!configured) { %>
+    <div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>PayRam is not configured on this server (PAYRAM_API_URL / PAYRAM_API_KEY in .env).</div>
+    <% } %>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3 col-6"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+            <div class="small text-muted">USDT received (credited)</div>
+            <div class="h4 mb-0 text-success" id="totalCreditedUsdt"><%= usdt(totals.credited_usdt) %> USDT</div>
+        </div></div></div>
+        <div class="col-md-3 col-6"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+            <div class="small text-muted">ProbCoins credited</div>
+            <div class="h4 mb-0" id="totalCreditedPc"><%= pc(totals.credited_probcoins) %> PC</div>
+        </div></div></div>
+        <div class="col-md-3 col-6"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+            <div class="small text-muted">Awaiting payment</div>
+            <div class="h4 mb-0"><%= usdt(totals.open_usdt) %> USDT</div>
+            <small class="text-muted"><%= (counts.pending || 0) + (counts.partially_paid || 0) %> deposit(s)</small>
+        </div></div></div>
+        <div class="col-md-3 col-6"><div class="card border-0 shadow-sm h-100 <%= counts.review ? 'border border-danger' : '' %>"><div class="card-body">
+            <div class="small text-muted">Needs review</div>
+            <div class="h4 mb-0 <%= counts.review ? 'text-danger' : '' %>"><%= counts.review || 0 %></div>
+            <% if (counts.review) { %><a href="/usdt-deposits?status=review" class="small">Show them</a><% } %>
+        </div></div></div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <div class="btn-group flex-wrap mb-3" role="group">
+                <% tabs.forEach(function ([value, label]) { const activeTab = filters.status === value; %>
+                <a href="/usdt-deposits<%= statusLink(value) %>" class="btn btn-sm <%= activeTab ? 'btn-dark' : 'btn-outline-dark' %>" data-status-tab="<%= value || 'all' %>">
+                    <%= label %> <span class="badge <%= activeTab ? 'bg-light text-dark' : 'bg-secondary' %> ms-1"><%= counts[value || 'all'] || 0 %></span>
+                </a>
+                <% }) %>
+            </div>
+            <form method="GET" action="/usdt-deposits" class="row g-2 align-items-end">
+                <% if (filters.status) { %><input type="hidden" name="status" value="<%= filters.status %>"><% } %>
+                <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1">Search</label>
+                    <input type="text" name="search" value="<%= search %>" class="form-control form-control-sm" placeholder="Deposit ID, PayRam reference, user name / mobile / email">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">Created from</label>
+                    <input type="date" name="from" value="<%= filters.from %>" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">Created to</label>
+                    <input type="date" name="to" value="<%= filters.to %>" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">Sort</label>
+                    <select name="sort" class="form-select form-select-sm">
+                        <option value="latest" <%= filters.sort === 'latest' ? 'selected' : '' %>>Newest first</option>
+                        <option value="oldest" <%= filters.sort === 'oldest' ? 'selected' : '' %>>Oldest first</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>Apply</button>
+                    <a href="/usdt-deposits" class="btn btn-sm btn-outline-secondary" title="Reset"><i class="bi bi-x-lg"></i></a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Deposit ID</th><th>User</th><th class="text-end">USDT</th><th class="text-end">Rate</th><th class="text-end">ProbCoins</th>
+                            <th>Status</th><th>PayRam reference</th><th>Created</th><th>Credited</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% deposits.forEach(function (d) { const st = STATUS[d.status] || ['secondary', d.status]; %>
+                        <tr data-deposit="<%= d.deposit_id %>">
+                            <td><a href="/usdt-deposits/<%= d.deposit_id %>" class="fw-semibold font-monospace"><%= d.deposit_id %></a></td>
+                            <td>
+                                <div><%= d.user ? (d.user.name || 'User') : 'N/A' %><% if (d.user && d.user.old_id != null) { %> <small class="text-muted">#<%= d.user.old_id %></small><% } %></div>
+                                <small class="text-muted"><%= d.user ? (d.user.mobile || d.user.email || '') : '' %></small>
+                            </td>
+                            <td class="text-end fw-semibold"><%= usdt(d.amount) %>
+                                <% if (d.filled_amount != null && Number(d.filled_amount) !== Number(d.amount)) { %><div class="small text-danger">received <%= usdt(d.filled_amount) %></div><% } %>
+                            </td>
+                            <td class="text-end"><%= d.rate %></td>
+                            <td class="text-end fw-semibold"><%= pc(d.probcoins) %></td>
+                            <td>
+                                <span class="badge bg-<%= st[0] %>"><%= st[1] %></span>
+                                <% if (d.review_reason) { %><div class="small text-muted mt-1" style="max-width:260px"><%= d.review_reason %></div><% } %>
+                                <% if (d.status === 'failed' && d.failure_reason) { %><div class="small text-danger mt-1" style="max-width:260px"><%= d.failure_reason %></div><% } %>
+                            </td>
+                            <td><small class="font-monospace text-muted"><%= d.reference_id ? String(d.reference_id).slice(0, 13) + '…' : '—' %></small></td>
+                            <td><small><%= when(d.created_at) %></small></td>
+                            <td><small><%= when(d.credited_at) %></small></td>
+                            <td><a href="/usdt-deposits/<%= d.deposit_id %>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+                        </tr>
+                        <% }) %>
+                        <% if (!deposits.length) { %>
+                        <tr><td colspan="10" class="text-center text-muted py-5"><i class="bi bi-inbox display-6 d-block mb-2"></i>No USDT deposits found</td></tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="text-muted small">Showing <%= fromItem %> to <%= toItem %> of <%= total %> deposits</div>
+            <div><%- include('../partials/pagination', { pages, page, extraQuery: queryString }) %></div>
+        </div>
+    </div>
+</div>

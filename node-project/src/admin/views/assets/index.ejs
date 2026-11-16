@@ -128,7 +128,7 @@
                                 <td>
                                     <div class="d-flex align-items-center gap-2">
                                         <% if (a.image_url) { %><img src="<%= a.image_url %>" alt="" style="width:24px;height:24px;object-fit:contain" class="rounded" onerror="this.style.display='none'"><% } %>
-                                        <span class="fw-bold font-monospace"><%= a.symbol %></span>
+                                        <span class="fw-bold font-monospace" data-tv-symbol="<%= a.symbol %>" data-tv-market="<%= m || '' %>" data-tv-name="<%= a.name %>" title="Open chart"><%= a.symbol %></span><i class="bi bi-graph-up tv-chart-icon" data-tv-symbol="<%= a.symbol %>" data-tv-market="<%= m || '' %>" data-tv-name="<%= a.name %>" title="Open chart"></i>
                                     </div>
                                 </td>
                                 <td><%= a.name %></td>

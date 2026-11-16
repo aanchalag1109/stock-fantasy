@@ -195,7 +195,7 @@
                                      onerror="this.src='https://ui-avatars.com/api/?name=<%= asset.asset_symbol %>&size=40&background=28a745&color=fff';">
                             </div>
                             <div>
-                                <div class="fw-bold text-success"><%= asset.asset_symbol %></div>
+                                <div class="fw-bold text-success" data-tv-symbol="<%= asset.asset_symbol %>" data-tv-category="<%= asset.category_name || (session.market_type === 'crypto' ? 'Crypto' : '') %>" data-tv-name="<%= asset.asset_name || '' %>" title="Open chart"><%= asset.asset_symbol %><i class="bi bi-graph-up tv-chart-icon"></i></div>
                                 <small class="text-muted"><%= asset.asset_name || 'Asset Name' %></small>
                             </div>
                         </div>

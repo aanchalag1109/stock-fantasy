@@ -29,6 +29,7 @@
     ] },
     { title: 'Payments & Transactions', items: [
       { show: can('payments.view'), href: '/payments', icon: 'bi-credit-card', label: 'Deposit Orders', active: on('/payments') },
+      { show: can('usdt_deposits.view'), href: '/usdt-deposits', icon: 'bi-currency-bitcoin', label: 'USDT Deposits', active: on('/usdt-deposits') },
       { show: can('withdrawals.view'), href: '/withdrawal_requests', icon: 'bi-cash-coin', label: 'Withdrawal Requests', active: on('/withdrawal_requests') || on('/withdrawals') },
       { show: can('transactions.view'), href: '/transactions', icon: 'bi-arrow-left-right', label: 'Transactions', active: on('/transactions') },
       { show: can('pending_prizes.view'), href: '/pending-prizes', icon: 'bi-gift', label: 'Pending Prizes', active: on('/pending-prizes') },

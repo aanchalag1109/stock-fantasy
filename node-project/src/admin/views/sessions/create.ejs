@@ -551,7 +551,7 @@
                                     <img src="${imageUrl}" alt="${value}" class="rounded-circle shadow-sm" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${value}&size=40&background=667eea&color=fff&bold=true';">
                                 </div>
                                 <div>
-                                    <div class="fw-bold text-dark">${value}</div>
+                                    <div class="fw-bold text-dark" data-tv-symbol="${value}" data-tv-name="${name}"${marketType === 'crypto' ? ' data-tv-market="crypto"' : ''} title="Open chart">${value}<i class="bi bi-graph-up tv-chart-icon"></i></div>
                                     <small class="text-muted">${name}</small>
                                 </div>
                             </div>
@@ -977,7 +977,7 @@
                                     <img src="${imageUrl}" alt="${value}" class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${value}&size=32&background=667eea&color=fff&bold=true';">
                                 </div>
                                 <div>
-                                    <div class="fw-bold">${value}</div>
+                                    <div class="fw-bold" data-tv-symbol="${value}" data-tv-name="${name}" title="Open chart">${value}<i class="bi bi-graph-up tv-chart-icon"></i></div>
                                     <small class="text-muted">${name}</small>
                                 </div>
                             </div>

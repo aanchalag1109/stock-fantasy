@@ -262,7 +262,7 @@ function displaySessionPricesHtml(data) {
       var time = p.start_price_fetched_at ? new Date(p.start_price_fetched_at).toLocaleString() : 'N/A';
       startRows +=
         '<tr>' +
-        '  <td class="fw-bold">' + escapeHtml(p.asset_symbol) + '</td>' +
+        '  <td class="fw-bold" data-tv-symbol="' + escapeHtml(p.asset_symbol) + '" title="Open chart">' + escapeHtml(p.asset_symbol) + '<i class="bi bi-graph-up tv-chart-icon"></i></td>' +
         '  <td class="text-success">₹' + Number(p.start_price || 0).toLocaleString('en-IN') + '</td>' +
         '  <td class="text-muted small">' + time + '</td>' +
         '</tr>';
@@ -286,7 +286,7 @@ function displaySessionPricesHtml(data) {
       var time = p.end_price_fetched_at ? new Date(p.end_price_fetched_at).toLocaleString() : 'N/A';
       endRows +=
         '<tr>' +
-        '  <td class="fw-bold">' + escapeHtml(p.asset_symbol) + '</td>' +
+        '  <td class="fw-bold" data-tv-symbol="' + escapeHtml(p.asset_symbol) + '" title="Open chart">' + escapeHtml(p.asset_symbol) + '<i class="bi bi-graph-up tv-chart-icon"></i></td>' +
         '  <td class="text-danger">₹' + Number(p.end_price || 0).toLocaleString('en-IN') + '</td>' +
         '  <td class="' + cls + '">' + icon + ' ' + change.toFixed(2) + '%</td>' +
         '  <td class="text-muted small">' + time + '</td>' +

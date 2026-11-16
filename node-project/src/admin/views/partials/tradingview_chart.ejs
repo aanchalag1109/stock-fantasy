@@ -1,0 +1,164 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT: TradingView chart analysis pop-up.
+  Any element with data-tv-symbol="RELIANCE" opens a TradingView Advanced Chart (candles,
+  indicators, drawing tools). Optional: data-tv-market="indian|us|uk|crypto" or
+  data-tv-category="Large Cap US" and data-tv-name="Reliance Industries". Without a market,
+  the market is looked up from the asset categories (/api/asset-markets).
+
+  TradingView's free embedded chart refuses NSE and LSE symbols ("This symbol is only available
+  on TradingView") and then silently shows its default symbol (AAPL). So:
+    Indian → BSE:RELIANCE in the pop-up ("Open on TradingView" → NSE:RELIANCE on the full site)
+    US     → AAPL (TradingView picks NASDAQ / NYSE)
+    UK     → no embedded chart; "Open on TradingView" → LSE:SHEL (from SHEL.L)
+    Crypto → BINANCE:BTCUSDT
+  The widget is drawn only once the pop-up is fully open (shown.bs.modal) so it gets the full
+  height; drawing it while the pop-up was still hidden left it at TradingView's small default.
+%>
+<style>
+  [data-tv-symbol] { cursor: pointer; }
+  [data-tv-symbol]:hover { text-decoration: underline dotted; }
+  .tv-chart-icon { font-size: .8em; opacity: .6; margin-left: .25rem; }
+  #tvChartModal .modal-dialog { max-width: 1280px; }
+  #tvChartFrame { height: 75vh; min-height: 460px; position: relative; }
+  #tvChartContainer { height: 100%; width: 100%; }
+</style>
+<div class="modal fade" id="tvChartModal" tabindex="-1" aria-labelledby="tvChartTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header flex-wrap gap-2">
+        <div class="me-auto">
+          <h5 class="modal-title mb-0" id="tvChartTitle"><i class="bi bi-graph-up me-2"></i><span id="tvChartName">Chart</span></h5>
+          <small class="text-muted">TradingView symbol: <span class="font-monospace" id="tvChartSymbol"></span></small>
+        </div>
+        <a href="#" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" id="tvOpenFull"><i class="bi bi-box-arrow-up-right me-1"></i>Open on TradingView</a>
+        <button type="button" class="btn-close ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="tvChartFrame">
+          <div class="tradingview-widget-container" id="tvChartContainer"></div>
+        </div>
+      </div>
+      <div class="modal-footer py-1 justify-content-between">
+        <small class="text-muted" id="tvChartNote">Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a>. Prices on the chart come from TradingView and can differ slightly from the prices used for contests.</small>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var modalEl = document.getElementById('tvChartModal');
+  if (!modalEl || window.__tvChartReady) return;
+  window.__tvChartReady = true;
+  var marketCache = {};
+  var current = null;   // { symbol, market, name }
+  var visible = false;  // pop-up fully open
+
+  function marketFromCategory(category) {
+    var c = String(category || '');
+    if (/crypto/i.test(c)) return 'crypto';
+    if (/\bUS\b/.test(c)) return 'us';
+    if (/\bUK\b/.test(c)) return 'uk';
+    if (/indian/i.test(c)) return 'indian';
+    return '';
+  }
+  function guessMarket(symbol) {
+    if (/-USD$/i.test(symbol)) return 'crypto';
+    if (/\.L$/i.test(symbol)) return 'uk';
+    return '';
+  }
+  // Our symbol → TradingView symbol.
+  function tvSymbol(symbol, market, exchange) {
+    var s = String(symbol || '').trim().toUpperCase();
+    if (market === 'crypto') {
+      var base = s.replace(/-USD$/, '');
+      return (base === 'USDT' || base === 'USDC') ? 'CRYPTOCAP:' + base : 'BINANCE:' + base + 'USDT';
+    }
+    if (market === 'uk') return 'LSE:' + s.replace(/\.L$/, '');
+    if (market === 'indian') return (exchange || 'BSE') + ':' + s.replace(/[-&]/g, '_');
+    return s; // US: TradingView resolves NASDAQ / NYSE itself
+  }
+  // Symbols TradingView allows in the embedded chart (NSE and LSE are refused).
+  function embeddable(market) { return market !== 'uk'; }
+
+  function header() {
+    var widgetSym = tvSymbol(current.symbol, current.market);
+    var fullSym = current.market === 'indian' ? tvSymbol(current.symbol, 'indian', 'NSE') : widgetSym;
+    document.getElementById('tvChartName').textContent = current.name ? current.name + ' (' + current.symbol + ')' : current.symbol;
+    document.getElementById('tvChartSymbol').textContent = embeddable(current.market) ? widgetSym : fullSym;
+    document.getElementById('tvOpenFull').href = 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent(fullSym);
+    return { widgetSym: widgetSym, fullSym: fullSym };
+  }
+
+  function draw() {
+    if (!current || !visible || !current.market) return;
+    var syms = header();
+    var box = document.getElementById('tvChartContainer');
+    if (!embeddable(current.market)) {
+      box.innerHTML = '<div class="d-flex flex-column align-items-center justify-content-center h-100 text-center p-4">'
+        + '<i class="bi bi-bar-chart-line display-4 text-muted mb-3"></i>'
+        + '<h5>London Stock Exchange charts can\'t be shown here</h5>'
+        + '<p class="text-muted mb-3">TradingView only allows UK (LSE) charts on its own website.</p>'
+        + '<a class="btn btn-primary" target="_blank" rel="noopener" href="https://www.tradingview.com/chart/?symbol=' + encodeURIComponent(syms.fullSym) + '">'
+        + '<i class="bi bi-box-arrow-up-right me-1"></i>Open ' + syms.fullSym + ' on TradingView</a></div>';
+      return;
+    }
+    box.innerHTML = '<div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>';
+    var script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.async = true;
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+    script.text = JSON.stringify({
+      autosize: true,
+      symbol: syms.widgetSym,
+      interval: 'D',
+      timezone: 'Asia/Kolkata',
+      theme: 'light',
+      style: '1',
+      locale: 'en',
+      allow_symbol_change: true,
+      withdateranges: true,
+      hide_side_toolbar: false,
+      details: true,
+      calendar: false,
+      studies: ['STD;RSI', 'STD;MACD'],
+      support_host: 'https://www.tradingview.com'
+    });
+    box.appendChild(script);
+  }
+
+  function open(el) {
+    var symbol = String(el.getAttribute('data-tv-symbol') || '').trim();
+    if (!symbol) return;
+    current = {
+      symbol: symbol,
+      name: el.getAttribute('data-tv-name') || '',
+      market: el.getAttribute('data-tv-market') || marketFromCategory(el.getAttribute('data-tv-category')) || guessMarket(symbol) || marketCache[symbol] || '',
+    };
+    document.getElementById('tvChartContainer').innerHTML = '<div class="text-center text-muted py-5">Loading chart…</div>';
+    if (current.market) header();
+    else {
+      document.getElementById('tvChartName').textContent = symbol;
+      var wanted = current;
+      fetch('/api/asset-markets?symbols=' + encodeURIComponent(symbol), { headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) { marketCache[symbol] = (data && data.markets && data.markets[symbol]) || 'indian'; })
+        .catch(function () { marketCache[symbol] = 'indian'; })
+        .finally(function () { if (current === wanted) { current.market = marketCache[symbol]; draw(); } });
+    }
+    if (visible) draw(); // pop-up already open: redraw for the new symbol
+    else bootstrap.Modal.getOrCreateInstance(modalEl).show(); // draw() runs on shown.bs.modal
+  }
+
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-tv-symbol]');
+    if (!el) return;
+    e.preventDefault();
+    open(el);
+  });
+  modalEl.addEventListener('shown.bs.modal', function () { visible = true; draw(); });
+  modalEl.addEventListener('hidden.bs.modal', function () {
+    visible = false;
+    document.getElementById('tvChartContainer').innerHTML = ''; // stop the widget
+  });
+})();
+</script>

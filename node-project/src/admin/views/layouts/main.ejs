@@ -330,5 +330,7 @@ document.querySelectorAll('[data-confirm]').forEach(el => {
 });
 </script>
 <%- typeof extraJs !== 'undefined' ? extraJs : '' %>
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: TradingView chart pop-up for any [data-tv-symbol] element %>
+<%- include('../partials/tradingview_chart') %>
 </body>
 </html>

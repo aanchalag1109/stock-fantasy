@@ -1,0 +1,170 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: Admin → USDT Deposits (PayRam) — detail %>
+<%
+  const usdt = (n) => n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 }) + ' USDT';
+  const pc = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' PC';
+  const when = (d) => d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+  const STATUS = {
+    pending: ['secondary', 'Pending — waiting for payment'], partially_paid: ['warning text-dark', 'Partially paid'], credited: ['success', 'Credited'],
+    review: ['danger', 'Needs review'], cancelled: ['dark', 'Cancelled'], failed: ['danger', 'Failed to start'],
+  };
+  const st = STATUS[deposit.status] || ['secondary', deposit.status];
+  const canManage = can('usdt_deposits.manage');
+  const open = ['pending', 'partially_paid'].includes(deposit.status);
+  const decidable = open || deposit.status === 'review';
+  const v = deposit.verification || {};
+  const log = (deposit.webhook_log || []).slice().reverse();
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-0">USDT Deposit <span class="font-monospace"><%= deposit.deposit_id %></span></h1>
+            <span class="badge bg-<%= st[0] %> mt-1"><%= st[1] %></span>
+        </div>
+        <a href="/usdt-deposits" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to USDT Deposits</a>
+    </div>
+
+    <% if (deposit.review_reason) { %>
+    <div class="alert <%= deposit.status === 'review' ? 'alert-danger' : 'alert-info' %>"><i class="bi bi-info-circle me-2"></i><%= deposit.review_reason %></div>
+    <% } %>
+    <% if (deposit.failure_reason) { %>
+    <div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>PayRam refused the payment: <%= deposit.failure_reason %></div>
+    <% } %>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="row g-3 mb-4">
+                <div class="col-sm-4"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="small text-muted">USDT requested</div><div class="h4 mb-0"><%= usdt(deposit.amount) %></div>
+                </div></div></div>
+                <div class="col-sm-4"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="small text-muted">USDT received</div>
+                    <div class="h4 mb-0 <%= deposit.filled_amount != null && Number(deposit.filled_amount) < Number(deposit.amount) ? 'text-danger' : '' %>"><%= usdt(deposit.filled_amount) %></div>
+                    <% if (deposit.filled_amount_in_usd != null) { %><small class="text-muted">≈ <%= Number(deposit.filled_amount_in_usd).toFixed(2) %> USD</small><% } %>
+                </div></div></div>
+                <div class="col-sm-4"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="small text-muted">ProbCoins</div><div class="h4 mb-0 text-success"><%= pc(deposit.probcoins) %></div>
+                    <small class="text-muted">at 1 USDT = <%= deposit.rate %> PC</small>
+                </div></div></div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">Deposit details</div>
+                <div class="card-body p-0">
+                    <table class="table mb-0">
+                        <tbody>
+                            <tr><th class="w-25 ps-3">Internal deposit ID</th><td class="font-monospace"><%= deposit.deposit_id %> <small class="text-muted">(sent to PayRam as invoiceID)</small></td></tr>
+                            <tr><th class="ps-3">Gateway / currency</th><td><%= deposit.gateway || 'PAYRAM' %> / <%= deposit.currency || 'USDT' %><%= deposit.network ? ' on ' + deposit.network : '' %></td></tr>
+                            <tr><th class="ps-3">PayRam reference ID</th><td class="font-monospace text-break"><%= deposit.reference_id || '—' %></td></tr>
+                            <tr><th class="ps-3">PayRam status</th><td><%= deposit.payram_state || '—' %></td></tr>
+                            <tr><th class="ps-3">Payment page</th><td class="text-break"><% if (deposit.payment_url) { %><a href="<%= deposit.payment_url %>" target="_blank" rel="noopener"><%= deposit.payment_url %></a><% } else { %>—<% } %></td></tr>
+                            <tr><th class="ps-3">Blockchain tx</th><td class="font-monospace small text-break"><%= deposit.tx_hashes && deposit.tx_hashes.length ? deposit.tx_hashes.join(', ') : '—' %></td></tr>
+                            <tr><th class="ps-3">Created</th><td><%= when(deposit.created_at) %></td></tr>
+                            <tr><th class="ps-3">Last updated</th><td><%= when(deposit.updated_at) %></td></tr>
+                            <tr><th class="ps-3">Wallet credited</th><td><%= when(deposit.credited_at) %></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">Payment verification <small class="text-muted fw-normal">(PayRam API check that allowed the credit)</small></div>
+                <div class="card-body">
+                    <% if (v.verified_at) { %>
+                    <div class="row small">
+                        <div class="col-sm-6 mb-2"><span class="text-muted">Verified at</span><br><%= when(v.verified_at) %></div>
+                        <div class="col-sm-6 mb-2"><span class="text-muted">PayRam state</span><br><%= v.payment_state || '—' %></div>
+                        <div class="col-sm-4 mb-2"><span class="text-muted">Amount (PayRam)</span><br><%= v.amount_in_usd != null ? v.amount_in_usd + ' USD' : '—' %></div>
+                        <div class="col-sm-4 mb-2"><span class="text-muted">Received (PayRam)</span><br><%= v.filled_amount_in_usd != null ? v.filled_amount_in_usd + ' USD' : '—' %></div>
+                        <div class="col-sm-4 mb-2"><span class="text-muted">Currency</span><br><%= v.currency || '—' %></div>
+                    </div>
+                    <% } else { %>
+                    <p class="text-muted mb-0">Not verified yet — ProbCoins are only credited after PayRam confirms the payment.</p>
+                    <% } %>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">Event log <small class="text-muted fw-normal">(webhooks, status checks, admin actions — newest first)</small></div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light"><tr><th class="ps-3">Time</th><th>Source</th><th>Status</th><th>Auth / by</th><th>Received</th><th>Result</th></tr></thead>
+                            <tbody>
+                                <% log.forEach(function (e) { %>
+                                <tr>
+                                    <td class="ps-3 small text-nowrap"><%= when(e.received_at) %></td>
+                                    <td class="small"><%= e.source %></td>
+                                    <td class="small"><%= e.status || '—' %></td>
+                                    <td class="small"><%= e.authenticated_by || '—' %></td>
+                                    <td class="small"><%= e.filled_amount_in_usd != null ? e.filled_amount_in_usd + ' USD' : (e.filled_amount != null ? e.filled_amount : '—') %></td>
+                                    <td class="small"><%= e.result || '—' %></td>
+                                </tr>
+                                <% }) %>
+                                <% if (!log.length) { %><tr><td colspan="6" class="text-center text-muted py-3">No events yet</td></tr><% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">User</div>
+                <div class="card-body">
+                    <% if (user) { %>
+                    <div class="fw-semibold"><%= user.name || 'User' %> <% if (user.old_id != null) { %><small class="text-muted">#<%= user.old_id %></small><% } %></div>
+                    <div class="small text-muted"><%= user.mobile || '' %> <%= user.email ? '· ' + user.email : '' %></div>
+                    <div class="small mt-2">Deposit balance: <strong><%= pc(user.deposit_balance) %></strong></div>
+                    <div class="small">Winnings balance: <strong><%= pc(user.winnings_balance) %></strong></div>
+                    <a href="/users/<%= user._id %>" class="btn btn-sm btn-outline-primary mt-2">View player</a>
+                    <% } else { %>
+                    <span class="text-danger">User not found</span>
+                    <% } %>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">Wallet transaction</div>
+                <div class="card-body small">
+                    <% if (transaction) { %>
+                    <div class="mb-1"><span class="text-muted">ID</span> <span class="font-monospace"><%= transaction.transaction_id %></span></div>
+                    <div class="mb-1"><span class="text-muted">Amount</span> <strong class="text-success">+<%= pc(transaction.amount) %></strong> to deposit balance</div>
+                    <div class="mb-1"><span class="text-muted">Method</span> <%= transaction.payment_method %></div>
+                    <div class="mb-1"><span class="text-muted">Status</span> <%= transaction.status %></div>
+                    <div class="mb-1"><%= transaction.description %></div>
+                    <a href="/transactions/<%= transaction._id %>" class="btn btn-sm btn-outline-secondary mt-1">Open transaction</a>
+                    <% } else { %>
+                    <span class="text-muted">No wallet transaction — nothing has been credited.</span>
+                    <% } %>
+                </div>
+            </div>
+
+            <% if (canManage) { %>
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-dark text-white fw-semibold">Actions</div>
+                <div class="card-body">
+                    <% if (deposit.reference_id) { %>
+                    <form method="POST" action="/usdt-deposits/<%= deposit.deposit_id %>/check" class="mb-3">
+                        <button type="submit" class="btn btn-info w-100"><i class="bi bi-arrow-repeat me-1"></i>Check with PayRam</button>
+                        <small class="text-muted d-block mt-1">Asks PayRam for the current status<%= open ? '; credits the user if the payment is complete' : '' %>.</small>
+                    </form>
+                    <% } %>
+                    <% if (decidable) { %>
+                    <form method="POST" action="/usdt-deposits/<%= deposit.deposit_id %>/approve" class="mb-2"
+                          onsubmit="return confirm('Credit <%= deposit.probcoins %> ProbCoins to this user? Only do this after confirming the USDT was received.')">
+                        <input type="text" name="note" class="form-control form-control-sm mb-2" maxlength="300" placeholder="Note (e.g. checked tx on tronscan)">
+                        <button type="submit" class="btn btn-success w-100"><i class="bi bi-check-circle me-1"></i>Approve &amp; credit <%= pc(deposit.probcoins) %></button>
+                    </form>
+                    <form method="POST" action="/usdt-deposits/<%= deposit.deposit_id %>/reject"
+                          onsubmit="return confirm('Reject this deposit? Nothing will be credited.')">
+                        <input type="text" name="note" class="form-control form-control-sm mb-2" maxlength="300" placeholder="Reason">
+                        <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-circle me-1"></i>Reject</button>
+                    </form>
+                    <% } %>
+                </div>
+            </div>
+            <% } %>
+        </div>
+    </div>
+</div>

@@ -271,3 +271,89 @@ These were missed in the conversion and restored from PHP; they are marked `PHP 
 - **New files:** `src/services/market-data/logos.js`
 - **Modified:** `src/admin/controllers/assets.controller.js`, `src/admin/routes/assets.routes.js`, `src/admin/views/assets/{index,form}.ejs`
 - **Tests:** `tests/admin/assets.test.js` (logos suite)
+
+## 17. USDT deposits via PayRam
+A separate gateway. LG Pay (INR) is unchanged.
+- **Flow:**
+  1. The app sends a USDT amount.
+  2. ProbCoins = amount × the USDT rate from **ProbCoin Conversion**, fixed at creation.
+  3. PayRam creates a USDT-only payment, and its link is returned to the app.
+  4. The user pays on the PayRam page.
+  5. PayRam calls the webhook, or the app polls the status endpoint.
+  6. The payment is re-read from PayRam's API.
+  7. ProbCoins are credited to `deposit_balance`.
+- **App APIs** (also under `/api/payram/...`):
+  - `GET /api/v1/payram/config`
+  - `POST /api/v1/payram/quote` `{ amount }`
+  - `POST /api/v1/payram/deposit` `{ user_id, amount }` → `payment_url`
+  - `GET /api/v1/payram/deposit/:deposit_id?user_id=`
+  - `GET /api/v1/payram/deposits?user_id=`
+- **Webhook:** `POST /api/v1/payram/webhook`.
+  - **Authentication:** `X-Payram-Signature` (`sha256=` HMAC-SHA256 of the raw body, keyed with the API key) or the `API-Key` header, which is what the official SDK checks. Anything else gets 401.
+  - **Verification before crediting:** `GET /api/v1/payment/reference/{id}` must report FILLED or OVER_FILLED, with the same invoice (`deposit_id`), the same amount, USDT, and the full amount received.
+  - **Retries:** if PayRam can't be reached, we answer 503 so PayRam retries.
+- **Credit once:**
+  - The deposit is claimed atomically (pending → credited).
+  - The ledger then writes transaction `PAYRAM_<deposit_id>` on a unique index before the balance `$inc`.
+  - Repeated or concurrent webhooks never credit twice. This is the atomic equivalent of a transaction; MongoDB here is standalone.
+- **Statuses:**
+  - `pending`, `partially_paid`, `credited`
+  - `cancelled`: expired with nothing paid
+  - `failed`: PayRam refused to create the payment
+  - `review`: underpaid then expired, wrong currency, or amount/invoice mismatch
+  - Overpayments are credited at the deposit amount and flagged.
+- **Records:** collection `payram_deposits`: deposit id, user, gateway `PAYRAM`, `USDT`, amount, rate, ProbCoins, PayRam reference, payment URL, status, PayRam state, filled amounts, tx hashes, the verification used to credit, the last 50 webhook/status events, and credited/created/updated times.
+- **Config (`.env`):**
+  - `PAYRAM_API_URL`: PayRam Site URL
+  - `PAYRAM_API_KEY`
+  - `PAYRAM_NETWORK` (optional, e.g. `TRX`)
+  - `PAYRAM_MIN_DEPOSIT_USDT` / `PAYRAM_MAX_DEPOSIT_USDT` (default 1 / 10000)
+- **New files:** `src/models/payram-deposit.model.js`, `src/services/payram/{payram.client,payram-deposit.service}.js`, `src/controllers/payram.controller.js`, `src/routes/payram.routes.js`
+- **Modified:** `src/app.js` (routes, plus the webhook registered with a raw body before the JSON parser), `src/config/env.js`, `.env.example`
+- **Tests:** `tests/payram/payram-deposit.test.js`
+
+## 18. Admin → USDT Deposits (PayRam)
+The USDT counterpart of **Deposit Orders** (LG Pay / INR), which is unchanged.
+- **Where:** sidebar **Payments & Transactions → USDT Deposits** (`/usdt-deposits`).
+- **List:**
+  - **Totals:** USDT received, ProbCoins credited, USDT awaiting payment, and the number of deposits needing review.
+  - **Status tabs with counts:** All, Pending, Partially paid, Credited, Needs review, Cancelled, Failed.
+  - **Search:** by deposit ID, PayRam reference, or user name, mobile or email.
+  - **Date range and newest/oldest sort.**
+  - Each row shows the user, USDT requested and received, rate, ProbCoins, status with its review or failure reason, the PayRam reference, and when it was created and credited.
+- **Detail page:**
+  - **Payment:** the full deposit record, the PayRam reference and payment page, blockchain transaction hashes, and the PayRam verification that allowed the credit.
+  - **Wallet:** the wallet transaction `PAYRAM_<deposit_id>` and the user's current balances.
+  - **Event log:** every webhook, status check and admin action.
+- **Actions** (permission `usdt_deposits.manage`):
+  - **Check with PayRam:** re-reads the payment and credits it if it's complete.
+  - **Approve & credit:** for deposits held for review; uses the same credit-once path, and the transaction is marked "Admin Approved".
+  - **Reject:** closes the deposit without crediting.
+  - Notes and the admin's email are stored on the deposit.
+- **Permissions:** new `usdt_deposits.view` / `usdt_deposits.manage` in Roles & Permissions (Finance group). Super admins have them automatically.
+- **Wallet transactions:** credited USDT deposits also appear on the existing **Transactions** page as `deposit` with method "PayRam (USDT)".
+- **New files:** `src/admin/controllers/payram-deposits.controller.js`, `src/admin/routes/payram-deposits.routes.js`, `src/admin/views/payram_deposits/{index,show}.ejs`
+- **Modified:** `src/services/payram/payram-deposit.service.js` (admin approve/reject/check), `src/admin/access/permissions.js`, `src/admin/app.js`, `src/admin/views/partials/sidebar.ejs`
+- **Tests:** `tests/admin/payram-deposits.test.js`
+
+## 19. TradingView chart analysis on stock click (admin panel)
+- **What it does:** clicking a stock or coin symbol opens a pop-up with a **TradingView Advanced Chart**: candles, timeframes and date ranges, RSI and MACD, drawing tools, and symbol details. Uses TradingView's free embed widget; no API key needed.
+- **Where:**
+  - **Assets:** the symbol, or the chart icon next to it.
+  - **Session details:** the asset cards.
+  - **Session create:** the asset picker.
+  - **Session edit:** a chart icon next to each asset (the checkbox isn't toggled).
+  - **Performance (contest and session):** the start/end price tables.
+  - **Live Management → contest detail:** the asset badges.
+- **Symbol mapping:** checked by rendering the widget. TradingView's free embedded chart refuses **NSE** and **LSE** symbols ("This symbol is only available on TradingView") and then shows its default, AAPL.
+  - **Indian:** `BSE:RELIANCE` in the pop-up (`-`/`&` become `_`). "Open on TradingView" goes to `NSE:RELIANCE` on the full site.
+  - **US:** `AAPL` (TradingView picks NASDAQ/NYSE).
+  - **UK:** no embedded chart. The pop-up explains why and links to `LSE:SHEL` on TradingView.
+  - **Crypto:** `BTC-USD` → `BINANCE:BTCUSDT`.
+  - **Unknown market:** pages that don't know a symbol's market ask `GET /api/asset-markets?symbols=…`, which uses the asset categories.
+- **Full height:** the chart is drawn after the pop-up has opened (`shown.bs.modal`), so it fills 75% of the screen height. Drawing it while the pop-up was still hidden left it at TradingView's small default.
+- **Data source:** the chart shows TradingView's data. Contests still use our price feeds (RapidAPI / Twelve Data / CoinMarketCap). "Open on TradingView" opens the full chart.
+- **Reuse:** the pop-up is in the admin layout; any element with `data-tv-symbol` (optional `data-tv-market`, `data-tv-category`, `data-tv-name`) opens it.
+- **New files:** `src/admin/views/partials/tradingview_chart.ejs`
+- **Modified:** `src/admin/views/layouts/main.ejs`, `src/admin/routes/api.routes.js` (`/api/asset-markets`), `src/admin/views/{assets/index,sessions/show,sessions/create,sessions/edit,performance/contest,performance/session,live_management/contest_detail}.ejs`
+- **Tests:** `tests/admin/assets.test.js` (TradingView suite)
