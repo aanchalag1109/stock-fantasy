@@ -167,7 +167,7 @@ describe('Admin → USDT Deposits: list and detail', () => {
 describe('Admin → USDT Deposits: actions', () => {
   beforeEach(reset);
 
-  test('"Check with PayRam" credits a pending deposit that PayRam reports as paid', async () => {
+  test('"Re-verify" credits a pending deposit that PayRam reports as paid', async () => {
     payramState['ref-2'] = { paymentState: 'FILLED', amountInUSD: '5', filledAmountInUSD: '5', invoiceID: 'PRM2', currencySymbol: 'USDT' };
     const admin = await login();
     await admin.post('/usdt-deposits/PRM2/check');
@@ -205,5 +205,21 @@ describe('Admin → USDT Deposits: actions', () => {
     }
     assert.equal(deposit('PRM3').status, 'review');
     assert.equal(balance(), 1615);
+  });
+});
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: separate PayRam testnet connection
+describe('Admin → USDT Deposits: mainnet / testnet', () => {
+  beforeEach(reset);
+
+  test('testnet deposits carry a TESTNET badge and can be filtered; older deposits count as mainnet', async () => {
+    deposit('PRM2').environment = 'testnet';
+    const admin = await login();
+    const page = (await admin.get('/usdt-deposits')).text;
+    assert.match(page, /data-deposit="PRM2"[\s\S]*?data-testnet>TESTNET</);
+    assert.match(page, /id="activeEnvironment">New deposits: MAINNET/);
+    assert.deepEqual(rowsOf((await admin.get('/usdt-deposits?environment=testnet')).text), ['PRM2']);
+    assert.deepEqual(rowsOf((await admin.get('/usdt-deposits?environment=mainnet')).text), ['PRM4', 'PRM3', 'PRM1']);
+    assert.match((await admin.get('/usdt-deposits/PRM2')).text, /id="depositEnvironment">TESTNET/);
   });
 });

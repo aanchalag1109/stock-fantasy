@@ -10,7 +10,8 @@
  *   POST /api/v1/payram/deposit        { user_id, amount }  → payment_url to open in the app
  *   GET  /api/v1/payram/deposit/:id    ?user_id=     status (re-checked with PayRam while open)
  *   GET  /api/v1/payram/deposits       ?user_id=     the user's USDT deposits
- *   POST /api/v1/payram/webhook                      PayRam → us (registered in app.js with a raw body)
+ *   POST /api/v1/payram/webhook                      PayRam mainnet → us (registered in app.js with a raw body)
+ *   POST /api/v1/payram/testnet/webhook              PayRam testnet → us (separate key)
  *
  * Users are identified by user_id, like the existing mobile deposit flow.
  */
@@ -18,7 +19,7 @@
 const PayramDeposit = require('../models/payram-deposit.model');
 const config = require('../config/env');
 const logger = require('../config/logger');
-const probcoinConversion = require('../services/probcoin-conversion.service');
+const quotes = require('../services/payments/quote.service');
 const payram = require('../services/payram/payram.client');
 const deposits = require('../services/payram/payram-deposit.service');
 
@@ -39,31 +40,36 @@ async function userFrom(req, res) {
 
 const getConfig = async (req, res) => {
   try {
-    const rates = await probcoinConversion.getRates();
-    const rate = rates.usdt_to_probcoin_rate;
+    const usdt = (await quotes.paymentOptions()).find((o) => o.currency === 'USDT');
     return res.json({
       success: true,
       currency: 'USDT',
       gateway: 'PAYRAM',
-      enabled: Boolean(rate && payram.isConfigured()),
-      rate: rate || null,
-      min_amount: config.PAYRAM.minDepositUsdt,
-      max_amount: config.PAYRAM.maxDepositUsdt,
-      network: config.PAYRAM.network || null,
+      enabled: Boolean(usdt.deposit_enabled && payram.isConfigured()),
+      environment: payram.activeEnvironment(), // NEW IMPLEMENTATION — NODE.JS PROJECT: 'mainnet' | 'testnet'
+      rate: usdt.rate,
+      min_amount: usdt.min_deposit,
+      max_amount: usdt.max_deposit,
+      charge_percent: usdt.charge_percent,
+      charge_fixed: usdt.charge_fixed,
+      charges_bearer: usdt.charges_bearer,
+      network: payram.connection().network,
     });
   } catch (err) {
     return fail(res, 500, 'Failed to load USDT deposit settings');
   }
 };
 
+/** { amount } (USDT before charges) or { probcoins } → ProbCoins, charges and total payable. */
 const getQuote = async (req, res) => {
   try {
-    const q = await deposits.quote(input(req, 'amount'));
+    const q = await deposits.quote(input(req, 'amount'), { probcoins: input(req, 'probcoins') });
     if (!q.ok) {
       const { ok, status, message, ...extra } = q;
       return fail(res, status, message, extra);
     }
-    return res.json({ success: true, currency: 'USDT', amount: q.amount, rate: q.rate, probcoins: q.probcoins, min_amount: q.min, max_amount: q.max });
+    const { ok, ...quote } = q;
+    return res.json({ success: true, ...quote, amount: q.base_amount });
   } catch (err) {
     return fail(res, 500, 'Failed to calculate ProbCoins');
   }
@@ -73,7 +79,7 @@ const createDeposit = async (req, res) => {
   try {
     const user = await userFrom(req, res);
     if (!user) return undefined;
-    const result = await deposits.createDeposit({ user, amount: input(req, 'amount') });
+    const result = await deposits.createDeposit({ user, amount: input(req, 'amount'), probcoins: input(req, 'probcoins') });
     if (!result.ok) {
       const { ok, status, message, ...extra } = result;
       return fail(res, status, message, extra);
@@ -110,14 +116,17 @@ const listDeposits = async (req, res) => {
 };
 
 /** Needs the raw body (signature) — registered in app.js before the JSON parser. */
-const webhook = async (req, res) => {
+const webhookFor = (environment) => async (req, res) => {
   try {
-    const { httpStatus, body } = await deposits.handleWebhook(req.body, req.headers);
+    const { httpStatus, body } = await deposits.handleWebhook(req.body, req.headers, environment);
     return res.status(httpStatus).json(body);
   } catch (err) {
-    logger.error(`[payram] webhook failed: ${err.message}`);
+    logger.error(`[payram:${environment}] webhook failed: ${err.message}`);
     return res.status(500).json({ message: 'Temporary error; please retry' });
   }
 };
+const webhook = webhookFor('mainnet');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: separate webhook for the PayRam testnet connection
+const testnetWebhook = webhookFor('testnet');
 
-module.exports = { getConfig, getQuote, createDeposit, getDeposit, listDeposits, webhook };
+module.exports = { getConfig, getQuote, createDeposit, getDeposit, listDeposits, webhook, testnetWebhook };

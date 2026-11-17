@@ -36,7 +36,7 @@ const MODULES = [
   { key: 'transactions', label: 'Transactions', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject' } },
   { key: 'payments', label: 'Deposit Orders', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject / verify' } },
   // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT deposits via PayRam
-  { key: 'usdt_deposits', label: 'USDT Deposits (PayRam)', group: 'Finance', actions: { view: 'View', manage: 'Check with PayRam / approve / reject' } },
+  { key: 'usdt_deposits', label: 'USDT Deposits (PayRam)', group: 'Finance', actions: { view: 'View', manage: 'Re-verify / manual approve / reject' } },
   { key: 'withdrawals', label: 'Withdrawal Requests', group: 'Finance', actions: { view: 'View', process: 'Approve / reject' } },
   { key: 'deposit_withdrawal_settings', label: 'Deposit & Withdrawal Settings', group: 'Finance', actions: { view: 'View', edit: 'Edit limits' } },
   // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT/INR to ProbCoin Conversion Settings

@@ -1,12 +1,8 @@
 'use strict';
 
 const WithdrawalRequest = require('../../models/withdrawal-request.model');
-const User = require('../../models/user.model');
-const Transaction = require('../../models/transaction.model');
 const { render } = require('../helpers/render');
-// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
-const { notify } = require('../../services/notifications/notification.service');
-const mongoose = require('mongoose');
+const withdrawalService = require('../../services/payments/withdrawal.service');
 
 const index = async (req, res) => {
   try {
@@ -38,49 +34,17 @@ const show = async (req, res) => {
   } catch (err) { res.status(500).send(err.message); }
 };
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: approve / reject through services/payments/withdrawal.service.js
+// (atomic claim, refund exactly once on reject, payout reference recorded). The previous version
+// used MongoDB transactions, which fail on the standalone deployment.
 const update = async (req, res) => {
-  const mongoSession = await mongoose.startSession();
-  try {
-    mongoSession.startTransaction();
-    const { status, admin_message } = req.body;
-    const withdrawal = await WithdrawalRequest.findById(req.params.id).session(mongoSession);
-    if (!withdrawal || withdrawal.status !== 'pending') {
-      await mongoSession.abortTransaction();
-      req.flash('error', 'Request already processed or not found');
-      return res.redirect('/withdrawal_requests');
-    }
-    withdrawal.status = status === 'accepted' ? 'approved' : status;
-    withdrawal.admin_message = admin_message;
-    await withdrawal.save({ session: mongoSession });
-
-    if (status === 'rejected') {
-      await User.findByIdAndUpdate(withdrawal.user_id, { $inc: { winnings_balance: withdrawal.amount } }, { session: mongoSession });
-      await Transaction.create([{
-        user_id: withdrawal.user_id,
-        type: 'deposit',
-        amount: withdrawal.amount,
-        status: 'success',
-        description: `Withdrawal rejected - refund${admin_message ? ': ' + admin_message : ''}`,
-      }], { session: mongoSession });
-    }
-
-    await mongoSession.commitTransaction();
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — after the admin decision is committed; one per withdrawal and outcome
-    if (withdrawal.status === 'approved' || withdrawal.status === 'rejected') {
-      notify(`withdrawal_${withdrawal.status}`, {
-        user: withdrawal.user_id,
-        dedupeKey: `withdrawal_${withdrawal.status}:${withdrawal._id}`,
-        params: { amount: withdrawal.amount, reason: withdrawal.status === 'rejected' ? admin_message : null },
-        data: { screen: 'withdrawals', withdrawal_id: String(withdrawal._id) },
-      });
-    }
-    req.flash('success', status === 'accepted' ? 'Withdrawal accepted. Please send USDT to user wallet.' : 'Withdrawal rejected. Amount refunded.');
-    res.redirect('/withdrawal_requests');
-  } catch (err) {
-    await mongoSession.abortTransaction();
-    req.flash('error', err.message);
-    res.redirect('/withdrawal_requests');
-  } finally { mongoSession.endSession(); }
+  const { status, admin_message: adminMessage, payout_reference: payoutReference } = req.body;
+  const action = status === 'accepted' || status === 'approved' ? 'approve' : status === 'rejected' ? 'reject' : null;
+  const result = await withdrawalService.processWithdrawal(req.params.id, {
+    action, adminMessage, payoutReference, admin: req.adminAccess ? req.adminAccess.email : 'admin',
+  }).catch((err) => ({ type: 'error', message: err.message }));
+  req.flash(result.type, result.message);
+  res.redirect('/withdrawal_requests');
 };
 
 module.exports = { index, show, update };

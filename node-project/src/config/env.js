@@ -47,7 +47,9 @@ module.exports = {
   LGPAY: {
     appId: process.env.LGPAY_APP_ID || 'YD4484',
     secretKey: process.env.LGPAY_SECRET_KEY || '2rQnx8NosOLyJAkCipz6ET2Ym70ME7',
-    baseUrl: process.env.LGPAY_BASE_URL || 'https://www.lg-pay.com'
+    baseUrl: process.env.LGPAY_BASE_URL || 'https://www.lg-pay.com',
+    // Where LG Pay sends payment confirmations (unchanged default; override per environment)
+    notifyUrl: process.env.LGPAY_NOTIFY_URL || 'http://probtrade.com/api/v1/payment/lgpay-callback',
   },
   
   // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — Firebase Cloud Messaging (same project as the PHP FCMService)
@@ -74,6 +76,15 @@ module.exports = {
     minDepositUsdt: Number(process.env.PAYRAM_MIN_DEPOSIT_USDT) > 0 ? Number(process.env.PAYRAM_MIN_DEPOSIT_USDT) : 1,
     maxDepositUsdt: Number(process.env.PAYRAM_MAX_DEPOSIT_USDT) > 0 ? Number(process.env.PAYRAM_MAX_DEPOSIT_USDT) : 10000,
     timeoutSeconds: parseInt(process.env.PAYRAM_TIMEOUT_SECONDS, 10) || 20,
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: separate PayRam testnet connection (its own server, key,
+    // network and webhook). PAYRAM_MODE picks the connection for NEW deposits; existing deposits
+    // always stay on the connection they were created with.
+    mode: String(process.env.PAYRAM_MODE || 'mainnet').trim().toLowerCase() === 'testnet' ? 'testnet' : 'mainnet',
+    testnet: {
+      apiUrl: (process.env.PAYRAM_TESTNET_API_URL || '').trim(),
+      apiKey: (process.env.PAYRAM_TESTNET_API_KEY || '').trim(),
+      network: (process.env.PAYRAM_TESTNET_NETWORK || '').trim().toUpperCase(),
+    },
   },
 
   PRICE_CACHE_DURATION: parseInt(process.env.PRICE_CACHE_DURATION, 10) || 60,

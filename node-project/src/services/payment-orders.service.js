@@ -30,7 +30,8 @@ const Transaction = require('../models/transaction.model');
 const config = require('../config/env');
 const logger = require('../config/logger');
 const { generateSignature } = require('../controllers/payment.controller');
-const { creditOnce } = require('./contest-automation/ledger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: INR ProbCoin purchases
+const lgpayDeposits = require('./payments/lgpay-deposit.service');
 const { notify } = require('./notifications/notification.service');
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -65,41 +66,31 @@ async function usersFor(payments) {
   return map;
 }
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: orders an admin may still decide — pending, needs review
+// (underpaid), processing.
+const OPEN = [0, 3, 4];
+
 async function claimPending(id, newStatus) {
   if (!isOid(id)) return null;
-  return Payment.findOneAndUpdate({ _id: id, payment_status: 0 }, { $set: { payment_status: newStatus } });
+  return Payment.findOneAndUpdate({ _id: id, payment_status: { $in: OPEN } }, { $set: { payment_status: newStatus } });
 }
 
-/** Returns { type: 'success'|'error', message } — the flash shown by the admin page. */
+/**
+ * Returns { type: 'success'|'error', message } — the flash shown by the admin page.
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: credits the order's ProbCoins (INR rate; orders from before
+ * the conversion 1:1) through the same credit-once path as the LG Pay callback.
+ */
 async function approve(id) {
-  const payment = await claimPending(id, 1);
+  const payment = isOid(id) ? await Payment.findOne({ _id: id, payment_status: { $in: OPEN } }).lean() : null;
   if (!payment) return { type: 'error', message: 'Payment not found or already processed' };
-  try {
-    const result = await creditOnce({
-      userRef: payment.user_id,
-      balance: 'deposit_balance',
-      amount: num(payment.amount),
-      transaction: { type: 'deposit', payment_method: 'Admin Approved', transaction_id: payment.order_id },
-    });
-    if (result.missingUser) {
-      await Payment.updateOne({ _id: payment._id, payment_status: 1 }, { $set: { payment_status: 0 } });
-      return { type: 'error', message: 'Failed to approve payment: user not found' };
-    }
-    if (result.duplicate) {
-      logger.warn(`[payments] order ${payment.order_id} already had a deposit transaction; balance not credited again`);
-      return { type: 'success', message: 'Payment approved successfully (it had already been credited)' };
-    }
-    notify('deposit_success', {
-      user: result.user,
-      dedupeKey: `deposit_success:payment:${payment.order_id}`,
-      params: { amount: num(payment.amount), reference: payment.order_id },
-      data: { order_id: payment.order_id },
-    });
-    return { type: 'success', message: 'Payment approved successfully' };
-  } catch (err) {
-    await Payment.updateOne({ _id: payment._id, payment_status: 1 }, { $set: { payment_status: 0 } }).catch(() => {});
-    return { type: 'error', message: 'Failed to approve payment: ' + err.message };
+  const result = await lgpayDeposits.settleOrder(payment, { source: 'admin' });
+  if (result.credited) return { type: 'success', message: 'Payment approved successfully' };
+  if (result.already) {
+    logger.warn(`[payments] order ${payment.order_id} already had a deposit transaction; balance not credited again`);
+    return { type: 'success', message: 'Payment approved successfully (it had already been credited)' };
   }
+  if (result.error === 'user not found') return { type: 'error', message: 'Failed to approve payment: user not found' };
+  return { type: 'error', message: 'Failed to approve payment: ' + result.error };
 }
 
 async function reject(id) {
@@ -109,7 +100,9 @@ async function reject(id) {
     await Transaction.create({
       user_id: payment.user_id,
       type: 'deposit',
-      amount: num(payment.amount),
+      amount: lgpayDeposits.coinsOf(payment),
+      currency: 'INR',
+      currency_amount: num(payment.amount),
       status: 'failed',
       payment_method: 'Admin Rejected',
       transaction_id: payment.order_id,
@@ -124,7 +117,7 @@ async function reject(id) {
   notify('deposit_failed', {
     user: payment.user_id,
     dedupeKey: `deposit_failed:payment:${payment.order_id}`,
-    params: { amount: payment.amount, reference: payment.order_id },
+    params: { amount: lgpayDeposits.coinsOf(payment), reference: payment.order_id },
     data: { order_id: payment.order_id },
   });
   return { type: 'success', message: 'Payment rejected successfully' };

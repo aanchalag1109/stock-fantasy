@@ -52,6 +52,10 @@ const payramController = require('./controllers/payram.controller');
 ['/api/v1/payram/webhook', '/api/payram/webhook'].forEach((webhookPath) => {
   app.post(webhookPath, express.raw({ type: '*/*', limit: '1mb' }), payramController.webhook);
 });
+// NEW IMPLEMENTATION — NODE.JS PROJECT: separate webhook for the PayRam testnet connection
+['/api/v1/payram/testnet/webhook', '/api/payram/testnet/webhook'].forEach((webhookPath) => {
+  app.post(webhookPath, express.raw({ type: '*/*', limit: '1mb' }), payramController.testnetWebhook);
+});
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -85,6 +89,10 @@ const paymentController = require('./controllers/payment.controller');
 
 // PHP mobile paths. These are registered before the nested routers so
 // /api/v1/login, /api/v1/sessions and /api/v1/contests/:id keep the PHP contract.
+// NEW IMPLEMENTATION — NODE.JS PROJECT: INR & USDT deposits / withdrawals (client feedback)
+const walletPaymentRoutes = require('./routes/wallet-payments.routes');
+app.use(API, walletPaymentRoutes);
+app.use('/api', walletPaymentRoutes);
 app.use(API, mobileRoutes);
 app.get('/api/user-contest-baskets', mobileApi.getUserContestBaskets);
 app.get('/payment/create-order', paymentController.createOrder);

@@ -1,5 +1,5 @@
 <div class="container-fluid py-4">
-    <h3 class="mb-4"><i class="bi bi-cash-coin text-warning me-2"></i>Withdrawal Requests (USDT)</h3>
+    <h3 class="mb-4"><i class="bi bi-cash-coin text-warning me-2"></i>Withdrawal Requests <small class="text-muted fs-6">INR &amp; USDT</small></h3>
     <div class="card border-0 shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -8,9 +8,9 @@
                         <tr>
                             <th>ID</th>
                             <th>User</th>
-                            <th>Amount</th>
-                            <th>Network</th>
-                            <th>USDT Address</th>
+                            <th>ProbCoins</th>
+                            <th>Payout</th>
+                            <th>Send to</th>
                             <th>Status</th>
                             <th>Requested</th>
                             <th>Action</th>
@@ -21,15 +21,22 @@
                             const sc = { pending: 'warning', accepted: 'success', approved: 'success', rejected: 'danger' };
                             const addr = request.usdt_wallet_address || (request.user_id && request.user_id.payment_details && request.user_id.payment_details.usdt_wallet_address) || '';
                             const network = request.usdt_network || (request.user_id && request.user_id.payment_details && request.user_id.payment_details.usdt_network) || '-';
+                            // NEW IMPLEMENTATION — NODE.JS PROJECT: INR or USDT payout (older rows: USDT, no payout amount)
+                            const currency = request.currency || 'USDT';
+                            const pd = request.payout_details || {};
+                            const inrTo = pd.method === 'UPI' ? 'UPI ' + pd.upi_id : (pd.method === 'BANK' ? pd.account_number + ' / ' + pd.ifsc_code : '-');
                             const statusLabel = request.status ? request.status.charAt(0).toUpperCase() + request.status.slice(1) : '';
                             const when = request.created_at ? new Date(request.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
                         %>
                         <tr>
                             <td><%= request.old_id || String(request._id).slice(-6) %></td>
                             <td><%= request.user_id && request.user_id.name ? request.user_id.name : 'N/A' %></td>
-                            <td class="fw-bold"><%= Number(request.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 }) %></td>
-                            <td><span class="badge bg-info"><%= network %></span></td>
-                            <td><small class="font-monospace"><%= addr ? String(addr).slice(0, 18) : '-' %></small></td>
+                            <td class="fw-bold"><%= Number(request.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) %></td>
+                            <td>
+                                <% if (request.payout_amount != null) { %><strong><%= currency === 'INR' ? '₹' + Number(request.payout_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : Number(request.payout_amount).toFixed(2) + ' USDT' %></strong><% } else { %><span class="text-muted">USDT</span><% } %>
+                                <% if (currency === 'USDT') { %><span class="badge bg-info ms-1"><%= network %></span><% } else { %><span class="badge bg-success ms-1">INR</span><% } %>
+                            </td>
+                            <td><small class="font-monospace"><%= currency === 'INR' ? inrTo : (addr ? String(addr).slice(0, 18) : '-') %></small></td>
                             <td><span class="badge bg-<%= sc[request.status] || 'secondary' %>"><%= statusLabel === 'Approved' ? 'Accepted' : statusLabel %></span></td>
                             <td><small><%= when %></small></td>
                             <td>

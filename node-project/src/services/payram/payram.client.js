@@ -14,6 +14,10 @@
  *                  → { paymentState, amountInUSD, filledAmount, filledAmountInUSD, currencySymbol, invoiceID, ... }
  *   verifyWebhook  X-Payram-Signature: sha256=<hex HMAC-SHA256(raw body, API key)> (recommended),
  *                  otherwise the API-Key header must equal our key (what the SDK checks).
+ *
+ * Two separate connections (NEW IMPLEMENTATION — NODE.JS PROJECT): 'mainnet' (PAYRAM_API_URL /
+ * PAYRAM_API_KEY) and 'testnet' (PAYRAM_TESTNET_API_URL / PAYRAM_TESTNET_API_KEY, a second PayRam
+ * installed with --testnet). Every call takes the environment; it defaults to mainnet.
  */
 
 const crypto = require('crypto');
@@ -21,11 +25,24 @@ const axios = require('axios');
 const config = require('../../config/env');
 const logger = require('../../config/logger');
 
-/** PayRam "Site URL" without a trailing slash or /api/v1. */
-function baseUrl() {
-  return String(config.PAYRAM.apiUrl || '').trim().replace(/\/+$/, '').replace(/\/api\/v1$/i, '');
+const ENVIRONMENTS = ['mainnet', 'testnet'];
+const envOf = (environment) => (environment === 'testnet' ? 'testnet' : 'mainnet');
+
+/** The URL / key / network of one connection. */
+function connection(environment) {
+  const c = envOf(environment) === 'testnet' ? config.PAYRAM.testnet || {} : config.PAYRAM;
+  return {
+    environment: envOf(environment),
+    url: String(c.apiUrl || '').trim().replace(/\/+$/, '').replace(/\/api\/v1$/i, ''),
+    key: String(c.apiKey || '').trim(),
+    network: String(c.network || '').trim().toUpperCase() || null,
+  };
 }
-const isConfigured = () => Boolean(baseUrl() && config.PAYRAM.apiKey);
+/** Connection used for new deposits (PAYRAM_MODE). */
+const activeEnvironment = () => envOf(config.PAYRAM.mode);
+/** PayRam "Site URL" without a trailing slash or /api/v1. */
+const baseUrl = (environment) => connection(environment).url;
+const isConfigured = (environment = activeEnvironment()) => { const c = connection(environment); return Boolean(c.url && c.key); };
 
 function errorMessage(res) {
   const data = res.data || {};
@@ -36,8 +53,11 @@ function errorMessage(res) {
  * @param {{ invoiceId:string, customerId:string, customerEmail:string, amountUsd:number, network?:string }} p
  * @returns {Promise<{ ok:true, reference_id:string, url:string } | { ok:false, message:string, code?:string }>}
  */
-async function createPayment({ invoiceId, customerId, customerEmail, amountUsd, network }) {
-  if (!isConfigured()) return { ok: false, message: 'PayRam is not configured (PAYRAM_API_URL / PAYRAM_API_KEY).' };
+async function createPayment({ invoiceId, customerId, customerEmail, amountUsd, network, environment }) {
+  const conn = connection(environment);
+  if (!conn.url || !conn.key) {
+    return { ok: false, message: conn.environment === 'testnet' ? 'PayRam testnet is not configured (PAYRAM_TESTNET_API_URL / PAYRAM_TESTNET_API_KEY).' : 'PayRam is not configured (PAYRAM_API_URL / PAYRAM_API_KEY).' };
+  }
   const body = {
     customerEmail,
     customerID: String(customerId),
@@ -47,8 +67,8 @@ async function createPayment({ invoiceId, customerId, customerEmail, amountUsd, 
     ...(network ? { network } : {}),
   };
   try {
-    const res = await axios.post(`${baseUrl()}/api/v1/payment`, body, {
-      headers: { 'API-Key': config.PAYRAM.apiKey, 'Content-Type': 'application/json' },
+    const res = await axios.post(`${conn.url}/api/v1/payment`, body, {
+      headers: { 'API-Key': conn.key, 'Content-Type': 'application/json' },
       timeout: (config.PAYRAM.timeoutSeconds || 20) * 1000,
       validateStatus: () => true,
     });
@@ -56,10 +76,10 @@ async function createPayment({ invoiceId, customerId, customerEmail, amountUsd, 
       return { ok: true, reference_id: String(res.data.reference_id), url: String(res.data.url) };
     }
     const code = res.data && res.data.error && res.data.error.code;
-    logger.warn(`[payram] create payment ${invoiceId} failed: HTTP ${res.status} ${code || ''} ${errorMessage(res)}`);
+    logger.warn(`[payram:${conn.environment}] create payment ${invoiceId} failed: HTTP ${res.status} ${code || ''} ${errorMessage(res)}`);
     return { ok: false, message: errorMessage(res), code: code || null };
   } catch (err) {
-    logger.warn(`[payram] create payment ${invoiceId} failed: ${err.message}`);
+    logger.warn(`[payram:${conn.environment}] create payment ${invoiceId} failed: ${err.message}`);
     return { ok: false, message: `Could not reach PayRam: ${err.message}` };
   }
 }
@@ -68,11 +88,12 @@ async function createPayment({ invoiceId, customerId, customerEmail, amountUsd, 
  * Current state of a payment straight from PayRam.
  * @returns {Promise<{ ok:true, data:object } | { ok:false, message:string, status?:number }>}
  */
-async function getPayment(referenceId) {
-  if (!isConfigured()) return { ok: false, message: 'PayRam is not configured' };
+async function getPayment(referenceId, environment) {
+  const conn = connection(environment);
+  if (!conn.url || !conn.key) return { ok: false, message: `PayRam ${conn.environment} is not configured` };
   try {
-    const res = await axios.get(`${baseUrl()}/api/v1/payment/reference/${encodeURIComponent(referenceId)}`, {
-      headers: { 'API-Key': config.PAYRAM.apiKey },
+    const res = await axios.get(`${conn.url}/api/v1/payment/reference/${encodeURIComponent(referenceId)}`, {
+      headers: { 'API-Key': conn.key },
       timeout: (config.PAYRAM.timeoutSeconds || 20) * 1000,
       validateStatus: () => true,
     });
@@ -97,8 +118,8 @@ const safeEqual = (a, b) => {
  * @param {object} headers Node request headers (lower-case keys)
  * @returns {{ ok:boolean, method:'signature'|'api_key'|null }}
  */
-function verifyWebhook(rawBody, headers = {}) {
-  const key = config.PAYRAM.apiKey;
+function verifyWebhook(rawBody, headers = {}, environment) {
+  const key = connection(environment).key;
   if (!key) return { ok: false, method: null };
   const signature = headers['x-payram-signature'];
   if (signature) {
@@ -111,4 +132,4 @@ function verifyWebhook(rawBody, headers = {}) {
   return { ok: false, method: null };
 }
 
-module.exports = { createPayment, getPayment, verifyWebhook, isConfigured, baseUrl };
+module.exports = { createPayment, getPayment, verifyWebhook, isConfigured, baseUrl, connection, activeEnvironment, ENVIRONMENTS };

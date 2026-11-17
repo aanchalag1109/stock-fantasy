@@ -27,7 +27,7 @@ const Contest = require('../../models/contest.model');
 const LeagueSession = require('../../models/league-session.model');
 const Transaction = require('../../models/transaction.model');
 const logger = require('../../config/logger');
-const { keysOf, publicId, num, round2 } = require('../../helpers/mobile-compat');
+const { keysOf, publicId, num, round2, probcoinLabel } = require('../../helpers/mobile-compat');
 const { notify } = require('../notifications/notification.service');
 const scoring = require('./contest-scoring');
 const { creditOnce } = require('./ledger');
@@ -120,7 +120,7 @@ async function distributeContest(contestId) {
           userRef: winner.user_id,
           balance: 'winnings_balance',
           amount,
-          transaction: { type: 'winnings', contest_id: label, transaction_id: txId, description: `Won ₹${amount} in contest #${label} (Rank ${winner.rank}, Entry #${entryKey})` },
+          transaction: { type: 'winnings', contest_id: label, transaction_id: txId, description: `Won ${probcoinLabel(amount)} in contest #${label} (Rank ${winner.rank}, Entry #${entryKey})` }, // NEW IMPLEMENTATION — NODE.JS PROJECT: ProbCoins, not ₹
         });
         if (!result.credited) continue;
         winners += 1;
@@ -135,7 +135,7 @@ async function distributeContest(contestId) {
     }
 
     await Contest.updateOne({ _id: contest._id }, { $set: { prizes_distributed: true, is_calculated: true, payout_started_at: null } });
-    return { success: true, message: `Contest #${label}: ₹${total} → ${winners} winners`, winners_count: winners, total_amount: total, contest_id: label };
+    return { success: true, message: `Contest #${label}: ${probcoinLabel(total)} → ${winners} winners`, winners_count: winners, total_amount: total, contest_id: label };
   } catch (err) {
     await Contest.updateOne({ _id: contest._id }, { $set: { payout_started_at: null } }).catch(() => {});
     throw err;
@@ -158,7 +158,7 @@ async function distributeSession(sessionId) {
   }
   return {
     success: true,
-    message: `Session #${publicId(session)}: ₹${total} distributed to ${winners} winners`,
+    message: `Session #${publicId(session)}: ${probcoinLabel(total)} distributed to ${winners} winners`,
     total_winners: winners,
     total_amount: total,
     contest_results: results,

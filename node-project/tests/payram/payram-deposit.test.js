@@ -30,6 +30,11 @@ logger.silent = true;
 const { ObjectId } = mongoose.Types;
 const API_KEY = 'test-payram-key-0123456789abcdef';
 const BASE = 'http://payram.test';
+// NEW IMPLEMENTATION — NODE.JS PROJECT: a second, separate PayRam server for testnet
+const TEST_BASE = 'http://payram-testnet.test';
+const TEST_KEY = 'testnet-key-fedcba9876543210';
+const SERVERS = { [BASE]: { key: API_KEY, name: 'mainnet' }, [TEST_BASE]: { key: TEST_KEY, name: 'testnet' } };
+const serverOf = (url) => Object.keys(SERVERS).find((base) => url.startsWith(`${base}/`));
 
 // ─── In-memory store ─────────────────────────────────────────────────────────
 
@@ -93,24 +98,29 @@ Transaction.create = async (doc) => {
   return t;
 };
 Setting.findOne = (f) => query(f.key === 'probcoin_conversion' && db.rate ? { key: f.key, value: { usdt_to_probcoin_rate: db.rate, inr_to_probcoin_rate: 1 } } : null);
+// Deposit & Withdrawal Settings rows (USDT limits / charges); none saved = .env limits, no charges
+Setting.find = (f) => ({ lean: async () => Object.entries(db.settings).filter(([key]) => f.key.$in.includes(key)).map(([key, value]) => ({ key, value })) });
 Payment.create = async () => { throw new Error('PayRam must not touch LG Pay payments'); };
 
 // ─── PayRam stub ─────────────────────────────────────────────────────────────
 
 let payram; // { created: [], state: Map(reference → status response), down: false, createError: null }
 axios.post = async (url, body, opts) => {
-  assert.equal(url, `${BASE}/api/v1/payment`);
-  assert.equal(opts.headers['API-Key'], API_KEY);
-  payram.created.push(body);
+  const base = serverOf(url);
+  assert.ok(base && url === `${base}/api/v1/payment`, url);
+  assert.equal(opts.headers['API-Key'], SERVERS[base].key, 'each server gets its own key');
+  payram.created.push({ ...body, _server: SERVERS[base].name });
   if (payram.createError) return { status: 422, data: { code: 3, error: { code: payram.createError, message: 'This project has no deposit wallet.' } } };
-  const reference = `ref-${payram.created.length}`;
+  const reference = `${SERVERS[base].name === 'testnet' ? 'tref' : 'ref'}-${payram.created.length}`;
   payram.state.set(reference, { paymentState: 'OPEN', amountInUSD: String(body.amountInUSD), invoiceID: body.invoiceID, currencySymbol: 'USDT', filledAmount: null, filledAmountInUSD: null });
-  return { status: 200, data: { reference_id: reference, url: `${BASE}/payments?reference_id=${reference}`, host: BASE } };
+  return { status: 200, data: { reference_id: reference, url: `${base}/payments?reference_id=${reference}`, host: base } };
 };
 axios.get = async (url, opts) => {
-  assert.ok(url.startsWith(`${BASE}/api/v1/payment/reference/`), url);
-  assert.equal(opts.headers['API-Key'], API_KEY);
+  const base = serverOf(url);
+  assert.ok(base && url.startsWith(`${base}/api/v1/payment/reference/`), url);
+  assert.equal(opts.headers['API-Key'], SERVERS[base].key);
   payram.statusCalls += 1;
+  payram.statusServers.push(SERVERS[base].name);
   if (payram.down) throw new Error('ECONNREFUSED');
   const ref = decodeURIComponent(url.split('/').pop());
   const state = payram.state.get(ref);
@@ -121,10 +131,11 @@ axios.get = async (url, opts) => {
 
 const ids = {};
 function reset() {
-  Object.assign(config.PAYRAM, { apiUrl: BASE, apiKey: API_KEY, network: '', minDepositUsdt: 1, maxDepositUsdt: 10000 });
+  Object.assign(config.PAYRAM, { apiUrl: BASE, apiKey: API_KEY, network: '', minDepositUsdt: 1, maxDepositUsdt: 10000, mode: 'mainnet', testnet: { apiUrl: TEST_BASE, apiKey: TEST_KEY, network: '' } });
   ids.user = new ObjectId();
   ids.other = new ObjectId();
   db = {
+    settings: {},
     rate: 90, // 1 USDT = 90 ProbCoins
     users: [
       { _id: ids.user, old_id: 41, email: 'player@example.com', deposit_balance: 100, winnings_balance: 0 },
@@ -133,7 +144,7 @@ function reset() {
     deposits: [],
     transactions: [],
   };
-  payram = { created: [], state: new Map(), down: false, createError: null, statusCalls: 0 };
+  payram = { created: [], state: new Map(), down: false, createError: null, statusCalls: 0, statusServers: [] };
 }
 const balance = () => db.users[0].deposit_balance;
 const deposit = () => db.deposits[0];
@@ -170,7 +181,7 @@ describe('PayRam USDT deposit — creating the payment', () => {
     assert.deepEqual({ enabled: cfg.body.enabled, rate: cfg.body.rate, currency: cfg.body.currency }, { enabled: true, rate: 90, currency: 'USDT' });
     const q = await request(app).post('/api/v1/payram/quote').send({ amount: '10.5' });
     assert.equal(q.body.probcoins, 945);
-    for (const [amount, message] of [['0', 'valid USDT amount'], ['abc', 'valid USDT amount'], ['1.234', 'valid USDT amount'], ['0.5', 'Minimum USDT deposit is 1'], ['20000', 'Maximum USDT deposit is 10000']]) {
+    for (const [amount, message] of [['0', 'valid USDT amount'], ['abc', 'valid USDT amount'], ['1.234', 'valid USDT amount'], ['0.5', 'at least 1 USDT'], ['20000', 'cannot exceed 10000 USDT']]) {
       const r = await request(app).post('/api/v1/payram/quote').send({ amount });
       assert.equal(r.status, 400, amount);
       assert.match(r.body.message, new RegExp(message));
@@ -182,7 +193,7 @@ describe('PayRam USDT deposit — creating the payment', () => {
     assert.equal(res.status, 200, res.text);
     assert.equal(res.body.payment_url, `${BASE}/payments?reference_id=ref-1`);
     assert.deepEqual(payram.created[0], {
-      customerEmail: 'player@example.com', customerID: '41', amountInUSD: 10.5, invoiceID: deposit().deposit_id, currency: 'USDT',
+      customerEmail: 'player@example.com', customerID: '41', amountInUSD: 10.5, invoiceID: deposit().deposit_id, currency: 'USDT', _server: 'mainnet',
     });
     assert.equal(deposit().gateway, 'PAYRAM');
     assert.equal(deposit().currency, 'USDT');
@@ -406,5 +417,134 @@ describe('PayRam USDT deposit — status polling and history', () => {
 
   test('the /api/payram alias works too', async () => {
     assert.equal((await request(app).get('/api/payram/config')).body.currency, 'USDT');
+  });
+});
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — charges, admin limits, confirmations, network
+describe('PayRam USDT deposit — charges, limits and blockchain checks', () => {
+  beforeEach(reset);
+
+  test('gateway charges paid by the user are added to the amount PayRam collects; ProbCoins stay on the base amount', async () => {
+    Object.assign(db.settings, { usdt_deposit_charge_percent: 2, usdt_deposit_charge_fixed: 0.5, usdt_deposit_charge_bearer: 'user' });
+    const q = await request(app).post('/api/v1/payram/quote').send({ amount: '10' });
+    assert.deepEqual(
+      { base: q.body.base_amount, charges: q.body.charges, total: q.body.total_payable, coins: q.body.probcoins },
+      { base: 10, charges: 0.7, total: 10.7, coins: 900 },
+    );
+    await createDeposit('10');
+    assert.equal(payram.created[0].amountInUSD, 10.7, 'PayRam collects amount + charges');
+    assert.deepEqual({ amount: deposit().amount, base: deposit().base_amount, charges: deposit().charges }, { amount: 10.7, base: 10, charges: 0.7 });
+    payramSays(deposit().reference_id, { paymentState: 'FILLED', filledAmountInUSD: '10.7' });
+    await sendWebhook(filledPayload(deposit()));
+    assert.equal(balance(), 100 + 900);
+  });
+
+  test('charges absorbed by the platform: user pays the base amount only', async () => {
+    Object.assign(db.settings, { usdt_deposit_charge_percent: 3, usdt_deposit_charge_bearer: 'platform' });
+    const q = await request(app).post('/api/v1/payram/quote').send({ amount: '10' });
+    assert.deepEqual({ charges: q.body.charges, total: q.body.total_payable }, { charges: 0.3, total: 10 });
+  });
+
+  test('USDT limits saved in admin replace the .env defaults; ProbCoins can be asked for directly', async () => {
+    Object.assign(db.settings, { usdt_min_deposit_amount: 5, usdt_max_deposit_amount: 50 });
+    assert.match((await request(app).post('/api/v1/payram/quote').send({ amount: '4' })).body.message, /at least 5 USDT/);
+    assert.match((await request(app).post('/api/v1/payram/quote').send({ amount: '60' })).body.message, /cannot exceed 50 USDT/);
+    const byCoins = await request(app).post('/api/v1/payram/quote').send({ probcoins: '1000' });
+    assert.equal(byCoins.body.base_amount, 11.12, '1000 / 90 rounded up to the cent');
+    assert.equal(byCoins.body.probcoins, 1000);
+  });
+
+  test('not credited until PayRam reports the required blockchain confirmations', async () => {
+    await createDeposit('10');
+    const d = deposit();
+    payramSays(d.reference_id, { paymentState: 'FILLED', filledAmountInUSD: '10', blockchainSymbol: 'TRX', explorerTransaction: 'https://tronscan.org/#/transaction/0xabc' });
+    await sendWebhook(filledPayload(d, { confirmation_current: 5, confirmation_required: 19 }));
+    assert.equal(balance(), 100, 'not final on chain yet');
+    assert.equal(deposit().status, 'pending');
+    assert.deepEqual({ c: deposit().confirmations, r: deposit().confirmations_required, chain: deposit().blockchain }, { c: 5, r: 19, chain: 'TRX' });
+    assert.match(deposit().webhook_log.at(-1).result, /awaiting confirmations \(5\/19\)/);
+
+    // a status re-check before the next webhook still waits (last known 5/19)
+    await request(app).get(`/api/v1/payram/deposit/${d.deposit_id}`).query({ user_id: '41' });
+    assert.equal(balance(), 100);
+
+    await sendWebhook(filledPayload(d, { confirmation_current: 19, confirmation_required: 19 }));
+    assert.equal(deposit().status, 'credited');
+    assert.equal(balance(), 100 + 900);
+    assert.equal(deposit().explorer_url, 'https://tronscan.org/#/transaction/0xabc');
+    assert.deepEqual({ chain: deposit().verification.blockchain, c: deposit().verification.confirmations }, { chain: 'TRX', c: 19 });
+  });
+
+  test('paid on a different blockchain than the deposit was restricted to → review', async () => {
+    config.PAYRAM.network = 'TRX';
+    await createDeposit('10');
+    payramSays(deposit().reference_id, { paymentState: 'FILLED', filledAmountInUSD: '10', blockchainSymbol: 'ETH' });
+    await sendWebhook(filledPayload(deposit()));
+    assert.equal(deposit().status, 'review');
+    assert.match(deposit().review_reason, /Paid on ETH but the deposit was for TRX/);
+    assert.equal(balance(), 100);
+  });
+});
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: separate PayRam testnet connection
+describe('PayRam testnet connection', () => {
+  beforeEach(reset);
+  const sendTestnetWebhook = (payload, key = TEST_KEY) => {
+    const raw = Buffer.from(JSON.stringify(payload));
+    return request(app).post('/api/v1/payram/testnet/webhook').set('Content-Type', 'application/json')
+      .set('X-Payram-Signature', `sha256=${crypto.createHmac('sha256', key).update(raw).digest('hex')}`).send(raw.toString());
+  };
+
+  test('PAYRAM_MODE=testnet sends new deposits to the testnet server with the testnet key and network', async () => {
+    config.PAYRAM.mode = 'testnet';
+    config.PAYRAM.testnet.network = 'TRX';
+    const res = await createDeposit('5');
+    assert.equal(res.status, 200, res.text);
+    assert.equal(payram.created[0]._server, 'testnet');
+    assert.equal(payram.created[0].network, 'TRX');
+    assert.equal(deposit().environment, 'testnet');
+    assert.equal(res.body.deposit.environment, 'testnet');
+    assert.ok(res.body.payment_url.startsWith(TEST_BASE));
+    assert.equal((await request(app).get('/api/v1/payram/config')).body.environment, 'testnet');
+  });
+
+  test('testnet webhook (testnet key) credits a testnet deposit, verified on the testnet server', async () => {
+    config.PAYRAM.mode = 'testnet';
+    await createDeposit('5');
+    const d = deposit();
+    payramSays(d.reference_id, { paymentState: 'FILLED', filledAmountInUSD: '5' });
+    const res = await sendTestnetWebhook(filledPayload(d));
+    assert.equal(res.status, 200, res.text);
+    assert.equal(deposit().status, 'credited');
+    assert.equal(balance(), 100 + 450);
+    assert.deepEqual([...new Set(payram.statusServers)], ['testnet']);
+  });
+
+  test('the two connections never mix: wrong key or wrong webhook endpoint is refused', async () => {
+    config.PAYRAM.mode = 'testnet';
+    await createDeposit('5');
+    const d = deposit();
+    payramSays(d.reference_id, { paymentState: 'FILLED', filledAmountInUSD: '5' });
+    assert.equal((await sendTestnetWebhook(filledPayload(d), API_KEY)).status, 401, 'mainnet key on the testnet webhook');
+    assert.equal((await sendWebhook(filledPayload(d))).status, 200, 'mainnet webhook does not see testnet deposits');
+    assert.equal(deposit().status, 'pending');
+    assert.equal(balance(), 100);
+  });
+
+  test('switching the mode later keeps old deposits on the connection they were created with', async () => {
+    await createDeposit('10'); // mainnet
+    const d = deposit();
+    config.PAYRAM.mode = 'testnet';
+    payramSays(d.reference_id, { paymentState: 'FILLED', filledAmountInUSD: '10' });
+    await request(app).get(`/api/v1/payram/deposit/${d.deposit_id}`).query({ user_id: '41' });
+    assert.equal(deposit().status, 'credited');
+    assert.deepEqual([...new Set(payram.statusServers)], ['mainnet']);
+  });
+
+  test('testnet not configured → USDT deposits unavailable', async () => {
+    config.PAYRAM.mode = 'testnet';
+    config.PAYRAM.testnet = { apiUrl: '', apiKey: '' };
+    assert.equal((await createDeposit('5')).status, 503);
+    assert.equal(payram.created.length, 0);
   });
 });

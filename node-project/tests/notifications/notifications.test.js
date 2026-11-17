@@ -121,6 +121,7 @@ function stub(name) {
   Model.updateOne = async (f, u) => { const d = find(f); if (d) applyUpdate(d, u); return { modifiedCount: d ? 1 : 0 }; };
   Model.updateMany = async (f, u) => { const docs = all().filter((d) => matches(d, f)); docs.forEach((d) => applyUpdate(d, u)); return { modifiedCount: docs.length }; };
   Model.findByIdAndUpdate = async (id, u) => { const d = find({ _id: id }); const before = d ? { ...d } : null; if (d) applyUpdate(d, u); return before; };
+  Model.findOneAndUpdate = async (f, u) => { const d = find(f); const before = d ? { ...d } : null; if (d) applyUpdate(d, u); return before; };
   Model.aggregate = async () => [];
 }
 Object.keys(models).forEach(stub);
@@ -173,7 +174,7 @@ describe('notify()', () => {
     assert.equal(result.status, 'created');
     const [note] = notesFor('alice');
     assert.equal(note.title, 'Deposit successful');
-    assert.equal(note.description, '₹1,500 has been added to your wallet (Ref: ORD1).');
+    assert.equal(note.description, '1,500 ProbCoins has been added to your wallet (Ref: ORD1).');
     assert.equal(note.type, 'transaction');
     assert.equal(note.push_status, 'sent');
     assert.equal(pushes.length, 1);
@@ -245,7 +246,7 @@ describe('notify()', () => {
 
   test('templates include safe reasons and never the admin-only wallet reason', () => {
     const rejected = notifications.TEMPLATES.withdrawal_rejected({ amount: 2500.5, reason: '  Wallet   address invalid ' });
-    assert.equal(rejected.description, 'Your withdrawal of ₹2,500.5 was rejected and the amount has been refunded to your winnings balance. Reason: Wallet address invalid');
+    assert.equal(rejected.description, 'Your withdrawal of 2,500.5 ProbCoins was rejected and the amount has been refunded to your winnings balance. Reason: Wallet address invalid');
     const adjusted = notifications.TEMPLATES.wallet_adjusted({ amount: 100, credit: false, balance: 'winnings', reason: 'fraud check' });
     assert.doesNotMatch(adjusted.description, /fraud/);
   });
@@ -362,22 +363,40 @@ describe('session reminders', () => {
 describe('deposits', () => {
   beforeEach(reset);
 
+  // A real LG Pay callback is signed (same MD5 signature as PHP).
+  const signed = (body) => ({ ...body, sign: paymentController.generateSignature(body) });
+
   test('LG Pay success callback notifies once even if the callback and return page both fire', async () => {
     db.Payment.push({ _id: new ObjectId(), order_id: 'ORD1', user_id: ids.alice, amount: 2000, payment_status: 0 });
-    await paymentController.lgpayCallback(fakeReq({ body: { order_sn: 'ORD1', status: '1', sign: 'x' } }), fakeRes());
-    await paymentController.lgpayCallback(fakeReq({ body: { order_sn: 'ORD1', status: '1', sign: 'x' } }), fakeRes()); // retry
+    await paymentController.lgpayCallback(fakeReq({ body: signed({ order_sn: 'ORD1', status: '1' }) }), fakeRes());
+    await paymentController.lgpayCallback(fakeReq({ body: signed({ order_sn: 'ORD1', status: '1' }) }), fakeRes()); // retry
     await settle();
     const notes = notesFor('alice', 'deposit_success');
     assert.equal(notes.length, 1);
-    assert.match(notes[0].description, /₹2,000 has been added/);
-    assert.equal(db.User.find((u) => same(u._id, ids.alice)).deposit_balance, 3000, 'balance logic unchanged');
+    assert.match(notes[0].description, /2,000 ProbCoins has been added/);
+    assert.equal(db.User.find((u) => same(u._id, ids.alice)).deposit_balance, 3000, 'an order from before the conversion is credited 1:1');
   });
 
   test('a non-success callback sends nothing', async () => {
     db.Payment.push({ _id: new ObjectId(), order_id: 'ORD2', user_id: ids.alice, amount: 2000, payment_status: 0 });
-    await paymentController.lgpayCallback(fakeReq({ body: { order_sn: 'ORD2', status: '2', sign: 'x' } }), fakeRes());
+    await paymentController.lgpayCallback(fakeReq({ body: signed({ order_sn: 'ORD2', status: '2' }) }), fakeRes());
     await settle();
     assert.equal(db.Notification.length, 0);
+  });
+
+  test('a callback with a bad signature is not trusted: nothing is credited unless LG Pay confirms', async () => {
+    const axios = require('axios');
+    const realGet = axios.get;
+    axios.get = async () => ({ status: 200, data: { status: 0 } }); // LG Pay: not paid
+    try {
+      db.Payment.push({ _id: new ObjectId(), order_id: 'ORD3', user_id: ids.alice, amount: 2000, payment_status: 0 });
+      await paymentController.lgpayCallback(fakeReq({ body: { order_sn: 'ORD3', status: '1', sign: 'forged' } }), fakeRes());
+      await settle();
+      assert.equal(db.User.find((u) => same(u._id, ids.alice)).deposit_balance, 1000);
+      assert.equal(notesFor('alice', 'deposit_success').length, 0);
+    } finally {
+      axios.get = realGet;
+    }
   });
 
   test('manual deposit API notifies; rejected amounts do not', async () => {
@@ -410,7 +429,7 @@ describe('withdrawals', () => {
     await settle();
     assert.equal(res.body.success, true);
     const [note] = notesFor('alice', 'withdrawal_submitted');
-    assert.match(note.description, /₹1,000 .* pending approval/);
+    assert.match(note.description, /1,000 ProbCoins .* pending approval/);
   });
 
   test('a withdrawal over the limit is rejected without a notification', async () => {
@@ -460,7 +479,7 @@ describe('winnings', () => {
     await settle();
     const notes = notesFor('alice', 'winnings_credited');
     assert.equal(notes.length, 1);
-    assert.equal(notes[0].title, 'You won ₹50!');
+    assert.equal(notes[0].title, 'You won 50 ProbCoins!');
     assert.match(notes[0].description, /MEGA contest #11 \(Morning League\)/);
     assert.equal(notes[0].data.transaction_id, 'CONTEST_11_ENTRY_1');
     assert.equal(notesFor('bob').length, 0, 'losing entries get nothing');
@@ -485,7 +504,7 @@ describe('account & other events', () => {
     await adminUsers.adjustWallet(fakeReq({ params: { id: ids.alice }, body: { type: 'add_winnings', amount: '250', reason: 'goodwill after complaint #44' } }), fakeRes());
     await settle();
     const [note] = notesFor('alice', 'wallet_adjusted');
-    assert.equal(note.description, '₹250 has been added to your winnings balance.');
+    assert.equal(note.description, '250 ProbCoins has been added to your winnings balance.');
   });
 });
 

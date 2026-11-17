@@ -21,10 +21,15 @@ const wantsJson = (req) => req.xhr || (req.get('Accept') || '').includes('applic
 
 const index = async (req, res) => {
   try {
-    const limits = await limitsService.getLimits();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: INR & USDT sections show the current conversion rates
+    const [limits, rates] = await Promise.all([limitsService.getLimits(), require('../../services/probcoin-conversion.service').getRates()]);
     render(res, 'settings/deposit_withdrawal', {
       title: 'Deposit & Withdrawal Settings',
       limits,
+      rates,
+      networks: limitsService.WITHDRAWAL_NETWORKS,
+      maxChargePercent: limitsService.MAX_CHARGE_PERCENT,
+      usdtDefaults: { min: require('../../config/env').PAYRAM.minDepositUsdt, max: require('../../config/env').PAYRAM.maxDepositUsdt },
       maxAllowed: limitsService.MAX_ALLOWED_AMOUNT,
       admin: req.session.admin,
     });

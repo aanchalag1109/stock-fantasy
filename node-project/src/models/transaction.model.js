@@ -15,7 +15,12 @@ const transactionSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending', index: true },
   payment_method: { type: String, default: null },
   transaction_id: { type: String, unique: true, sparse: true },
-  transaction_reference: { type: String, default: null, index: true }
+  transaction_reference: { type: String, default: null, index: true },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: `amount` is ProbCoins; for purchases and withdrawals these
+  // record the real-money side (e.g. 5000 ProbCoins for ₹500).
+  currency: { type: String, default: null },
+  currency_amount: { type: Number, default: null },
+  rate: { type: Number, default: null }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

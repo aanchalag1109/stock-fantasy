@@ -37,7 +37,9 @@ const USER_FIELDS = '_id old_id fcm_token notification_preferences';
 
 // ─── Message templates ───────────────────────────────────────────────────────
 
-const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+// NEW IMPLEMENTATION — NODE.JS PROJECT: balances, prizes, deposits and withdrawals are all ProbCoins
+// (deposits are paid in INR or USDT at the admin's conversion rate), so amounts read "500 ProbCoins".
+const money = (n) => `${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} ProbCoins`;
 const istTime = (d) => new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
 }).format(new Date(d));

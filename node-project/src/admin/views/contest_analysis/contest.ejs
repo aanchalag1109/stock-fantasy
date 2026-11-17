@@ -159,7 +159,7 @@
                                         <strong><%= txn.name || 'N/A' %></strong><br>
                                         <small><%= txn.mobile || '' %></small>
                                     </td>
-                                    <td><strong class="text-success">₹<%= money2(txn.amount) %></strong></td>
+                                    <td><strong class="text-success"><%= money2(txn.amount) %> PC</strong></td>
                                     <td><small><%= txn.description || '' %></small></td>
                                     <td><small><%= formatIst(txn.created_at, 'short') %></small></td>
                                 </tr>

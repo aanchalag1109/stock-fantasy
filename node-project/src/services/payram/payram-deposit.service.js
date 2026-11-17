@@ -13,6 +13,9 @@
  *   2. PayRam calls the webhook (authenticated by X-Payram-Signature or API-Key), or the app polls
  *      the status endpoint. Either way the payment is re-read from PayRam's API before anything is
  *      credited: state FILLED/OVER_FILLED, currency USDT, amount = our amount, invoice = our deposit.
+ *   Client feedback: charges and limits come from the shared quote (Deposit & Withdrawal
+ *   Settings); the blockchain, confirmations and explorer link are recorded, and a payment is
+ *   never credited while PayRam reports fewer confirmations than required.
  *   3. Credit exactly once: the deposit is claimed atomically (pending/partially_paid → credited)
  *      and the ledger writes transaction PAYRAM_<deposit_id> (unique index) before the balance
  *      $inc — concurrent or repeated webhooks cannot credit twice. MongoDB here is a standalone
@@ -26,11 +29,11 @@ const User = require('../../models/user.model');
 const config = require('../../config/env');
 const logger = require('../../config/logger');
 const { creditOnce } = require('../contest-automation/ledger');
-const probcoinConversion = require('../probcoin-conversion.service');
 const payram = require('./payram.client');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: shared INR/USDT quote (rate, per-currency limits, gateway charges)
+const { depositQuote } = require('../payments/quote.service');
 
 const OPEN_STATUSES = ['pending', 'partially_paid'];
-const AMOUNT_RE = /^\d{1,9}(\.\d{1,2})?$/;
 const num = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 const round2 = (n) => Math.round(Number(n) * 100) / 100;
 const EPSILON = 0.000001;
@@ -49,20 +52,12 @@ async function findUser(ref) {
 }
 
 /**
- * ProbCoins for a USDT amount at the admin-configured rate (ProbCoin Conversion page).
- * @returns {Promise<{ ok:true, amount:number, rate:number, probcoins:number, min:number, max:number } | { ok:false, status:number, message:string }>}
+ * Price of a USDT deposit: ProbCoins at the USDT rate, gateway charges and the total to pay.
+ * Limits: Deposit & Withdrawal Settings (USDT), falling back to PAYRAM_MIN/MAX_DEPOSIT_USDT.
+ * @returns {Promise<object>} depositQuote() result for USDT
  */
-async function quote(rawAmount) {
-  const str = rawAmount === undefined || rawAmount === null ? '' : String(rawAmount).trim();
-  const { minDepositUsdt: min, maxDepositUsdt: max } = config.PAYRAM;
-  if (!AMOUNT_RE.test(str) || Number(str) <= 0) return fail(400, 'Enter a valid USDT amount (up to 2 decimal places).', { min_amount: min, max_amount: max });
-  const amount = Number(str);
-  if (amount < min) return fail(400, `Minimum USDT deposit is ${min} USDT.`, { min_amount: min, max_amount: max });
-  if (amount > max) return fail(400, `Maximum USDT deposit is ${max} USDT.`, { min_amount: min, max_amount: max });
-  const converted = await probcoinConversion.convert('USDT', str);
-  if (converted.error) return fail(503, 'USDT deposits are not available right now (conversion rate not configured).');
-  if (!(converted.probcoin > 0)) return fail(400, 'This amount is too small to buy any ProbCoins.');
-  return { ok: true, amount, rate: converted.rate, probcoins: converted.probcoin, min, max };
+async function quote(rawAmount, { probcoins } = {}) {
+  return depositQuote({ currency: 'USDT', amount: rawAmount, probcoins });
 }
 
 const newDepositId = () => `PRM${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`;
@@ -78,14 +73,24 @@ function publicDeposit(d) {
   return {
     deposit_id: d.deposit_id,
     gateway: 'PAYRAM',
+    environment: d.environment || 'mainnet',
     currency: 'USDT',
     amount: d.amount,
+    base_amount: d.base_amount != null ? d.base_amount : d.amount,
+    charges: d.charges || 0,
+    charges_bearer: d.charges_bearer || null,
+    total_payable: d.amount,
     rate: d.rate,
     probcoins: d.probcoins,
     status: d.status,
     payment_url: d.status === 'pending' || d.status === 'partially_paid' ? d.payment_url : null,
     reference_id: d.reference_id || null,
     filled_amount: d.filled_amount != null ? d.filled_amount : null,
+    blockchain: d.blockchain || null,
+    confirmations: d.confirmations != null ? d.confirmations : null,
+    confirmations_required: d.confirmations_required != null ? d.confirmations_required : null,
+    tx_hashes: d.tx_hashes || [],
+    explorer_url: d.explorer_url || null,
     created_at: d.created_at || null,
     credited_at: d.credited_at || null,
   };
@@ -95,10 +100,13 @@ function publicDeposit(d) {
  * Creates the deposit and the PayRam payment link.
  * @returns {Promise<{ ok:true, deposit:object } | { ok:false, status:number, message:string }>}
  */
-async function createDeposit({ user, amount }) {
+async function createDeposit({ user, amount, probcoins }) {
   if (!user) return fail(404, 'User not found');
-  if (!payram.isConfigured()) return fail(503, 'USDT deposits are not available right now.');
-  const q = await quote(amount);
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: new deposits use the connection selected by PAYRAM_MODE
+  const environment = payram.activeEnvironment();
+  const conn = payram.connection(environment);
+  if (!payram.isConfigured(environment)) return fail(503, 'USDT deposits are not available right now.');
+  const q = await quote(amount, { probcoins });
   if (!q.ok) return q;
 
   const depositId = newDepositId();
@@ -107,10 +115,14 @@ async function createDeposit({ user, amount }) {
     user_id: user._id,
     gateway: 'PAYRAM',
     currency: 'USDT',
-    amount: q.amount,
+    amount: q.total_payable,
+    base_amount: q.base_amount,
+    charges: q.charges,
+    charges_bearer: q.charges_bearer,
     rate: q.rate,
     probcoins: q.probcoins,
-    network: config.PAYRAM.network || null,
+    network: conn.network || null,
+    environment,
     status: 'pending',
   });
 
@@ -118,8 +130,9 @@ async function createDeposit({ user, amount }) {
     invoiceId: depositId,
     customerId: user.old_id != null ? user.old_id : user._id,
     customerEmail: customerEmail(user),
-    amountUsd: q.amount,
-    network: config.PAYRAM.network || undefined,
+    amountUsd: q.total_payable,
+    network: conn.network || undefined,
+    environment,
   });
   if (!link.ok) {
     await PayramDeposit.updateOne({ _id: deposit._id }, { $set: { status: 'failed', failure_reason: link.message } });
@@ -128,7 +141,7 @@ async function createDeposit({ user, amount }) {
   }
 
   await PayramDeposit.updateOne({ _id: deposit._id }, { $set: { reference_id: link.reference_id, payment_url: link.url } });
-  logger.info(`[payram] deposit ${depositId} created: ${q.amount} USDT → ${q.probcoins} ProbCoins, ref ${link.reference_id}`);
+  logger.info(`[payram] deposit ${depositId} created: ${q.total_payable} USDT (${q.base_amount} + charges ${q.charges}) → ${q.probcoins} ProbCoins, ref ${link.reference_id}`);
   return { ok: true, deposit: publicDeposit({ ...deposit.toObject(), reference_id: link.reference_id, payment_url: link.url }) };
 }
 
@@ -170,6 +183,9 @@ async function credit(deposit, verification, { fromStatuses = OPEN_STATUSES, pay
         transaction_id: transactionId,
         transaction_reference: claimed.reference_id,
         description: `USDT deposit via PayRam: ${claimed.amount} USDT → ${claimed.probcoins} ProbCoins (rate ${claimed.rate})`,
+        currency: 'USDT',
+        currency_amount: claimed.amount,
+        rate: claimed.rate,
       },
     });
     if (result.missingUser) {
@@ -192,7 +208,7 @@ async function credit(deposit, verification, { fromStatuses = OPEN_STATUSES, pay
  * @returns {Promise<{ result:string, retry?:boolean }>}
  */
 async function verifyAndApply(deposit, { source, authenticatedBy = null, webhook = null }) {
-  const check = await payram.getPayment(deposit.reference_id);
+  const check = await payram.getPayment(deposit.reference_id, deposit.environment || 'mainnet');
   if (!check.ok) {
     await logEvent(deposit, { source, status: webhook ? String(webhook.status || '') : null, authenticated_by: authenticatedBy, result: `verification failed: ${check.message}` });
     return { result: 'verification_unavailable', retry: true };
@@ -204,12 +220,23 @@ async function verifyAndApply(deposit, { source, authenticatedBy = null, webhook
   const filled = num(data.filledAmount != null ? data.filledAmount : (webhook && webhook.filled_amount));
   const currency = String(data.currencySymbol || (webhook && webhook.currency) || '').toUpperCase();
   const txHashes = webhook && Array.isArray(webhook.payment_info) ? webhook.payment_info.map((p) => p && p.transaction_hash).filter(Boolean) : [];
+  const blockchain = String(data.blockchainSymbol || '').toUpperCase() || null;
+  const confirmations = num(webhook && webhook.confirmation_current);
+  const confirmationsRequired = num(webhook && webhook.confirmation_required);
   const progress = {
     payram_state: state,
     ...(filled != null ? { filled_amount: filled } : {}),
     ...(filledUsd != null ? { filled_amount_in_usd: filledUsd } : {}),
     ...(txHashes.length ? { tx_hashes: txHashes } : {}),
+    ...(blockchain ? { blockchain } : {}),
+    ...(confirmations != null ? { confirmations } : {}),
+    ...(confirmationsRequired != null ? { confirmations_required: confirmationsRequired } : {}),
+    ...(data.explorerTransaction ? { explorer_url: String(data.explorerTransaction) } : {}),
   };
+  // Confirmations: from this webhook, or the last ones PayRam reported for this deposit.
+  const current = confirmations != null ? confirmations : deposit.confirmations;
+  const required = confirmationsRequired != null ? confirmationsRequired : deposit.confirmations_required;
+  const awaitingConfirmations = current != null && required != null && current < required;
 
   let result;
   if (data.invoiceID && String(data.invoiceID) !== deposit.deposit_id) {
@@ -219,12 +246,19 @@ async function verifyAndApply(deposit, { source, authenticatedBy = null, webhook
   } else if (PAID_STATES.includes(state)) {
     if (currency && currency !== 'USDT') {
       result = await toReview(deposit, `Paid in ${currency} instead of USDT`, progress);
+    } else if (deposit.network && blockchain && blockchain !== deposit.network) {
+      result = await toReview(deposit, `Paid on ${blockchain} but the deposit was for ${deposit.network}`, progress);
+    } else if (awaitingConfirmations) {
+      // Not final on the blockchain yet: record progress, credit on a later webhook / re-verify.
+      await PayramDeposit.updateOne({ _id: deposit._id, status: { $in: OPEN_STATUSES } }, { $set: progress });
+      result = `awaiting confirmations (${current}/${required})`;
     } else if (filledUsd != null && filledUsd + 0.01 < deposit.amount) {
       result = await toReview(deposit, `PayRam reports ${state} but only ${filledUsd} USD of ${deposit.amount} was received`, progress);
     } else {
       await PayramDeposit.updateOne({ _id: deposit._id, status: { $in: OPEN_STATUSES } }, { $set: progress });
       result = await credit(deposit, {
         verified_at: new Date(), payment_state: state, amount_in_usd: amountInUsd, filled_amount_in_usd: filledUsd, currency: currency || null,
+        blockchain, confirmations: current != null ? current : null, confirmations_required: required != null ? required : null,
       });
       if (result === 'credited' && state === 'OVER_FILLED') {
         await PayramDeposit.updateOne({ _id: deposit._id }, { $set: { review_reason: `Overpaid: received ${filledUsd != null ? filledUsd : '?'} USD for a ${deposit.amount} USDT deposit; ProbCoins credited for ${deposit.amount} USDT.` } });
@@ -262,10 +296,13 @@ async function verifyAndApply(deposit, { source, authenticatedBy = null, webhook
  * @param {object} headers
  * @returns {Promise<{ httpStatus:number, body:object }>}
  */
-async function handleWebhook(rawBody, headers) {
-  const auth = payram.verifyWebhook(rawBody, headers);
+async function handleWebhook(rawBody, headers, environment = 'mainnet') {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: each connection has its own webhook URL and key, and only
+  // sees its own deposits — a testnet event can never confirm a mainnet deposit (or the reverse).
+  const env = environment === 'testnet' ? 'testnet' : 'mainnet';
+  const auth = payram.verifyWebhook(rawBody, headers, env);
   if (!auth.ok) {
-    logger.warn(`[payram] webhook rejected (${auth.method ? `bad ${auth.method}` : 'no signature or API-Key'})`);
+    logger.warn(`[payram:${env}] webhook rejected (${auth.method ? `bad ${auth.method}` : 'no signature or API-Key'})`);
     return { httpStatus: 401, body: { message: 'Unauthorized' } };
   }
   let payload;
@@ -277,9 +314,12 @@ async function handleWebhook(rawBody, headers) {
   const referenceId = payload && payload.reference_id ? String(payload.reference_id) : '';
   if (!referenceId) return { httpStatus: 400, body: { message: 'reference_id is required' } };
 
-  const deposit = await PayramDeposit.findOne({ reference_id: referenceId }).lean();
+  const deposit = await PayramDeposit.findOne({
+    reference_id: referenceId,
+    environment: env === 'testnet' ? 'testnet' : { $in: ['mainnet', null] }, // deposits from before this field are mainnet
+  }).lean();
   if (!deposit) {
-    logger.warn(`[payram] webhook for unknown reference ${referenceId} (status ${payload.status})`);
+    logger.warn(`[payram:${env}] webhook for unknown reference ${referenceId} (status ${payload.status})`);
     return { httpStatus: 200, body: { message: 'Webhook received successfully' } };
   }
   if (payload.invoice_id && String(payload.invoice_id) !== deposit.deposit_id) {
@@ -340,13 +380,13 @@ async function adminReject(depositId, { admin, note }) {
   return { type: 'success', message: `Deposit ${deposit.deposit_id} rejected; nothing was credited.` };
 }
 
-/** Admin "Check with PayRam": re-reads the payment and applies it (credits if now paid). */
+/** Admin "Re-verify": re-reads the payment from PayRam and applies it (credits if now paid and confirmed). */
 async function adminRefresh(depositId) {
   const deposit = await PayramDeposit.findOne({ deposit_id: String(depositId) }).lean();
   if (!deposit) return { type: 'error', message: 'Deposit not found' };
   if (!deposit.reference_id) return { type: 'error', message: 'This deposit has no PayRam reference (it was never created at PayRam).' };
   if (!OPEN_STATUSES.includes(deposit.status)) {
-    const check = await payram.getPayment(deposit.reference_id);
+    const check = await payram.getPayment(deposit.reference_id, deposit.environment || 'mainnet');
     return check.ok
       ? { type: 'success', message: `PayRam status: ${check.data.paymentState}${check.data.filledAmountInUSD ? ` (received ${check.data.filledAmountInUSD} USD)` : ''}. Deposit is ${deposit.status}; nothing changed.` }
       : { type: 'error', message: `PayRam: ${check.message}` };

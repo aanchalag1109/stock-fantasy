@@ -8,6 +8,12 @@
   // USDT details — prefer values stored on the withdrawal request itself
   const usdtAddr = request.usdt_wallet_address || (user && user.payment_details && user.payment_details.usdt_wallet_address) || null;
   const usdtNet  = request.usdt_network || (user && user.payment_details && user.payment_details.usdt_network) || 'BEP20';
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: INR or USDT payout
+  const currency = request.currency || 'USDT';
+  const pd = request.payout_details || {};
+  const payoutText = request.payout_amount != null
+    ? (currency === 'INR' ? '₹' + Number(request.payout_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : Number(request.payout_amount).toFixed(2) + ' USDT')
+    : null;
 
   function fmtDate(d) {
     if (!d) return '—';
@@ -104,17 +110,42 @@
               <div class="fw-semibold"><%= request.admin_message %></div>
             </div>
             <% } %>
+            <% if (request.payout_reference) { %>
+            <div class="col-12 mb-3">
+              <label class="text-muted small">Payout Reference</label>
+              <div class="fw-semibold font-monospace text-break"><%= request.payout_reference %></div>
+            </div>
+            <% } %>
           </div>
         </div>
       </div>
 
-      <!-- USDT Payout Details -->
+      <!-- Payout Details -->
       <div class="card border-0 shadow-sm mb-4 border-warning">
         <div class="card-header bg-warning text-white">
-          <i class="bi bi-wallet2 me-2"></i>USDT Payout Details
+          <i class="bi bi-wallet2 me-2"></i><%= currency %> Payout Details
         </div>
         <div class="card-body">
-          <% if (usdtAddr) { %>
+          <% if (payoutText) { %>
+          <div class="mb-3">
+            <label class="text-muted small">Amount to send</label>
+            <div class="fw-bold fs-4 text-success" id="payoutAmount"><%= payoutText %></div>
+            <small class="text-muted"><%= Number(request.amount || 0).toLocaleString('en-IN') %> ProbCoins at <%= request.rate %> ProbCoins per <%= currency === 'INR' ? '₹1' : '1 USDT' %></small>
+          </div>
+          <% } %>
+          <% if (currency === 'INR') { %>
+            <% if (pd.method === 'UPI') { %>
+            <div class="mb-2"><label class="text-muted small">UPI ID</label><div class="fw-semibold font-monospace"><%= pd.upi_id %></div></div>
+            <% if (pd.account_holder_name) { %><div class="mb-2"><label class="text-muted small">Name</label><div><%= pd.account_holder_name %></div></div><% } %>
+            <% } else if (pd.method === 'BANK') { %>
+            <div class="mb-2"><label class="text-muted small">Account holder</label><div class="fw-semibold"><%= pd.account_holder_name %></div></div>
+            <div class="mb-2"><label class="text-muted small">Account number</label><div class="fw-semibold font-monospace"><%= pd.account_number %></div></div>
+            <div class="mb-2"><label class="text-muted small">IFSC</label><div class="fw-semibold font-monospace"><%= pd.ifsc_code %></div></div>
+            <% if (pd.bank_name) { %><div class="mb-2"><label class="text-muted small">Bank</label><div><%= pd.bank_name %></div></div><% } %>
+            <% } else { %>
+            <div class="alert alert-danger mb-0">No INR payout details on this request.</div>
+            <% } %>
+          <% } else if (usdtAddr) { %>
           <div class="mb-3">
             <label class="text-muted small">Network</label>
             <div><span class="badge bg-info fs-6"><%= usdtNet %></span></div>
@@ -130,7 +161,7 @@
           </div>
           <div class="alert alert-warning border-0 mb-0">
             <i class="bi bi-exclamation-triangle me-2"></i>
-            Send <strong><%= Number(request.amount || 0).toLocaleString('en-IN') %> coins worth USDT</strong>
+            Send <strong><%= payoutText || (Number(request.amount || 0).toLocaleString('en-IN') + ' coins worth USDT') %></strong>
             on <strong><%= usdtNet %></strong> network only.
           </div>
           <% } else { %>
@@ -155,6 +186,11 @@
         <div class="card-body">
           <form method="POST" action="/withdrawal_requests/<%= request._id %>">
             <input type="hidden" name="_method" value="PUT">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Payout reference (needed to accept)</label>
+              <input type="text" name="payout_reference" id="payoutRef" class="form-control font-monospace" maxlength="200"
+                placeholder="<%= currency === 'INR' ? 'UPI / bank UTR number' : 'USDT transaction hash' %>">
+            </div>
             <div class="mb-4">
               <label class="form-label fw-semibold">Message to User (optional)</label>
               <textarea name="admin_message" class="form-control" rows="3"
@@ -162,7 +198,7 @@
             </div>
             <div class="d-grid gap-2">
               <button type="submit" name="status" value="accepted" class="btn btn-success btn-lg"
-                onclick="return confirm('Mark this withdrawal as ACCEPTED? Make sure you have sent the USDT payment first.')">
+                onclick="if (!document.getElementById('payoutRef').value.trim()) { alert('Enter the payout reference (UTR / transaction hash) first.'); return false; } return confirm('Mark this withdrawal as ACCEPTED? Make sure you have sent <%= payoutText || 'the payment' %> first.')">
                 <i class="bi bi-check-circle-fill me-2"></i>Accept & Mark as Paid
               </button>
               <button type="submit" name="status" value="rejected" class="btn btn-danger btn-lg"

@@ -366,7 +366,7 @@ function loadTransactions() {
           <td class="fw-bold">#${t.old_id || t._id}</td>
           <td><div class="fw-semibold">${t.user_name || 'Unknown'}</div><small class="text-muted">${t.user_mobile || ''}</small></td>
           <td><span class="badge ${typeBadge}">${t.type}</span></td>
-          <td class="${Number(t.amount) >= 0 ? 'text-success' : 'text-danger'} fw-bold">₹${Number(t.amount || 0).toLocaleString('en-IN')}</td>
+          <td class="${Number(t.amount) >= 0 ? 'text-success' : 'text-danger'} fw-bold">${Number(t.amount || 0).toLocaleString('en-IN')} PC</td>
           <td><span class="badge ${statusBadge}">${t.status}</span></td>
           <td class="small text-muted">${t.description || '—'}</td>
           <td class="small text-muted">${t.created_at ? new Date(t.created_at).toLocaleString('en-IN', {timeZone:'Asia/Kolkata'}) : '—'}</td>

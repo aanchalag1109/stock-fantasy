@@ -8,8 +8,13 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <%# NEW IMPLEMENTATION — NODE.JS PROJECT: collapsible sidebar — apply a remembered "closed" state before paint %>
+    <script>try { if (window.innerWidth >= 992 && localStorage.getItem('adminSidebarCollapsed') === '1') document.documentElement.classList.add('sidebar-collapsed'); } catch (e) {}</script>
     <style>
         @media (min-width: 992px) {
+            /* NEW IMPLEMENTATION — NODE.JS PROJECT: desktop sidebar can be closed (✕) and reopened (☰) */
+            html.sidebar-collapsed .sidebar { transform: translateX(-100%) !important; box-shadow: none !important; }
+            html.sidebar-collapsed .content-wrapper { margin-left: 0 !important; }
             .sidebar {
                 position: fixed !important;
                 left: 0;
@@ -136,6 +141,8 @@
             padding: 1.5rem 0 1rem 0;
         }
         .sidebar-logo img { height: 32px; margin-right: 0.5rem; }
+        .sidebar-close-btn { opacity: .75; line-height: 1; padding: .35rem .5rem; border-radius: .5rem; }
+        .sidebar-close-btn:hover, .sidebar-close-btn:focus { opacity: 1; background: rgba(255,255,255,.12); }
         .sidebar-section {
             padding: 0.75rem 1.5rem 0.25rem 1.5rem;
             font-size: 0.75rem;
@@ -226,7 +233,18 @@
   const adminName = (locals.admin && admin.name) ? admin.name : 'Admin';
   const adminInitial = String(adminName).charAt(0).toUpperCase();
 %>
-<div x-data="{ sidebarOpen: window.innerWidth >= 992, dropdownOpen: false, notificationOpen: false }" x-init="window.addEventListener('resize', () => { sidebarOpen = window.innerWidth >= 992; })">
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT: setSidebar() opens/closes the sidebar on every screen size; on desktop the choice is remembered %>
+<div x-data="{
+        sidebarOpen: window.innerWidth >= 992 && !document.documentElement.classList.contains('sidebar-collapsed'),
+        dropdownOpen: false, notificationOpen: false,
+        setSidebar(open) {
+            this.sidebarOpen = open;
+            if (window.innerWidth >= 992) { try { localStorage.setItem('adminSidebarCollapsed', open ? '0' : '1'); } catch (e) {} }
+        },
+        desktopPref() { try { return localStorage.getItem('adminSidebarCollapsed') !== '1'; } catch (e) { return true; } }
+     }"
+     x-init="window.addEventListener('resize', () => { sidebarOpen = window.innerWidth >= 992 ? desktopPref() : false; })"
+     x-effect="document.documentElement.classList.toggle('sidebar-collapsed', !sidebarOpen && window.innerWidth >= 992)">
     <div x-show="sidebarOpen && window.innerWidth < 992" @click="sidebarOpen = false" class="position-fixed w-100 bg-dark opacity-50" style="z-index: 3000; top:56px; height:calc(100vh - 56px);" x-cloak></div>
 
     <%- include('../partials/sidebar') %>
@@ -234,7 +252,7 @@
     <div class="content-wrapper d-flex flex-column" :class="{ 'ms-lg-250': sidebarOpen }" style="min-height: 100vh;">
         <header class="navbar navbar-expand-lg navbar-light bg-white border-bottom">
             <div class="container-fluid">
-                <button @click="sidebarOpen = !sidebarOpen" class="btn btn-link text-dark d-lg-none" type="button">
+                <button @click="setSidebar(!sidebarOpen)" class="btn btn-link text-dark" :class="{ 'd-lg-none': sidebarOpen }" type="button" title="Open menu" aria-label="Open menu" id="sidebarOpenBtn">
                     <i class="bi bi-list" style="font-size: 1.5rem;"></i>
                 </button>
                 <h1 class="h5 mb-0"><%= typeof title !== 'undefined' ? title : 'Dashboard' %></h1>

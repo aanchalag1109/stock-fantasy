@@ -85,8 +85,9 @@
             <div class="col-md-3 mb-3">
                 <div class="card border-0 shadow-sm h-100" style="border-radius: 15px; background: linear-gradient(135deg, #2196f3 0%, #1565c0 100%);">
                     <div class="card-body text-white text-center p-4">
-                        <i class="bi bi-currency-rupee display-4 mb-3 opacity-75"></i>
-                        <h3 class="mb-1">₹<%= money(pageAmount) %></h3>
+                        <%# NEW IMPLEMENTATION — NODE.JS PROJECT: transaction amounts are ProbCoins %>
+                        <i class="bi bi-coin display-4 mb-3 opacity-75"></i>
+                        <h3 class="mb-1"><%= money(pageAmount) %> PC</h3>
                         <p class="mb-0 opacity-75">Total Amount</p>
                     </div>
                 </div>
@@ -209,8 +210,9 @@
                                         <td class="py-4">
                                             <div class="text-center">
                                                 <h6 class="mb-0 <%= credit ? 'text-success' : 'text-danger' %>" style="font-weight: 600;">
-                                                    <%= credit ? '+' : '' %>₹<%= money(transaction.amount) %>
+                                                    <%= credit ? '+' : '' %><%= money(transaction.amount) %> PC
                                                 </h6>
+                                                <% if (transaction.currency_amount != null) { %><small class="d-block text-muted"><%= transaction.currency === 'USDT' ? Number(transaction.currency_amount).toFixed(2) + ' USDT' : '₹' + money(transaction.currency_amount) %></small><% } %>
                                                 <small class="text-muted"><%= credit ? 'Credit' : 'Debit' %></small>
                                             </div>
                                         </td>

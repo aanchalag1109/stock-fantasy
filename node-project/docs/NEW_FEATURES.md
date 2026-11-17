@@ -357,3 +357,111 @@ The USDT counterpart of **Deposit Orders** (LG Pay / INR), which is unchanged.
 - **New files:** `src/admin/views/partials/tradingview_chart.ejs`
 - **Modified:** `src/admin/views/layouts/main.ejs`, `src/admin/routes/api.routes.js` (`/api/asset-markets`), `src/admin/views/{assets/index,sessions/show,sessions/create,sessions/edit,performance/contest,performance/session,live_management/contest_detail}.ejs`
 - **Tests:** `tests/admin/assets.test.js` (TradingView suite)
+
+## 20. Closable admin sidebar
+- **Close:** a **✕** button at the top of the sidebar closes it on every screen size (on phones the sidebar was already a slide-in menu; on desktop it used to be fixed).
+- **Reopen:** when the sidebar is closed on desktop, the page uses the full width and a **☰** button in the header reopens it.
+- **Remembered:** the desktop open/closed choice is stored in the browser (`localStorage`, key `adminSidebarCollapsed`) and applied before the page paints, so there's no flicker between pages.
+- **Modified:** `src/admin/views/layouts/main.ejs`, `src/admin/views/partials/sidebar.ejs`
+
+## 21. INR & USDT deposits and withdrawals (client feedback)
+- **Per-currency settings** (Deposit & Withdrawal Settings):
+  - INR and USDT each have min/max deposit and min/max withdrawal in their own currency.
+  - **Deposit gateway charges:** percent and/or fixed, paid by the user (added on top) or absorbed by the platform. A live example is shown.
+  - **USDT withdrawal network:** TRC20, BEP20 or ERC20.
+  - The INR keys are the original ones, so existing values carry over. USDT deposit limits fall back to `PAYRAM_MIN/MAX_DEPOSIT_USDT` until saved.
+  - Rates stay on **ProbCoin Conversion**.
+- **Quotes** (`services/payments/quote.service.js`):
+  - ProbCoins = amount × rate, rounded down. Asking for N ProbCoins costs N / rate, rounded up.
+  - Charges = ⌈amount × % ⌉ + fixed. Total payable = amount + charges if the user pays them.
+  - Limits apply to the amount before charges.
+  - Withdrawals: payout = ProbCoins / rate, rounded down, with the limits in that currency.
+- **INR via LG Pay** (`services/payments/lgpay-deposit.service.js`):
+  - Orders store the ProbCoins, rate, base, charges and total. LG Pay collects the total.
+  - The callback, the return page and the admin Approve credit the order's ProbCoins **once**: an atomic order claim, then ledger `transaction_id` = order id.
+  - **No MongoDB transactions:** they fail on the standalone server, which is why LG Pay callbacks never credited.
+  - **Bad callback signature:** the order is checked with LG Pay instead of being trusted. The old code credited anyway.
+  - **Underpaid orders** → "Needs review" (`payment_status` 3), shown on Deposit Orders with Approve/Reject.
+  - **Unchanged:** endpoints, parameters and redirects. Orders created before this change are still credited 1:1.
+  - The LG Pay notify URL can be overridden with `LGPAY_NOTIFY_URL` (same default).
+- **USDT via PayRam:**
+  - **Charges and limits:** the same shared quote; PayRam collects base + charges.
+  - **Blockchain, confirmations and explorer link** are recorded. A payment is **not credited while confirmations < required**; it's re-checked on the next webhook or Re-verify. Paying on a different chain than the restricted one → review.
+  - **Admin:** "Check with PayRam" is now **Re-verify**, and "Approve" is **Manual approve**. The detail page shows the chain, confirmations (x / y), explorer links for each tx hash, and the base + charges breakdown.
+- **Withdrawals in INR or USDT** (`services/payments/withdrawal.service.js`):
+  - The user withdraws ProbCoins from winnings and gets INR (UPI or bank) or USDT (saved address, admin network) at the currency rate.
+  - Winnings are deducted with a guarded atomic `$inc`. The request stores currency, rate, payout amount and destination, plus a pending ledger transaction `WD_<id>`.
+  - **Admin:** the list and detail pages show the ProbCoins, the payout (₹ / USDT) and where to send it. **Accept** needs the payout reference (UTR / tx hash). **Reject** refunds once (`WDREFUND_<id>`). No MongoDB transactions; the old admin action used them and failed.
+  - The old `/withdraw-amount` and `/wallet/withdraw` endpoints are unchanged.
+- **App APIs** (also under `/api/...`):
+  - `GET /api/v1/payments/options`
+  - `POST /api/v1/deposit/quote` `{ currency, amount | probcoins }`
+  - `POST /api/v1/deposit/inr/create` `{ user_id, amount | probcoins }` → `payment_url`
+  - `GET /api/v1/deposit/inr/status/:order_id?user_id=`
+  - `GET /api/v1/deposit/inr/history?user_id=`
+  - USDT: `/api/v1/payram/{config,quote,deposit,deposit/:id,deposits}`
+  - `POST /api/v1/withdraw/quote` `{ currency, probcoins }`
+  - `POST /api/v1/withdraw/request` `{ user_id, currency, probcoins }`
+  - `GET /api/v1/withdraw/history?user_id=`
+  - `GET /api/v1/payout-details?user_id=`
+  - `POST /api/v1/payout-details/inr` `{ user_id, upi_id | account_holder_name + account_number + ifsc_code, bank_name? }`
+- **Notifications:** amounts now read "500 ProbCoins" instead of "₹500", since coins are no longer rupees.
+- **New files:**
+  - `src/services/payments/{quote,lgpay-deposit,withdrawal}.service.js`
+  - `src/controllers/wallet-payments.controller.js`
+  - `src/routes/wallet-payments.routes.js`
+- **Modified:**
+  - `src/controllers/payment.controller.js`
+  - `src/services/{deposit-withdrawal-settings,payment-orders}.service.js`
+  - `src/services/payram/payram-deposit.service.js`
+  - `src/controllers/payram.controller.js`
+  - `src/services/notifications/notification.service.js`
+  - models `payment`, `withdrawal-request`, `payram-deposit`, `transaction`
+  - admin `deposit-withdrawal-settings` and `withdrawals` controllers
+  - admin views `settings/deposit_withdrawal`, `payments/index`, `withdrawals/{index,show}`, `payram_deposits/show`
+  - `src/admin/access/permissions.js`
+  - `src/app.js`
+  - `src/config/env.js`
+- **Tests:** `tests/wallet/inr-usdt-payments.test.js`, `tests/payram/payram-deposit.test.js`, updated `tests/wallet/deposit-withdrawal-limits.test.js` and `tests/notifications/notifications.test.js`
+
+## 22. Transactions shown in ProbCoins
+- **Prize transactions:** new ones read "Won 50 ProbCoins in contest #12 (Rank 1, Entry #…)" instead of "Won ₹50 …". The payout summary messages say ProbCoins too. Older transactions keep their saved text.
+- **App transaction lists** (`/user-transactions`, `/wallet/transactions`):
+  - Every transaction also returns `unit: "ProbCoins"` and `amount_label` ("50 ProbCoins").
+  - INR/USDT purchases and withdrawals also return `currency`, `currency_amount` and `currency_label` ("₹500" / "5 USDT").
+  - Existing fields are unchanged.
+- **Admin:** amounts show as **PC**, with the real-money side underneath for purchases and withdrawals, on:
+  - Transactions (list, total card, detail, user wallet)
+  - Dashboard recent transactions
+  - Contest Analysis transactions
+  - the Performance contest transactions table
+- **Helpers:** `probcoinLabel`, `currencyLabel`, `transactionLabels` in `src/helpers/mobile-compat.js`.
+- **Modified:** `src/services/contest-automation/prize-payout.service.js`, `src/controllers/{mobile-api,wallet}.controller.js`, admin views `transactions/{index,show}`, `dashboard/index`, `contest_analysis/contest`, `performance/contest`
+- **Tests:** `tests/wallet/inr-usdt-payments.test.js` (labels), `tests/contest-automation/contest-automation.test.js` (prize description)
+
+## 23. Separate PayRam testnet connection
+- **Two connections:**
+  - **mainnet:** `PAYRAM_API_URL` / `PAYRAM_API_KEY` / `PAYRAM_NETWORK`, unchanged.
+  - **testnet:** `PAYRAM_TESTNET_API_URL` / `PAYRAM_TESTNET_API_KEY` / `PAYRAM_TESTNET_NETWORK`. This is a second PayRam server installed with `setup_payram.sh --testnet`.
+- **Which one new deposits use:** `PAYRAM_MODE=mainnet|testnet` (default `mainnet`). Each deposit stores its `environment`, and status checks, Re-verify and webhooks always use that deposit's connection, even if the mode changes later. Deposits created before this field are mainnet.
+- **Webhooks:**
+  - mainnet: `/api/v1/payram/webhook`
+  - testnet: `/api/v1/payram/testnet/webhook`
+  - Each is authenticated with its own key and only looks up deposits of its own connection, so a testnet payment can never confirm a mainnet deposit.
+- **App:** `GET /api/v1/payram/config` returns `environment`, and deposits include `environment`.
+- **Admin → USDT Deposits:**
+  - a "New deposits: MAINNET/TESTNET" badge
+  - a **TESTNET** badge on testnet rows and on the detail page
+  - a Connection filter (mainnet / testnet)
+- **Caution:** testnet deposits credit real ProbCoins to the user they're made for. Use `PAYRAM_MODE=testnet` on development/test setups or with test accounts, and keep `mainnet` in production.
+- **Modified:**
+  - `src/config/env.js`
+  - `.env.example`
+  - `src/services/payram/{payram.client,payram-deposit.service}.js`
+  - `src/models/payram-deposit.model.js`
+  - `src/controllers/payram.controller.js`
+  - `src/app.js`
+  - `src/services/payments/quote.service.js`
+  - `src/admin/controllers/payram-deposits.controller.js`
+  - `src/admin/views/payram_deposits/{index,show}.ejs`
+- **Tests:** `tests/payram/payram-deposit.test.js` (testnet suite), `tests/admin/payram-deposits.test.js`

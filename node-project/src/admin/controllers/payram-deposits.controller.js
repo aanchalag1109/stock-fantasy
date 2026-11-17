@@ -22,6 +22,7 @@ const { parseListFilters, withStatus } = require('../helpers/list-filters');
 const logger = require('../../config/logger');
 const config = require('../../config/env');
 const payramDeposits = require('../../services/payram/payram-deposit.service');
+const payram = require('../../services/payram/payram.client');
 
 const STATUSES = ['pending', 'partially_paid', 'credited', 'review', 'cancelled', 'failed'];
 const PAGE_SIZE = 20;
@@ -42,6 +43,10 @@ const index = async (req, res) => {
 
     const base = {};
     if (filters.range) base.created_at = filters.range;
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: mainnet / testnet filter (deposits before the field are mainnet)
+    const environment = ['mainnet', 'testnet'].includes(req.query.environment) ? req.query.environment : '';
+    if (environment === 'testnet') base.environment = 'testnet';
+    if (environment === 'mainnet') base.environment = { $in: ['mainnet', null] };
     if (search) {
       const like = new RegExp(escapeRegex(search), 'i');
       const users = await User.find({ $or: [{ name: like }, { mobile: like }, { email: like }] }).select('_id').limit(500).lean();
@@ -67,21 +72,25 @@ const index = async (req, res) => {
       if (row._id === 'pending' || row._id === 'partially_paid') totals.open_usdt += row.usdt;
     });
     const users = await usersById(rows.map((r) => r.user_id));
-    const queryString = new URLSearchParams([...new URLSearchParams(filters.queryString), ...(search ? [['search', search]] : [])]).toString();
+    const queryString = new URLSearchParams([
+      ...new URLSearchParams(filters.queryString), ...(search ? [['search', search]] : []), ...(environment ? [['environment', environment]] : []),
+    ]).toString();
 
     await render(res, 'payram_deposits/index', {
       title: 'USDT Deposits (PayRam)',
       deposits: rows.map((d) => ({ ...d, user: users.get(String(d.user_id)) || null })),
       total, page, pages: Math.ceil(total / PAGE_SIZE), pageSize: PAGE_SIZE,
-      filters, search, counts, totals, queryString,
+      filters, search, counts, totals, queryString, environment,
+      activeEnvironment: payram.activeEnvironment(),
       statusLink: (value) => {
         const qs = withStatus(filters, value).replace(/^\?/, '');
         const params = new URLSearchParams(qs);
         if (search) params.set('search', search);
+        if (environment) params.set('environment', environment);
         const out = params.toString();
         return out ? `?${out}` : '?';
       },
-      configured: Boolean(config.PAYRAM.apiUrl && config.PAYRAM.apiKey),
+      configured: payram.isConfigured(),
       admin: req.session.admin,
     });
   } catch (err) {
@@ -101,7 +110,7 @@ const show = async (req, res) => {
     await render(res, 'payram_deposits/show', {
       title: `USDT Deposit ${deposit.deposit_id}`,
       deposit, user, transaction,
-      payramUrl: String(config.PAYRAM.apiUrl || '').replace(/\/+$/, ''),
+      payramUrl: payram.connection(deposit.environment || 'mainnet').url,
       admin: req.session.admin,
     });
   } catch (err) {

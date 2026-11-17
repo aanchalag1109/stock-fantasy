@@ -34,7 +34,12 @@ const payramDepositSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
   gateway: { type: String, default: 'PAYRAM', immutable: true },
   currency: { type: String, default: 'USDT', immutable: true },
-  amount: { type: Number, required: true },                        // USDT requested (sent as amountInUSD)
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: which PayRam connection (server + key) this deposit belongs to
+  environment: { type: String, enum: ['mainnet', 'testnet'], default: 'mainnet', index: true },
+  amount: { type: Number, required: true },                        // USDT to pay = base + charges if user pays (sent as amountInUSD)
+  base_amount: { type: Number, default: null },                    // price of the ProbCoins before charges
+  charges: { type: Number, default: 0 },                           // gateway charges (USDT)
+  charges_bearer: { type: String, default: null },                 // 'user' | 'platform'
   rate: { type: Number, required: true },                          // ProbCoins per 1 USDT, locked at creation
   probcoins: { type: Number, required: true },                     // ProbCoins credited on success
   network: { type: String, default: null },                        // optional PayRam blockchain restriction (e.g. TRX)
@@ -50,12 +55,19 @@ const payramDepositSchema = new mongoose.Schema({
   filled_amount: { type: Number, default: null },                  // received, in USDT
   filled_amount_in_usd: { type: Number, default: null },
   tx_hashes: { type: [String], default: undefined },
+  blockchain: { type: String, default: null },                     // chain the user paid on (e.g. TRX)
+  confirmations: { type: Number, default: null },                  // block confirmations reported by PayRam
+  confirmations_required: { type: Number, default: null },
+  explorer_url: { type: String, default: null },
   verification: {                                                  // the PayRam API check that allowed the credit
     verified_at: { type: Date, default: null },
     payment_state: { type: String, default: null },
     amount_in_usd: { type: Number, default: null },
     filled_amount_in_usd: { type: Number, default: null },
     currency: { type: String, default: null },
+    blockchain: { type: String, default: null },
+    confirmations: { type: Number, default: null },
+    confirmations_required: { type: Number, default: null },
   },
   review_reason: { type: String, default: null },
   failure_reason: { type: String, default: null },

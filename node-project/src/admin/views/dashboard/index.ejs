@@ -148,7 +148,7 @@
                                 <tr>
                                     <td><%= strLimit(transaction.user_name, 20) %></td>
                                     <td class="<%= transaction.type === 'credit' ? 'text-success' : 'text-danger' %>">
-                                        <%= transaction.type === 'credit' ? '+' : '-' %>₹<%= formatMoney(transaction.amount, 2) %>
+                                        <%= transaction.type === 'credit' ? '+' : '-' %><%= formatMoney(transaction.amount, 2) %> PC
                                     </td>
                                     <td>
                                         <span class="badge bg-<%= transaction.status === 'completed' ? 'success' : (transaction.status === 'pending' ? 'warning' : 'danger') %>">

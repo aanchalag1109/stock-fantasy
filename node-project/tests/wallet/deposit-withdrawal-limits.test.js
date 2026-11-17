@@ -73,13 +73,21 @@ Setting.find = () => ({
   },
 });
 Setting.findOneAndUpdate = async (filter, doc) => { state.settings[filter.key] = doc.value; return doc; };
+// NEW IMPLEMENTATION — NODE.JS PROJECT: INR deposits convert at the ProbCoin Conversion rate (₹1 = 10 here)
+Setting.findOne = (filter) => query(filter.key === 'probcoin_conversion'
+  ? { key: 'probcoin_conversion', value: { inr_to_probcoin_rate: 10, usdt_to_probcoin_rate: 100 } }
+  : null);
 
 User.findById = () => query(state.user);
 User.findOne = () => query(state.user);
 User.updateOne = async (filter, update) => { state.writes.push(['User.updateOne', update]); return {}; };
 
 Transaction.create = async (doc) => { state.writes.push(['Transaction.create', doc]); return doc; };
-Payment.create = async (doc) => { state.writes.push(['Payment.create', doc]); return doc; };
+Payment.create = async (doc) => {
+  state.writes.push(['Payment.create', doc]);
+  const d = { _id: new mongoose.Types.ObjectId(), ...doc };
+  return { ...d, toObject: () => d };
+};
 WithdrawalRequest.create = async (doc) => {
   state.writes.push(['WithdrawalRequest.create', doc]);
   const make = (d) => ({ _id: new mongoose.Types.ObjectId(), old_id: 1, ...d });

@@ -8,23 +8,25 @@
 
   Important: Keep this implementation distinguishable from the
   original PHP project when comparing functionality in the future.
+
+  Client feedback: limits and deposit gateway charges are configured separately for INR (LG Pay)
+  and USDT (PayRam). Conversion rates stay on the ProbCoin Conversion page.
 %>
 <%
   const val = (k) => (limits[k] === null || limits[k] === undefined) ? '' : limits[k];
-  const sections = [
-    { title: 'Deposit Settings', icon: 'wallet2', fields: [
-      { key: 'min_deposit_amount', label: 'Minimum Deposit Amount' },
-      { key: 'max_deposit_amount', label: 'Maximum Deposit Amount' },
-    ] },
-    { title: 'Withdrawal Settings', icon: 'cash-coin', fields: [
-      { key: 'min_withdrawal_amount', label: 'Minimum Withdrawal Amount' },
-      { key: 'max_withdrawal_amount', label: 'Maximum Withdrawal Amount' },
-    ] },
+  const columns = [
+    { currency: 'INR', unit: '₹', gateway: 'LG Pay', rate: rates.inr_to_probcoin_rate, required: true,
+      limits: [['min_deposit_amount', 'Minimum deposit'], ['max_deposit_amount', 'Maximum deposit'], ['min_withdrawal_amount', 'Minimum withdrawal'], ['max_withdrawal_amount', 'Maximum withdrawal']],
+      charges: ['inr_deposit_charge_percent', 'inr_deposit_charge_fixed', 'inr_deposit_charge_bearer'] },
+    { currency: 'USDT', unit: 'USDT', gateway: 'PayRam', rate: rates.usdt_to_probcoin_rate, required: false,
+      limits: [['usdt_min_deposit_amount', 'Minimum deposit'], ['usdt_max_deposit_amount', 'Maximum deposit'], ['usdt_min_withdrawal_amount', 'Minimum withdrawal'], ['usdt_max_withdrawal_amount', 'Maximum withdrawal']],
+      charges: ['usdt_deposit_charge_percent', 'usdt_deposit_charge_fixed', 'usdt_deposit_charge_bearer'] },
   ];
+  const fieldKeys = Object.keys(limits);
 %>
 <div class="container py-4">
     <div class="row justify-content-center">
-        <div class="col-lg-10">
+        <div class="col-xl-11">
             <div id="dwAlert" class="d-none mb-4" role="alert"></div>
 
             <div class="card shadow-lg border-0 mb-4">
@@ -33,27 +35,80 @@
                     <h2 class="mb-0 text-white h4">Deposit &amp; Withdrawal Settings</h2>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted mb-4">Set the minimum and maximum amounts (₹) users can deposit and withdraw. Amounts must be greater than 0, up to 2 decimal places, and the maximum must not be lower than the minimum.</p>
+                    <p class="text-muted mb-4">
+                        Users buy ProbCoins in INR (LG Pay) or USDT (PayRam) and withdraw ProbCoins as INR or USDT.
+                        Limits are in each currency. Deposit gateway charges are added on top when the user pays them, or absorbed when the platform pays.
+                        Conversion rates are set on <a href="/probcoin-conversion">ProbCoin Conversion</a>.
+                    </p>
 
                     <form id="dwSettingsForm" action="/deposit-withdrawal-settings" method="POST" novalidate>
                         <div class="row g-4">
-                            <% sections.forEach(section => { %>
-                            <div class="col-md-6">
-                                <div class="card h-100 border-0 bg-light">
+                            <% columns.forEach(col => { %>
+                            <div class="col-lg-6">
+                                <div class="card h-100 border-0 bg-light" data-currency="<%= col.currency %>">
                                     <div class="card-body">
-                                        <h5 class="card-title mb-3"><i class="bi bi-<%= section.icon %> me-2"></i><%= section.title %></h5>
-                                        <% section.fields.forEach(field => { %>
-                                        <div class="mb-3">
-                                            <label for="<%= field.key %>" class="form-label"><%= field.label %> <span class="text-danger">*</span></label>
-                                            <div class="input-group has-validation">
-                                                <span class="input-group-text">₹</span>
-                                                <input type="number" name="<%= field.key %>" id="<%= field.key %>" class="form-control"
-                                                       value="<%= val(field.key) %>" min="0.01" max="<%= maxAllowed %>" step="0.01"
-                                                       inputmode="decimal" required>
-                                                <div class="invalid-feedback" data-error-for="<%= field.key %>"></div>
+                                        <div class="d-flex justify-content-between align-items-start mb-3">
+                                            <h5 class="card-title mb-0"><%= col.currency %> <small class="text-muted">via <%= col.gateway %></small></h5>
+                                            <% if (col.rate) { %>
+                                            <span class="badge bg-success">1 <%= col.currency === 'INR' ? '₹' : 'USDT' %> = <%= col.rate %> ProbCoins</span>
+                                            <% } else { %>
+                                            <a href="/probcoin-conversion" class="badge bg-danger text-decoration-none">Rate not set</a>
+                                            <% } %>
+                                        </div>
+
+                                        <h6 class="text-muted text-uppercase small mt-2">Limits (<%= col.unit %>)</h6>
+                                        <% if (!col.required) { %><p class="small text-muted mb-2">Leave all four empty to use the server defaults for deposits (<%= usdtDefaults.min %>–<%= usdtDefaults.max %> USDT) and keep USDT withdrawals off.</p><% } %>
+                                        <div class="row g-2">
+                                            <% col.limits.forEach(([key, label]) => { %>
+                                            <div class="col-sm-6">
+                                                <label for="<%= key %>" class="form-label small mb-1"><%= label %><% if (col.required) { %> <span class="text-danger">*</span><% } %></label>
+                                                <div class="input-group input-group-sm has-validation">
+                                                    <span class="input-group-text"><%= col.unit %></span>
+                                                    <input type="number" name="<%= key %>" id="<%= key %>" class="form-control" value="<%= val(key) %>"
+                                                           min="0.01" max="<%= maxAllowed %>" step="0.01" inputmode="decimal" <%= col.required ? 'required' : '' %>>
+                                                    <div class="invalid-feedback" data-error-for="<%= key %>"></div>
+                                                </div>
+                                            </div>
+                                            <% }) %>
+                                        </div>
+
+                                        <h6 class="text-muted text-uppercase small mt-4">Deposit gateway charges</h6>
+                                        <div class="row g-2">
+                                            <div class="col-sm-4">
+                                                <label for="<%= col.charges[0] %>" class="form-label small mb-1">Percent</label>
+                                                <div class="input-group input-group-sm has-validation">
+                                                    <input type="number" name="<%= col.charges[0] %>" id="<%= col.charges[0] %>" class="form-control" value="<%= val(col.charges[0]) %>" min="0" max="<%= maxChargePercent %>" step="0.01">
+                                                    <span class="input-group-text">%</span>
+                                                    <div class="invalid-feedback" data-error-for="<%= col.charges[0] %>"></div>
+                                                </div>
+                                            </div>
+                                            <div class="col-sm-4">
+                                                <label for="<%= col.charges[1] %>" class="form-label small mb-1">Fixed</label>
+                                                <div class="input-group input-group-sm has-validation">
+                                                    <span class="input-group-text"><%= col.unit %></span>
+                                                    <input type="number" name="<%= col.charges[1] %>" id="<%= col.charges[1] %>" class="form-control" value="<%= val(col.charges[1]) %>" min="0" step="0.01">
+                                                    <div class="invalid-feedback" data-error-for="<%= col.charges[1] %>"></div>
+                                                </div>
+                                            </div>
+                                            <div class="col-sm-4">
+                                                <label for="<%= col.charges[2] %>" class="form-label small mb-1">Paid by</label>
+                                                <select name="<%= col.charges[2] %>" id="<%= col.charges[2] %>" class="form-select form-select-sm">
+                                                    <option value="user" <%= val(col.charges[2]) !== 'platform' ? 'selected' : '' %>>User (added on top)</option>
+                                                    <option value="platform" <%= val(col.charges[2]) === 'platform' ? 'selected' : '' %>>Platform (absorbed)</option>
+                                                </select>
+                                                <div class="invalid-feedback" data-error-for="<%= col.charges[2] %>"></div>
                                             </div>
                                         </div>
-                                        <% }) %>
+                                        <div class="small text-muted mt-2" data-example="<%= col.currency %>"></div>
+
+                                        <% if (col.currency === 'USDT') { %>
+                                        <h6 class="text-muted text-uppercase small mt-4">USDT withdrawals</h6>
+                                        <label for="usdt_withdrawal_network" class="form-label small mb-1">Network users withdraw to</label>
+                                        <select name="usdt_withdrawal_network" id="usdt_withdrawal_network" class="form-select form-select-sm" style="max-width:200px">
+                                            <% networks.forEach(n => { %><option value="<%= n %>" <%= val('usdt_withdrawal_network') === n ? 'selected' : '' %>><%= n %></option><% }) %>
+                                        </select>
+                                        <div class="invalid-feedback" data-error-for="usdt_withdrawal_network"></div>
+                                        <% } %>
                                     </div>
                                 </div>
                             </div>
@@ -78,14 +133,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var btn = document.getElementById('dwSaveBtn');
     var alertBox = document.getElementById('dwAlert');
     var btnHtml = btn.innerHTML;
-    var MAX_ALLOWED = <%= maxAllowed %>;
-    var FIELDS = {
-        min_deposit_amount: 'Minimum deposit amount',
-        max_deposit_amount: 'Maximum deposit amount',
-        min_withdrawal_amount: 'Minimum withdrawal amount',
-        max_withdrawal_amount: 'Maximum withdrawal amount'
-    };
+    var FIELDS = <%- JSON.stringify(fieldKeys) %>;
+    var RATES = { INR: <%- JSON.stringify(rates.inr_to_probcoin_rate) %>, USDT: <%- JSON.stringify(rates.usdt_to_probcoin_rate) %> };
     var submitting = false;
+    var el = function (id) { return document.getElementById(id); };
 
     function showAlert(type, message) {
         var icon = type === 'success' ? 'check-circle-fill' : 'x-circle-fill';
@@ -97,33 +148,35 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function setErrors(errors) {
-        Object.keys(FIELDS).forEach(function (key) {
-            var input = document.getElementById(key);
+        FIELDS.forEach(function (key) {
+            var input = el(key);
             var fb = form.querySelector('[data-error-for="' + key + '"]');
+            if (!input || !fb) return;
             if (errors[key]) { input.classList.add('is-invalid'); fb.textContent = errors[key]; }
             else { input.classList.remove('is-invalid'); fb.textContent = ''; }
         });
     }
 
-    // Mirrors services/deposit-withdrawal-settings.service.js validate(); the server stays authoritative.
-    function validate(data) {
-        var errors = {};
-        Object.keys(FIELDS).forEach(function (key) {
-            var str = String(data[key] || '').trim();
-            var label = FIELDS[key];
-            if (str === '') errors[key] = label + ' is required.';
-            else if (!/^\d+(\.\d{1,2})?$/.test(str)) errors[key] = label + ' must be a positive number with at most 2 decimal places.';
-            else if (Number(str) <= 0) errors[key] = label + ' must be greater than 0.';
-            else if (Number(str) > MAX_ALLOWED) errors[key] = label + ' cannot exceed ' + MAX_ALLOWED.toLocaleString('en-IN') + '.';
-        });
-        if (!errors.min_deposit_amount && !errors.max_deposit_amount && Number(data.min_deposit_amount) > Number(data.max_deposit_amount)) {
-            errors.max_deposit_amount = 'Maximum deposit amount must be greater than or equal to the minimum deposit amount.';
-        }
-        if (!errors.min_withdrawal_amount && !errors.max_withdrawal_amount && Number(data.min_withdrawal_amount) > Number(data.max_withdrawal_amount)) {
-            errors.max_withdrawal_amount = 'Maximum withdrawal amount must be greater than or equal to the minimum withdrawal amount.';
-        }
-        return errors;
+    // Live example: what a user pays for a 1,000 deposit (₹1,000 / 100 USDT) with the charges entered.
+    function example(currency) {
+        var box = form.querySelector('[data-example="' + currency + '"]');
+        var p = currency === 'INR' ? 'inr' : 'usdt';
+        if (!box) return;
+        var base = currency === 'INR' ? 1000 : 100;
+        var charges = Math.ceil(base * (Number(el(p + '_deposit_charge_percent').value) || 0)) / 100 + (Number(el(p + '_deposit_charge_fixed').value) || 0);
+        var userPays = el(p + '_deposit_charge_bearer').value === 'user';
+        var f = function (n) { return currency === 'INR' ? '₹' + n.toFixed(2) : n.toFixed(2) + ' USDT'; };
+        var coins = RATES[currency] ? ' → ' + (base * RATES[currency]).toLocaleString('en-IN') + ' ProbCoins' : '';
+        box.textContent = 'Example: deposit ' + f(base) + coins + ', charges ' + f(charges) + ', user pays ' + f(userPays ? base + charges : base) + (userPays ? '' : ' (charges absorbed)');
     }
+    ['INR', 'USDT'].forEach(function (c) {
+        var p = c === 'INR' ? 'inr' : 'usdt';
+        ['_deposit_charge_percent', '_deposit_charge_fixed', '_deposit_charge_bearer'].forEach(function (s) {
+            el(p + s).addEventListener('input', function () { example(c); });
+            el(p + s).addEventListener('change', function () { example(c); });
+        });
+        example(c);
+    });
 
     function setBusy(busy) {
         submitting = busy;
@@ -131,26 +184,16 @@ document.addEventListener('DOMContentLoaded', function () {
         btn.innerHTML = busy ? '<span class="spinner-border spinner-border-sm me-1"></span> Saving...' : btnHtml;
     }
 
-    Object.keys(FIELDS).forEach(function (key) {
-        document.getElementById(key).addEventListener('input', function () {
-            this.classList.remove('is-invalid');
-        });
+    FIELDS.forEach(function (key) {
+        if (el(key)) el(key).addEventListener('input', function () { this.classList.remove('is-invalid'); });
     });
 
+    // The server validates everything (services/deposit-withdrawal-settings.service.js) and returns field errors.
     form.addEventListener('submit', function (e) {
         e.preventDefault();
         if (submitting) return;
-
         var data = {};
-        Object.keys(FIELDS).forEach(function (key) { data[key] = document.getElementById(key).value; });
-
-        var errors = validate(data);
-        setErrors(errors);
-        if (Object.keys(errors).length) {
-            showAlert('danger', 'Please correct the highlighted fields.');
-            return;
-        }
-
+        FIELDS.forEach(function (key) { if (el(key)) data[key] = el(key).value; });
         setBusy(true);
         fetch(form.action, {
             method: 'POST',
@@ -163,8 +206,8 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .then(function (res) {
                 if (res.ok && res.body.success) {
-                    Object.keys(FIELDS).forEach(function (key) {
-                        if (res.body.data && res.body.data[key] !== null) document.getElementById(key).value = res.body.data[key];
+                    FIELDS.forEach(function (key) {
+                        if (el(key) && res.body.data && res.body.data[key] !== null && res.body.data[key] !== undefined) el(key).value = res.body.data[key];
                     });
                     setErrors({});
                     showAlert('success', res.body.message);

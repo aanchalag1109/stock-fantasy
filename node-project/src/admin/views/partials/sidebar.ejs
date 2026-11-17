@@ -59,8 +59,12 @@
   const isHome = on('/dashboard');
 %>
 <div class="sidebar text-white d-flex flex-column d-lg-block" :class="{ 'open': sidebarOpen, 'd-none': !sidebarOpen && window.innerWidth < 992 }" style="width: 250px; z-index: 1040;">
-  <div class="sidebar-logo">
+  <div class="sidebar-logo position-relative">
     <img src="/logo.png" alt="Logo" style="height: 80px;">
+    <%# NEW IMPLEMENTATION — NODE.JS PROJECT: close the sidebar (reopen with the ☰ button in the header) %>
+    <button type="button" class="btn btn-sm text-white position-absolute top-0 end-0 m-2 sidebar-close-btn" @click="setSidebar(false)" title="Close menu" aria-label="Close menu">
+      <i class="bi bi-x-lg"></i>
+    </button>
   </div>
   <div class="sidebar-divider"></div>
   <nav class="flex-grow-1 overflow-y-auto py-2">

@@ -373,6 +373,10 @@ describe('prize payout (Pending Prizes)', () => {
     assert.equal(result.winners_count, 3);
     assert.equal(get('Contest', c._id).prizes_distributed, true);
     assert.equal(db.Notification.filter((n) => n.event === 'winnings_credited').length, 3);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the prize transaction players see says ProbCoins, not ₹
+    const prizeTx = db.Transaction.find((t) => t.type === 'winnings' && String(t.user_id) === String(rows[0].user._id));
+    assert.match(prizeTx.description, new RegExp(`^Won ${per(1).toLocaleString('en-IN', { maximumFractionDigits: 2 })} ProbCoins in contest #`));
+    assert.match(result.message, /ProbCoins → 3 winners/);
   });
 
   test('can never pay twice: repeat calls, interrupted runs and concurrent clicks', async () => {

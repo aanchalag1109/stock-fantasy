@@ -10,6 +10,8 @@ const LeagueSession = require('../models/league-session.model');
 const Notification = require('../models/notification.model');
 const mongoose = require('mongoose');
 const logger = require('../config/logger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: ProbCoin labels on transactions
+const { transactionLabels } = require('../helpers/mobile-compat');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: admin-configured deposit/withdrawal limits
 const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
@@ -91,7 +93,8 @@ const getUserTransactions = async (req, res) => {
         tx.basket_serial_no = null;
       }
 
-      return tx;
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: amounts are ProbCoins (unit, label, real-money side if any)
+      return { ...tx, ...transactionLabels(tx) };
     }));
 
     return res.json({ transactions: enriched });

@@ -16,7 +16,7 @@ const Asset = require('../models/asset.model');
 const {
   keysOf, publicId, sqlDate, absoluteUrl, num, walletOf, unreadCount,
   findByPublicId, ensureOldId, priceMaps, scoreAssets, selectedMultipliers,
-  buildDynamicPrizeDistribution, asPrizeArray, round2,
+  buildDynamicPrizeDistribution, asPrizeArray, round2, transactionLabels,
 } = require('../helpers/mobile-compat');
 // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
 const otpService = require('../services/otp.service');
@@ -1316,6 +1316,9 @@ const getUserTransactions = async (req, res) => {
         updated_at: sqlDate(row.updated_at),
         contest_name: contestName,
         basket_serial_no: basketSerial,
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: amounts are ProbCoins — unit, "50 ProbCoins" label and,
+        // for INR/USDT purchases and withdrawals, the real-money side ("₹500" / "5 USDT")
+        ...transactionLabels(row),
       });
     }
     return res.json({ transactions });

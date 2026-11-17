@@ -216,7 +216,33 @@ function asPrizeArray(value) {
   return [];
 }
 
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: wallet amounts are ProbCoins.
+ *   probcoinLabel(1500)            → "1,500 ProbCoins"
+ *   currencyLabel(500, 'INR')      → "₹500"    currencyLabel(5.5, 'USDT') → "5.5 USDT"
+ */
+function probcoinLabel(n) {
+  return `${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} ProbCoins`;
+}
+function currencyLabel(n, currency) {
+  const value = Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  return String(currency || '').toUpperCase() === 'INR' ? `₹${value}` : `${value} ${String(currency || '').toUpperCase()}`.trim();
+}
+/** Extra fields for a transaction in the app: unit, amount label and the real-money side if any. */
+function transactionLabels(tx) {
+  const extra = { unit: 'ProbCoins', amount_label: probcoinLabel(tx.amount) };
+  if (tx.currency && tx.currency_amount != null) {
+    extra.currency = tx.currency;
+    extra.currency_amount = num(tx.currency_amount);
+    extra.currency_label = currencyLabel(tx.currency_amount, tx.currency);
+  }
+  return extra;
+}
+
 module.exports = {
+  probcoinLabel,
+  currencyLabel,
+  transactionLabels,
   isOid,
   keysOf,
   publicId,
