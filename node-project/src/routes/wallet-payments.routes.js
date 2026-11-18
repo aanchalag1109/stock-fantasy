@@ -7,6 +7,7 @@ const { requireSupportedAppVersion } = require('../middleware/app-version.middle
 
 router.get('/payments/options', ctrl.options);
 router.post('/deposit/quote', requireSupportedAppVersion, ctrl.depositQuote);
+router.post('/deposit/quotes', requireSupportedAppVersion, ctrl.depositQuotes);
 router.post('/deposit/inr/create', requireSupportedAppVersion, ctrl.inrCreate);
 router.get('/deposit/inr/status/:order_id', ctrl.inrStatus);
 router.get('/deposit/inr/history', ctrl.inrHistory);

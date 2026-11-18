@@ -114,7 +114,7 @@ axios.get = async (url, opts) => {
 
 const ids = {};
 function reset() {
-  Object.assign(config.PAYRAM, { apiUrl: 'http://payram.test', apiKey: 'k', minDepositUsdt: 1, maxDepositUsdt: 10000 });
+  Object.assign(config.PAYRAM, { apiUrl: 'http://payram.test', apiKey: 'k', minDepositUsdt: 1, maxDepositUsdt: 10000, mode: 'mainnet' });
   ids.user = new ObjectId();
   db = {
     settings: {
@@ -346,4 +346,26 @@ describe('ProbCoin labels on transactions', () => {
     assert.equal(prize.currency_label, undefined);
   });
 
+});
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: "I want N ProbCoins" → INR and USDT price in one call
+describe('POST /deposit/quotes (both currencies)', () => {
+  beforeEach(reset);
+
+  test('returns the INR and USDT price of the same ProbCoins; an unusable currency is marked unavailable', async () => {
+    Object.assign(db.settings, { inr_deposit_charge_percent: 2, inr_deposit_charge_bearer: 'user' });
+    let res = await request(app).post('/api/v1/deposit/quotes').send({ probcoins: '1000' });
+    assert.equal(res.status, 200, res.text);
+    assert.deepEqual(
+      { inr: res.body.quotes.INR.total_payable, inrBase: res.body.quotes.INR.base_amount, usdt: res.body.quotes.USDT.total_payable, a: res.body.quotes.INR.available },
+      { inr: 102, inrBase: 100, usdt: 10, a: true },
+    );
+    Object.assign(db.settings, { min_deposit_amount: 10, max_deposit_amount: 50 }); // ₹100 now above the INR maximum
+    res = await request(app).post('/api/v1/deposit/quotes').send({ probcoins: '1000' });
+    assert.equal(res.body.quotes.INR.available, false);
+    assert.match(res.body.quotes.INR.message, /cannot exceed 50/);
+    assert.equal(res.body.quotes.USDT.available, true);
+    assert.equal((await request(app).post('/api/v1/deposit/quotes').send({ probcoins: 'abc' })).status, 400);
+    assert.equal((await request(app).post('/api/v1/deposit/quotes').send({})).status, 400);
+  });
 });

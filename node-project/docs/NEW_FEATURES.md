@@ -465,3 +465,10 @@ The USDT counterpart of **Deposit Orders** (LG Pay / INR), which is unchanged.
   - `src/admin/controllers/payram-deposits.controller.js`
   - `src/admin/views/payram_deposits/{index,show}.ejs`
 - **Tests:** `tests/payram/payram-deposit.test.js` (testnet suite), `tests/admin/payram-deposits.test.js`
+
+## 24. Combined deposit quote for the app
+- **`POST /api/v1/deposit/quotes`** `{ probcoins }` returns the **INR** (LG Pay) and **USDT** (PayRam) price of the same ProbCoins in one call, for the "enter ProbCoins → pick how to pay" screen.
+- A currency that can't be used for that amount, because of limits, an unset rate or the gateway being off, comes back as `{ available: false, message, min_amount?, max_amount? }` instead of failing the call.
+- **Mobile integration guide** (flow, every request and response, statuses, errors, deep links): published separately as "ProbCoin Payments API".
+- **Modified:** `src/controllers/wallet-payments.controller.js`, `src/routes/wallet-payments.routes.js`
+- **Tests:** `tests/wallet/inr-usdt-payments.test.js`

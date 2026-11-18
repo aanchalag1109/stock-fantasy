@@ -6,6 +6,7 @@
  * Feature: INR & USDT deposits and withdrawals for the app (client feedback)
  *   GET  /api/v1/payments/options                         per currency: rate, limits, charges, enabled
  *   POST /api/v1/deposit/quote        { currency, amount | probcoins }   ProbCoins + charges + total payable
+ *   POST /api/v1/deposit/quotes       { probcoins }                      INR and USDT price of N ProbCoins at once
  *   POST /api/v1/deposit/inr/create   { user_id, amount | probcoins }    LG Pay → pay_url (JSON)
  *   GET  /api/v1/deposit/inr/status/:order_id?user_id=                   re-checks LG Pay while pending
  *   GET  /api/v1/deposit/inr/history?user_id=
@@ -23,6 +24,7 @@ const WithdrawalRequest = require('../models/withdrawal-request.model');
 const logger = require('../config/logger');
 const { keysOf } = require('../helpers/mobile-compat');
 const quotes = require('../services/payments/quote.service');
+const quotesService = quotes;
 const lgpayDeposits = require('../services/payments/lgpay-deposit.service');
 const withdrawals = require('../services/payments/withdrawal.service');
 
@@ -62,6 +64,30 @@ const depositQuote = async (req, res) => {
     if (!q.ok) return failWith(res, q);
     const { ok, ...quote } = q;
     return res.json({ success: true, quote });
+  } catch (err) {
+    return fail(res, 500, 'Failed to calculate the price');
+  }
+};
+
+/**
+ * "I want N ProbCoins" → what that costs in INR (LG Pay) and in USDT (PayRam), in one call, so the
+ * app can show both options side by side. A currency that can't be used right now (limits, rate
+ * not set, gateway off) comes back as { available: false, message } instead of failing the call.
+ */
+const depositQuotes = async (req, res) => {
+  try {
+    const probcoins = input(req, 'probcoins');
+    if (probcoins === undefined) return fail(res, 400, 'probcoins is required');
+    const quotes = {};
+    for (const currency of ['INR', 'USDT']) {
+      const q = await quotesService.depositQuote({ currency, probcoins });
+      if (q.ok) { const { ok, ...quote } = q; quotes[currency] = { available: true, ...quote }; }
+      else quotes[currency] = { available: false, message: q.message, ...(q.min_amount !== undefined ? { min_amount: q.min_amount, max_amount: q.max_amount } : {}) };
+    }
+    if (!quotes.INR.available && !quotes.USDT.available && /valid number of ProbCoins/.test(quotes.INR.message)) {
+      return fail(res, 400, quotes.INR.message);
+    }
+    return res.json({ success: true, probcoins: Number(probcoins), quotes });
   } catch (err) {
     return fail(res, 500, 'Failed to calculate the price');
   }
@@ -175,6 +201,6 @@ const saveInrPayoutDetails = async (req, res) => {
 };
 
 module.exports = {
-  options, depositQuote, inrCreate, inrStatus, inrHistory, withdrawQuote, withdrawRequest, withdrawHistory,
+  options, depositQuote, depositQuotes, inrCreate, inrStatus, inrHistory, withdrawQuote, withdrawRequest, withdrawHistory,
   payoutDetails, saveInrPayoutDetails,
 };

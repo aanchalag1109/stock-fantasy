@@ -96,7 +96,7 @@ const HASH = bcrypt.hashSync('secret123', 4);
 const ids = {};
 const deposit = (id) => db.deposits.find((d) => d.deposit_id === id);
 function reset() {
-  Object.assign(config.PAYRAM, { apiUrl: 'http://payram.test', apiKey: 'k' });
+  Object.assign(config.PAYRAM, { apiUrl: 'http://payram.test', apiKey: 'k', mode: 'mainnet' });
   ids.player = new ObjectId();
   ids.viewerRole = new ObjectId();
   const at = (h) => new Date(Date.UTC(2026, 10, 10, h));
