@@ -105,6 +105,8 @@ adminApp.use('/admin-users', adminUserRoutes);
 adminApp.use('/admin-roles', adminRoleRoutes);
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications and Notification Management
 adminApp.use('/notification-settings', notificationSettingsRoutes);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats — Contest Settings
+adminApp.use('/contest-settings', require('./routes/contest-settings.routes'));
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System
 adminApp.use('/android-app-update', appUpdateSettingsRoutes);
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled iOS Force Update System

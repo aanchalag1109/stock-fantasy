@@ -472,3 +472,23 @@ The USDT counterpart of **Deposit Orders** (LG Pay / INR), which is unchanged.
 - **Mobile integration guide** (flow, every request and response, statuses, errors, deep links): published separately as "ProbCoin Payments API".
 - **Modified:** `src/controllers/wallet-payments.controller.js`, `src/routes/wallet-payments.routes.js`
 - **Tests:** `tests/wallet/inr-usdt-payments.test.js`
+
+## 25. Fantasy contest formats (H2H, Winner Takes All, 2x–10x) and safe joining
+- **Types** (`contest.category`): existing `mega`, `equal`, `guaranteed`, `practice`, plus `h2h` (2 spots, winner takes the pool), `winner_takes_all` (only rank 1 is paid) and `multiplier` with `contest.multiplier` 2/3/4/5/8/10 (1 in N wins). New types' pools grow with joins; winners share the pool equally. A multiplier contest that doesn't fill pays `floor(joined / N)` winners, so each gets at least N × entry fee less the platform fee.
+- **Rules in one place:** `src/services/contest-formats.js` (winners, minimum players, labels/badges, admin validation). The app APIs, admin, results job and payout all use it.
+- **Minimum players:** `contest.min_participants` (admin, optional). Default: 10 for existing types (PHP rule), 2 for H2H/WTA, N for Nx. Below it, the contest is cancelled and refunded when the session ends.
+- **Result declaration:** the results job pays prizes right after scoring when **Contest Settings → Declare results automatically** is on (default). When it's off, prizes wait on Pending Prizes as before. The payout is idempotent (lease + one transaction id per entry).
+- **Contest Settings** (`/contest-settings`, permission `contest_settings.*`, settings key `contest_settings`): default platform fee % per type (pre-filled on Create Contest) and the auto-declare switch.
+- **Safe joining:** `src/services/contest-join.service.js` serves both `POST /api/v1/bulk-join-contest` and `POST /api/v1/contests/bulk-join`. The entry fee is the contest's own (a different `entry_fee` from the app → 409). Joining closes when the session starts. A per-contest lease (`contest.join_lock_at`) prevents overbooking. The wallet is debited atomically (deposit first, then winnings).
+- **Admin:** type selector, multiplier, minimum players and a live prize preview on create/edit (`format-fields.ejs`, `prize-script.ejs`). H2H forces 2 spots and 1 entry per user, and Nx spots must be a multiple of N. Once players have joined, the type and multiplier are locked and spots can't drop below the number joined.
+- **App API fields** (contest list, my contests, contest detail): `contest_format`, `format_label`, `format_badge`, `multiplier`, `min_participants`, `total_winners`, `spots_left`; detail also has `winners_now`. The existing `badge` now also shows "H2H", "Winner Takes All" or "4x".
+- **New files:** `src/services/contest-formats.js`, `src/services/contest-join.service.js`, `src/services/contest-settings.service.js`, `src/admin/controllers/contest-settings.controller.js`, `src/admin/routes/contest-settings.routes.js`, `src/admin/views/contest_settings/index.ejs`, `src/admin/views/contests/format-fields.ejs`
+- **Modified:** `src/models/contest.model.js`, `src/helpers/mobile-compat.js`, `src/services/contest-automation/{contest-scoring,results.job,prize-payout.service}.js`, `src/controllers/{mobile-api,contest,mobile-legacy}.controller.js`, `src/services/performance-tools.service.js`, `src/admin/controllers/{contests,pages}.controller.js`, `src/admin/views/contests/{create,edit,index,show,prize-script}.ejs`, `src/admin/app.js`, `src/admin/access/permissions.js`, `src/admin/views/partials/sidebar.ejs`
+- **Tests:** `tests/contests/contest-formats-and-join.test.js`, `tests/contest-automation/contest-automation.test.js` (H2H, 4x, WTA end to end; auto-declare on/off)
+
+## 26. FCM device tokens
+- One device token belongs to one user: saving it on login, registration or `POST /api/v1/auth/fcm-token` removes it from any other account.
+- `POST /api/v1/auth/fcm-token` accepts the numeric user `id` the mobile login returns (it previously accepted only Mongo ids). `POST /api/v1/auth/fcm-token/remove` `{ user_id, fcm_token }` clears the token on logout.
+- **New file:** `src/services/notifications/device-token.service.js`
+- **Modified:** `src/controllers/{auth,mobile-api}.controller.js`, `src/routes/auth.routes.js`
+- **Tests:** `tests/notifications/device-token.test.js`

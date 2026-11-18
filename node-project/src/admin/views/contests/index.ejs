@@ -5,7 +5,7 @@
   const upcomingCount = counts.upcoming;
   const pool = counts.pool;
   function money0(n) { return Math.round(Number(n) || 0).toLocaleString('en-US'); }
-  const catColors = { mega: 'primary', equal: 'success', practice: 'info', guaranteed: 'danger' };
+  const catColors = { mega: 'primary', equal: 'success', practice: 'info', guaranteed: 'danger', h2h: 'dark', winner_takes_all: 'warning', multiplier: 'secondary' }; // NEW IMPLEMENTATION — NODE.JS PROJECT: + new contest types
   const statusColors = { active: 'success', live: 'warning', completed: 'secondary', cancelled: 'danger' };
   const sessionStatusColors = { upcoming: 'info', live: 'warning', completed: 'secondary' };
   const fromItem = total ? ((page - 1) * 8) + 1 : 0;
@@ -150,7 +150,7 @@
                         <% } %>
                         <% contests.forEach(function (contest) {
                           const winningPercent = contest.winning_percentage == null ? 30 : Number(contest.winning_percentage);
-                          const totalWinners = Math.round((Number(contest.participants) || 0) * winningPercent / 100);
+                          const totalWinners = contest.total_winners_display != null ? contest.total_winners_display : Math.round((Number(contest.participants) || 0) * winningPercent / 100);
                           const contestName = contest.name ? contest.name : ('Contest #' + contest.display_id);
                         %>
                         <tr class="<%= contest.status === 'cancelled' ? 'table-danger' : '' %>">
@@ -176,7 +176,7 @@
                                 </div>
                             </td>
                             <td>
-                                <span class="badge bg-<%= catColors[contest.category] || 'secondary' %>"><%= contest.category ? contest.category.charAt(0).toUpperCase() + contest.category.slice(1) : '' %></span>
+                                <span class="badge bg-<%= catColors[contest.category] || 'secondary' %>"><%= contest.format_label || (contest.category ? contest.category.charAt(0).toUpperCase() + contest.category.slice(1) : '') %></span>
                                 <% if (contest.is_pinned) { %>
                                     <span class="badge bg-dark mt-1"><i class="bi bi-pin-angle-fill"></i> Pinned</span>
                                 <% } %>

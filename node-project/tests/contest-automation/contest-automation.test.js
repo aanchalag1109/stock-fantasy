@@ -273,7 +273,8 @@ describe('live scores (contest:update-live-scores)', () => {
 
 // ─── Results ─────────────────────────────────────────────────────────────────
 
-async function runToCompletion(session, endPrices) {
+async function runToCompletion(session, endPrices, startPrices) {
+  if (startPrices) feedPrices = startPrices;
   await runSessionLifecycle(NOW);
   feedPrices = endPrices;
   await runSessionLifecycle(min(61));
@@ -298,7 +299,7 @@ describe('results (contest:calculate-performance)', () => {
     assert.equal(db.Notification.filter((n) => n.event === 'refund_credited').length, 4);
   });
 
-  test('10+ entries: final scores (same function as the app), ranks with ties, prize rows, nothing paid', async () => {
+  test('10+ entries: final scores (same function as the app), ranks with ties, prize rows, prizes paid automatically', async () => {
     const s = addSession();
     const c = addContest(s);
     const baskets = (i) => ({
@@ -321,9 +322,74 @@ describe('results (contest:calculate-performance)', () => {
       else assert.equal(ranked[i].rank, i + 1, 'next rank is skipped after a tie');
     }
     assert.equal(get('Contest', c._id).is_calculated, true);
-    assert.equal(get('Contest', c._id).prizes_distributed, false);
-    assert.equal(db.Transaction.length, 0, 'prizes are paid by an admin, as in PHP');
     assert.deepEqual(db.ContestPerformancePrize.map((p) => p.per_winner_amount), buildDynamicPrizeDistribution(3, 108, 'mega').map((r) => r.per_winner_amount));
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: results are declared automatically (Contest Settings default)
+    await settle();
+    assert.equal(result.paid, 1);
+    assert.equal(get('Contest', c._id).prizes_distributed, true);
+    const paid = db.Transaction.filter((t) => t.type === 'winnings');
+    assert.ok(paid.length >= 1);
+    assert.ok(paid.reduce((sum, t) => sum + t.amount, 0) <= 108 + 0.01, 'never more than the prize pool');
+    assert.equal((await runContestResults()).paid, 0, 'a second run pays nothing');
+  });
+
+  test('auto-declare off: scored and ranked, prizes wait for the admin', async () => {
+    const original = Setting.findOne;
+    Setting.findOne = (f) => query(f && f.key === 'contest_settings' ? { value: { auto_declare_results: false } } : null);
+    try {
+      const s = addSession();
+      const c = addContest(s);
+      addEntries(c, s, 12, (i) => ({ assets: [{ name: 'RELIANCE' }], multipliers: [{ multiplier: 1, prediction: i % 2 ? 'DOWN' : 'UP' }] }));
+      await runToCompletion(s, { RELIANCE: 110, TCS: 200, INFY: 50 });
+      const result = await runContestResults();
+      assert.equal(result.calculated, 1);
+      assert.equal(result.paid, 0);
+      assert.equal(get('Contest', c._id).prizes_distributed, false);
+      assert.equal(db.Transaction.length, 0, 'prizes are paid from Pending Prizes');
+    } finally {
+      Setting.findOne = original;
+    }
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats end to end
+  test('H2H: 2 players → winner takes the pool; 1 player → cancelled and refunded', async () => {
+    const s = addSession();
+    const h2h = addContest(s, { category: 'h2h', participants: 2, entry_fee: 100, platform_fee: 15 });
+    const lonely = addContest(s, { category: 'h2h', participants: 2, entry_fee: 100, platform_fee: 15 });
+    // entry 0 predicts UP, entry 1 DOWN; RELIANCE rises → entry 0 wins
+    const players = addEntries(h2h, s, 2, (i) => ({ assets: [{ name: 'RELIANCE' }], multipliers: [{ multiplier: 1, prediction: i ? 'DOWN' : 'UP' }] }));
+    const alone = addEntries(lonely, s, 1);
+    await runToCompletion(s, { RELIANCE: 110, TCS: 200, INFY: 50 });
+    const result = await runContestResults();
+    await settle();
+    assert.equal(result.cancelled, 1);
+    assert.equal(get('Contest', lonely._id).status, 'cancelled');
+    assert.equal(get('User', alone[0].user._id).deposit_balance, 100, 'entry fee refunded');
+    assert.equal(get('Contest', h2h._id).prizes_distributed, true);
+    assert.equal(get('User', players[0].user._id).winnings_balance, 170, '2 × 100 − 15%');
+    assert.equal(get('User', players[1].user._id).winnings_balance, 0);
+  });
+
+  test('4x: 9 of 12 spots joined → 2 winners share the whole pool; WTA pays rank 1 only', async () => {
+    const s = addSession();
+    const fourX = addContest(s, { category: 'multiplier', multiplier: 4, participants: 12, entry_fee: 100, platform_fee: 10 });
+    const wta = addContest(s, { category: 'winner_takes_all', participants: 5, entry_fee: 50, platform_fee: 20 });
+    // entry i holds S<i>; lower i = bigger gain → rank i + 1
+    const assets = (i) => ({ assets: [{ name: `S${i}` }], multipliers: [] });
+    const four = addEntries(fourX, s, 9, assets);
+    const w = addEntries(wta, s, 3, assets);
+    get('LeagueSession', s._id).assets = Array.from({ length: 9 }, (_, i) => ({ asset_symbol: `S${i}`, start_price: null, end_price: null }));
+    await runToCompletion(s, Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`S${i}`, 100 + 20 - i])), Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`S${i}`, 100])));
+    const result = await runContestResults();
+    await settle();
+    assert.equal(result.cancelled, 0);
+    // 9 × 100 − 10% = 810, floor(9 / 4) = 2 winners → 405 each (≥ 4 × 100 × 0.9 = 360)
+    assert.equal(get('User', four[0].user._id).winnings_balance, 405);
+    assert.equal(get('User', four[1].user._id).winnings_balance, 405);
+    assert.equal(get('User', four[2].user._id).winnings_balance, 0);
+    // 3 × 50 − 20% = 120 → rank 1 only
+    assert.equal(get('User', w[0].user._id).winnings_balance, 120);
+    assert.equal(get('User', w[1].user._id).winnings_balance, 0);
   });
 
   test('historical sessions (not captured by the automation) are never touched', async () => {

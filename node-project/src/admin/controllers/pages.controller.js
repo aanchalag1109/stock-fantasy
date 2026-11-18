@@ -16,6 +16,7 @@ const { render, renderStandalone } = require('../helpers/render');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Contest Automation (Pending Prizes payout)
 const prizePayout = require('../../services/contest-automation/prize-payout.service');
 const logger = require('../../config/logger');
+const formats = require('../../services/contest-formats'); // NEW IMPLEMENTATION — NODE.JS PROJECT: contest formats
 // PHP PARITY: Payment Orders actions
 const paymentOrders = require('../../services/payment-orders.service');
 // PHP PARITY: Performance "How It Works" diagnostics
@@ -212,6 +213,8 @@ const performance = {
       let actualWinnersCount  = Math.floor(actualParticipantsCount * (winningPercent / 100));
       if (actualWinnersCount < 1 && actualParticipantsCount > 0) actualWinnersCount = 1;
       if (actualParticipantsCount === 0) actualWinnersCount = 0;
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: h2h / WTA / Nx have their own winner rule
+      if (formats.isNewFormat(contest)) actualWinnersCount = formats.winnersFor(contest, actualParticipantsCount);
 
       const contestCategory  = (contest.category || '').toLowerCase().trim();
       const sessionStatus    = contest.session_status;

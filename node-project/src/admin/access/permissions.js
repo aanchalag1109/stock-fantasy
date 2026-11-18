@@ -27,6 +27,8 @@ const MODULES = [
   // NEW IMPLEMENTATION — NODE.JS PROJECT: Assets admin page (stocks/crypto in each market category)
   { key: 'assets', label: 'Assets (stocks & crypto)', group: 'Games', actions: { view: 'View', create: 'Add', edit: 'Edit & move', delete: 'Delete' } },
   { key: 'pending_prizes', label: 'Pending Prizes', group: 'Games', actions: { view: 'View', distribute: 'Distribute prizes' } },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats — Contest Settings
+  { key: 'contest_settings', label: 'Contest Settings', group: 'Games', actions: { view: 'View', edit: 'Edit fees & auto results' } },
   { key: 'performance', label: 'Performance', group: 'Reports', actions: { view: 'View', manage: 'RUN ALL & Calculate Results (pays prizes)' } },
   { key: 'contest_analysis', label: 'Contest Analysis', group: 'Reports', actions: { view: 'View' } },
   { key: 'referrals', label: 'Referrals', group: 'Reports', actions: { view: 'View' } },
@@ -92,6 +94,7 @@ const LANDING_PAGES = [
   ['contest_analysis.view', '/contest-analysis'],
   ['live_management.view', '/live-management'],
   ['pending_prizes.view', '/pending-prizes'],
+  ['contest_settings.view', '/contest-settings'],
   ['templates.view', '/templates'],
   ['market_categories.view', '/market_type_categories'],
   ['assets.view', '/market-assets'],

@@ -20,6 +20,7 @@ const mongoose = require('mongoose');
 const LeagueSession = require('../models/league-session.model');
 const config = require('../config/env');
 const { num } = require('../helpers/mobile-compat');
+const formats = require('./contest-formats'); // NEW IMPLEMENTATION — NODE.JS PROJECT: contest formats
 
 const NSE_HOST = 'indian-stock-market-data-nse-bse-bcd-mcx-cds-nfo.p.rapidapi.com';
 const isOid = (v) => String(v).length === 24 && mongoose.isValidObjectId(String(v));
@@ -236,7 +237,8 @@ function diagnostics({ contest, session, participants, stats, flexibleDistributi
   if (participantCount > 0 && !transactionCount) add('warning', 'No Transactions Found', 'Participants exist but no transactions found. Entry fees may not be processed.');
   else add('success', 'Transactions Found', `${transactionCount || 0} transactions found for this contest`);
   const winningPct = contest.winning_percentage == null ? 30 : num(contest.winning_percentage);
-  const expectedWinners = Math.ceil((stats.total_participants * winningPct) / 100);
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: h2h / WTA / Nx have their own winner rule
+  const expectedWinners = formats.isNewFormat(contest) ? formats.winnersFor(contest, stats.total_participants) : Math.ceil((stats.total_participants * winningPct) / 100);
   if (participantCount > 0 && Math.abs(expectedWinners - num(stats.actual_winners)) > 1) add('warning', 'Winner Count Mismatch', `Expected: ${expectedWinners} winners, Actual: ${stats.actual_winners} winners`);
   else add('success', 'Winner Count Valid', `${stats.actual_winners} winners from ${stats.total_participants} participants`);
 
@@ -245,7 +247,7 @@ function diagnostics({ contest, session, participants, stats, flexibleDistributi
   const totalPool = stats.total_participants * entryFee;
   const platformFee = (totalPool * platformPct) / 100;
   const prizePool = totalPool - platformFee;
-  const totalWinners = Math.ceil((stats.total_participants * winningPct) / 100);
+  const totalWinners = formats.isNewFormat(contest) ? formats.winnersFor(contest, stats.total_participants) : Math.ceil((stats.total_participants * winningPct) / 100);
 
   // Step 8: user-wise prizes (ties share a rank)
   const sorted = participants.slice().sort((a, b) => num(b.total_score) - num(a.total_score));

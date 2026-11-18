@@ -2,7 +2,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h1 class="h3 mb-1"><i class="bi bi-trophy-fill text-warning me-2"></i>Create Contest</h1>
-            <p class="text-muted mb-0">Mega/Equal = Dynamic pool | Guaranteed/Practice = Fixed pool</p>
+            <p class="text-muted mb-0">Mega / Equal / H2H / Winner Takes All / 2x–10x = pool grows with joins | Guaranteed / Practice = fixed prizes</p>
         </div>
         <a href="/contests" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
     </div>
@@ -38,35 +38,28 @@
                     <div class="card-header bg-warning text-white"><i class="bi bi-gear-fill me-2"></i>Contest Parameters</div>
                     <div class="card-body">
                         <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
-                                <select id="category" name="category" class="form-select" required onchange="onCategoryChange()">
-                                    <option value="mega">🏆 Mega Contest (Dynamic Pool)</option>
-                                    <option value="equal">⚖️ Equal Prize (Dynamic Pool)</option>
-                                    <option value="guaranteed">🎯 Guaranteed (Fixed Pool)</option>
-                                    <option value="practice">🎓 Practice (Fixed Pool)</option>
-                                </select>
-                                <small id="categoryHint" class="text-info fw-semibold"></small>
-                            </div>
+                            <%- include('format-fields', { formFields: { category: values.category, multiplier: values.multiplier, min_participants: values.min_participants, isCreate: true } }) %>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-semibold">Max Entries / User <span class="text-danger">*</span></label>
-                                <input type="number" name="max_entries_per_user" class="form-control" value="1" min="1" required>
+                                <input type="number" id="max_entries_per_user" name="max_entries_per_user" class="form-control" value="<%= values.max_entries_per_user || 1 %>" min="1" required>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-semibold">Total Spots <span class="text-danger">*</span></label>
-                                <input type="number" id="participants" name="participants" class="form-control" value="100" min="2" required oninput="recalc()">
+                                <input type="number" id="participants" name="participants" class="form-control" value="<%= values.participants || 100 %>" min="2" required oninput="recalc()">
+                                <small id="spotsHint" class="text-danger fw-semibold"></small>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-semibold">Entry Fee (coins)</label>
-                                <input type="number" id="entry_fee" name="entry_fee" class="form-control" value="10" min="0" step="0.01" oninput="recalc()">
+                                <input type="number" id="entry_fee" name="entry_fee" class="form-control" value="<%= values.entry_fee == null ? 10 : values.entry_fee %>" min="0" step="0.01" oninput="recalc()">
                             </div>
                             <div class="col-md-6 mb-3" id="platformFeeBox">
                                 <label class="form-label fw-semibold">Platform Fee %</label>
-                                <input type="number" id="platform_fee" name="platform_fee" class="form-control" value="10" min="0" max="100" step="0.1" required oninput="recalc()">
+                                <input type="number" id="platform_fee" name="platform_fee" class="form-control" value="<%= values.platform_fee == null ? (platformFees.mega == null ? 10 : platformFees.mega) : values.platform_fee %>" min="0" max="100" step="0.01" required oninput="feeTouched = true; recalc()">
+                                <small class="text-muted">Default per type comes from <a href="/contest-settings">Contest Settings</a>.</small>
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6 mb-3" id="winningBox">
                                 <label class="form-label fw-semibold">Winning %</label>
-                                <input type="number" id="winning_percentage" name="winning_percentage" class="form-control" value="30" min="0" max="100" step="0.1" required oninput="recalc()">
+                                <input type="number" id="winning_percentage" name="winning_percentage" class="form-control" value="<%= values.winning_percentage == null ? 30 : values.winning_percentage %>" min="0" max="100" step="0.1" oninput="recalc()">
                             </div>
                         </div>
                     </div>
@@ -175,8 +168,12 @@
                     <div class="card-body">
                         <h6 class="text-warning"><i class="bi bi-info-circle me-1"></i>Pool Types</h6>
                         <ul class="small text-muted ps-3 mb-0">
-                            <li><strong>Mega/Equal:</strong> Pool grows with joins</li>
-                            <li><strong>Guaranteed/Practice:</strong> Pool = sum of tree prizes (fixed)</li>
+                            <li><strong>Mega / Equal:</strong> Pool grows with joins</li>
+                            <li><strong>Head to Head:</strong> 2 spots, winner gets the pool</li>
+                            <li><strong>Winner Takes All:</strong> only rank 1 is paid</li>
+                            <li><strong>2x – 10x:</strong> 1 in N wins; winners share the pool equally</li>
+                            <li><strong>Guaranteed / Practice:</strong> Pool = sum of tree prizes (fixed)</li>
+                            <li><strong>Min. Players:</strong> if fewer join, the contest is cancelled and everyone is refunded</li>
                         </ul>
                     </div>
                 </div>
@@ -208,7 +205,7 @@ document.getElementById('createContestForm').addEventListener('submit', function
     }
 });
 document.addEventListener('DOMContentLoaded', function () {
-    onCategoryChange();
+    onCategoryChange(false);
     recalc();
     if (isFixed()) addTreeRow(1, 1, '');
 });

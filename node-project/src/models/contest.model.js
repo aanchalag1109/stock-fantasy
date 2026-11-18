@@ -21,12 +21,17 @@ const contestSchema = new mongoose.Schema({
   // PHP PARITY: nullable as in PHP (contests.league_session_id ... onDelete('set null')). Contests whose
   // session was deleted keep a null id; `required` made every save() on them fail (incl. Cancel/Pin/Edit).
   league_session_id: { type: mongoose.Schema.Types.Mixed, default: null, index: true },
-  category: { 
-    type: String, 
-    enum: ['mega', 'equal', 'practice', 'guaranteed'], 
+  category: {
+    type: String,
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats (h2h, winner_takes_all, multiplier)
+    enum: ['mega', 'equal', 'practice', 'guaranteed', 'h2h', 'winner_takes_all', 'multiplier'],
     required: true,
-    index: true 
+    index: true
   },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats — see services/contest-formats.js
+  multiplier: { type: Number, default: null },        // multiplier contests only: 2, 3, 4, 5, 8 or 10
+  min_participants: { type: Number, default: null },  // null = format default (legacy contests: 10)
+  join_lock_at: { type: Date, default: null },        // short lease that serialises joins (no overbooking)
   contest_type: { type: String, enum: ['dynamic', 'fixed'], default: 'dynamic' },
   type: { type: String, default: 'dynamic' },
   status: { 

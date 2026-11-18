@@ -31,6 +31,7 @@ const { keysOf, publicId, num, round2, probcoinLabel } = require('../../helpers/
 const { notify } = require('../notifications/notification.service');
 const scoring = require('./contest-scoring');
 const { creditOnce } = require('./ledger');
+const formats = require('../contest-formats');
 
 const LEASE_MS = 10 * 60 * 1000;
 
@@ -128,7 +129,7 @@ async function distributeContest(contestId) {
         notify('winnings_credited', {
           user: result.user,
           dedupeKey: `winnings:${txId}`,
-          params: { amount, contestLabel: `${String(contest.category || '').toUpperCase()} contest #${label}`, sessionName: session.name },
+          params: { amount, contestLabel: `${formats.labelFor(contest)} contest #${label}`, sessionName: session.name }, // NEW IMPLEMENTATION — NODE.JS PROJECT: "H2H", "4x", …
           data: { screen: 'contest', contest_id: label, session_id: publicId(session), transaction_id: txId },
         });
       }

@@ -1,0 +1,66 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT
+
+  Feature: Fantasy Contest Formats (H2H, Winner Takes All, 2x–10x)
+  Purpose: Contest type, multiplier and minimum-players fields shared by the
+           create and edit forms. Rules: services/contest-formats.js.
+  Origin: Newly implemented in node-project; not directly converted
+           from the original PHP implementation.
+%>
+<%
+  const ff = typeof formFields !== 'undefined' ? formFields : {};
+  const selCategory = ff.category || 'mega';
+  const selMultiplier = parseInt(ff.multiplier, 10) || 4;
+  const minValue = ff.min_participants == null ? '' : ff.min_participants;
+  const locked = !!ff.locked;
+  const types = [
+    { group: 'Prize pool grows with joins', items: [
+      ['mega', '🏆 Mega — ranked prizes'],
+      ['equal', '⚖️ Equal — top X% win the same amount'],
+      ['h2h', '⚔️ Head to Head — 1 vs 1, winner takes the pool'],
+      ['winner_takes_all', '👑 Winner Takes All — only rank 1 is paid'],
+      ['multiplier', '✖️ Multiplier (2x – 10x) — 1 in N wins'],
+    ] },
+    { group: 'Fixed prize table', items: [
+      ['guaranteed', '🎯 Guaranteed — fixed prizes'],
+      ['practice', '🎓 Practice — free / fixed prizes'],
+    ] },
+  ];
+%>
+<div class="col-md-6 mb-3">
+    <label class="form-label fw-semibold">Contest Type <span class="text-danger">*</span></label>
+    <select id="category" name="category" class="form-select" required onchange="onCategoryChange(true)" <%= locked ? 'disabled' : '' %>>
+        <% types.forEach(function (g) { %>
+            <optgroup label="<%= g.group %>">
+                <% g.items.forEach(function (t) { %>
+                    <option value="<%= t[0] %>" <%= selCategory === t[0] ? 'selected' : '' %>><%= t[1] %></option>
+                <% }) %>
+            </optgroup>
+        <% }) %>
+    </select>
+    <% if (locked) { %>
+        <input type="hidden" name="category" value="<%= selCategory %>">
+        <small class="text-muted d-block"><i class="bi bi-lock"></i> Type is locked because players have joined.</small>
+    <% } %>
+    <small id="categoryHint" class="fw-semibold d-block"></small>
+</div>
+<div class="col-md-3 mb-3 d-none" id="multiplierBox">
+    <label class="form-label fw-semibold">Multiplier</label>
+    <select id="multiplier" name="multiplier" class="form-select" onchange="onCategoryChange(false)" <%= locked && selCategory === 'multiplier' ? 'disabled' : '' %>>
+        <% multipliers.forEach(function (m) { %>
+            <option value="<%= m %>" <%= selMultiplier === m ? 'selected' : '' %>><%= m %>x</option>
+        <% }) %>
+    </select>
+    <% if (locked && selCategory === 'multiplier') { %><input type="hidden" name="multiplier" value="<%= selMultiplier %>"><% } %>
+</div>
+<div class="col-md-3 mb-3">
+    <label class="form-label fw-semibold">Min. Players</label>
+    <input type="number" id="min_participants" name="min_participants" class="form-control" value="<%= minValue %>" min="1" placeholder="Default" oninput="recalc()">
+    <small id="minHint" class="text-muted"></small>
+</div>
+<script>
+window.CONTEST_FORM = {
+    platformFees: <%- JSON.stringify(platformFees || {}).replace(/</g, '\\u003c') %>,
+    isCreate: <%= ff.isCreate ? 'true' : 'false' %>,
+};
+</script>

@@ -25,6 +25,9 @@ const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
 const { notify } = require('../services/notifications/notification.service');
 const deviceTokens = require('../services/notifications/device-token.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats + safe joining
+const formats = require('../services/contest-formats');
+const contestJoin = require('../services/contest-join.service');
 
 function authUser(user) {
   return {
@@ -478,7 +481,7 @@ const getUserJoinedSessions = async (req, res) => {
       sessionContests.forEach((contest) => {
         let prizePool = num(contest.prize_pool);
         const category = String(contest.category || '').toLowerCase();
-        if (['live', 'completed'].includes(session.status) && ['flexible', 'mega', 'equal'].includes(category)) {
+        if (['live', 'completed'].includes(session.status) && (category === 'flexible' || !formats.isFixedPool(contest))) {
           const joinedCount = entries.filter((entry) => keysOf(contest).map(String).includes(String(entry.contest_id))).length;
           const totalPool = joinedCount * num(contest.entry_fee);
           prizePool = totalPool - (totalPool * num(contest.platform_fee)) / 100;
@@ -511,7 +514,7 @@ const getUserJoinedSessions = async (req, res) => {
 function contestPublic(contest, session, joinedCount) {
   const entryFee = num(contest.entry_fee);
   const platformFee = num(contest.platform_fee);
-  const isFixed = !!contest.is_fixed_prize || ['guaranteed', 'practice'].includes(contest.category);
+  const isFixed = formats.isFixedPool(contest);
   let prizePool = num(contest.prize_pool);
   if (!isFixed && session && session.status !== 'upcoming') {
     const totalPool = joinedCount * entryFee;
@@ -524,14 +527,12 @@ function contestPublic(contest, session, joinedCount) {
     firstPrize = round2(first.per_winner ?? first.perWinner ?? 0);
   }
   if (!isFixed && session && ['live', 'completed'].includes(session.status) && prizePool > 0) {
-    const winners = Math.max(1, Math.floor(joinedCount * (num(contest.winning_percentage || 30) / 100)));
+    const winners = formats.winnersFor(contest, joinedCount);
     const dist = buildDynamicPrizeDistribution(winners, prizePool, contest.category);
     if (dist.length) firstPrize = round2(dist[0].per_winner_amount);
   }
-  let badge = null;
-  if (contest.is_pinned) badge = 'Featured';
-  else if (contest.category === 'guaranteed') badge = 'Guaranteed';
-  else if (contest.category === 'practice') badge = 'Practice';
+  const badge = formats.appBadge(contest);
+  const spots = parseInt(contest.participants || 100, 10);
   return {
     id: publicId(contest),
     category: contest.category,
@@ -551,6 +552,9 @@ function contestPublic(contest, session, joinedCount) {
     first_prize: firstPrize,
     badge,
     league_session_id: session ? publicId(session) : contest.league_session_id,
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: contest type fields (see services/contest-formats.js)
+    ...formats.publicFields(contest),
+    spots_left: Math.max(0, spots - joinedCount),
   };
 }
 
@@ -614,14 +618,14 @@ const myContestsBySession = async (req, res) => {
       contests: contests.map((contest) => {
         const joined = countFor(contest, counts);
         const row = contestPublic(contest, plain, joined);
-        const flexible = ['flexible', 'mega', 'equal'].includes(String(contest.category || '').toLowerCase());
+        const flexible = String(contest.category || '').toLowerCase() === 'flexible' || !formats.isFixedPool(contest);
         if (flexible) {
           const totalPool = joined * num(contest.entry_fee);
           row.prize_pool = totalPool - (totalPool * num(contest.platform_fee)) / 100;
           row.is_flexible_prize = true;
         }
         const distribution = asPrizeArray(contest.prize_distribution);
-        row.first_prize = distribution.length ? round2(distribution[0].perWinner ?? 0) : 0;
+        if (!formats.isNewFormat(contest)) row.first_prize = distribution.length ? round2(distribution[0].perWinner ?? distribution[0].per_winner ?? 0) : 0;
         return row;
       }),
       session: {
@@ -690,7 +694,7 @@ const getContest = async (req, res) => {
     const sessionStatus = sessionPlain ? sessionPlain.status : 'upcoming';
     const entryFee = num(plain.entry_fee);
     const platformFeePercent = num(plain.platform_fee);
-    const isFixed = ['guaranteed', 'practice'].includes(plain.category) || !!plain.is_fixed_prize;
+    const isFixed = formats.isFixedPool(plain);
     let displayPrizePool;
     let totalPool;
     let platformFeeAmount;
@@ -705,7 +709,12 @@ const getContest = async (req, res) => {
     }
     let prizeDistribution = [];
     const stored = asPrizeArray(plain.prize_distribution);
-    if (isFixed || !(prices.started || sessionStatus === 'live')) {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: once a new-type contest is live, prizes follow the actual joins
+    const liveNewFormat = formats.isNewFormat(plain) && (prices.started || ['live', 'completed'].includes(sessionStatus));
+    if (liveNewFormat) {
+      const winners = formats.winnersFor(plain, joinedUsersCount);
+      prizeDistribution = buildDynamicPrizeDistribution(winners, displayPrizePool, plain.category);
+    } else if (isFixed || !(prices.started || sessionStatus === 'live')) {
       prizeDistribution = stored.map((item) => {
         const winnersCount = parseInt(item.winners || item.winners_count || 1, 10);
         const rankStart = parseInt(item.rank_start || 1, 10);
@@ -735,7 +744,7 @@ const getContest = async (req, res) => {
         per_winner_amount: round2(item.per_winner_amount || item.per_winner),
       }));
     } else if (joinedUsersCount > 0 && displayPrizePool > 0) {
-      const winners = Math.max(1, Math.floor(joinedUsersCount * (num(plain.winning_percentage || 30) / 100)));
+      const winners = formats.winnersFor(plain, joinedUsersCount);
       prizeDistribution = buildDynamicPrizeDistribution(winners, displayPrizePool, plain.category);
     }
     participants = participants.map((participant, index) => {
@@ -782,6 +791,10 @@ const getContest = async (req, res) => {
         spots_left: Math.max(0, maxParticipants - joinedUsersCount),
         winning_percentage: num(plain.winning_percentage),
         calculation_started: prices.started,
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: contest type fields + current number of winners
+        ...formats.publicFields(plain),
+        badge: formats.appBadge(plain),
+        winners_now: formats.winnersFor(plain, joinedUsersCount),
       },
       participants,
       user_joined: userEntryCount > 0,
@@ -881,88 +894,17 @@ const getUserContests = async (req, res) => {
   }
 };
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats — safe joining (services/contest-join.service.js):
+// server-side entry fee, joining closes at session start, no overbooking, atomic wallet debit.
 const bulkJoinContest = async (req, res) => {
   try {
-    const user = await findByPublicId(User, req.body.user_id);
-    const contest = await findByPublicId(Contest, req.body.contest_id);
-    const basketIds = [].concat(req.body.basket_ids || []).filter((id) => id != null && id !== '');
-    const entryFee = num(req.body.entry_fee);
-    if (!user || !contest || !basketIds.length) return res.status(400).json({ success: false, message: 'Invalid input' });
-    const plain = contest.toObject();
-    const existing = await ContestEntry.find({ contest_id: { $in: keysOf(plain) } }).lean();
-    const maxParticipants = parseInt(plain.participants || 100, 10);
-    const available = maxParticipants - existing.length;
-    if (basketIds.length > available) {
-      return res.status(400).json({ success: false, message: `Only ${available} spots available in this contest` });
-    }
-    const userEntries = existing.filter((entry) => keysOf(user).map(String).includes(String(entry.user_id)));
-    const remaining = parseInt(plain.max_entries_per_user || 1, 10) - userEntries.length;
-    if (basketIds.length > remaining) {
-      return res.status(400).json({ success: false, message: `You can only select ${remaining} more baskets` });
-    }
-    if (walletOf(user) < entryFee * basketIds.length) {
-      return res.status(400).json({ success: false, message: 'Insufficient balance' });
-    }
-    let successCount = 0;
-    const errors = [];
-    for (const basketId of basketIds) {
-      const basket = await findByPublicId(SavedBasket, basketId);
-      if (!basket || !keysOf(user).map(String).includes(String(basket.user_id)) || !basket.is_standalone) {
-        errors.push(`Basket ${basketId}: Not found`);
-        continue;
-      }
-      const already = existing.some((entry) => keysOf(basket).map(String).includes(String(entry.basket_id)) && keysOf(user).map(String).includes(String(entry.user_id)));
-      if (already) {
-        errors.push(`Basket ${basketId}: Already joined`);
-        continue;
-      }
-      const entry = await ContestEntry.create({
-        user_id: user._id,
-        contest_id: contest._id,
-        basket_id: basket._id,
-        session_id: plain.league_session_id,
-        total_score: 0,
-      });
-      await ensureOldId(ContestEntry, entry);
-      let remainingFee = entryFee;
-      if (num(user.deposit_balance) >= remainingFee) user.deposit_balance = num(user.deposit_balance) - remainingFee;
-      else {
-        remainingFee -= num(user.deposit_balance);
-        user.deposit_balance = 0;
-        user.winnings_balance = num(user.winnings_balance) - remainingFee;
-      }
-      user.deposit_balance = Math.max(0, num(user.deposit_balance));
-      user.winnings_balance = Math.max(0, num(user.winnings_balance));
-      await Transaction.create({
-        user_id: user._id,
-        contest_id: contest._id,
-        type: 'contest_entry',
-        amount: entryFee,
-        status: 'success',
-        transaction_id: `ENTRY_${publicId(plain)}_${publicId(entry)}_${Math.floor(Date.now() / 1000)}_${Math.floor(1000 + Math.random() * 9000)}`,
-        description: `Entry fee for Contest #${publicId(plain)}, entry ${publicId(entry)}`,
-      });
-      successCount += 1;
-    }
-    await user.save();
-    const joinedUsers = existing.length + successCount;
-    const userEntryCount = userEntries.length + successCount;
-    return res.json({
-      success: true,
-      message: `Joined with ${successCount} basket(s)`,
-      success_count: successCount,
-      errors,
-      wallet_balance: walletOf(user),
-      contest_updated: {
-        id: publicId(plain),
-        joined_users: joinedUsers,
-        spots_left: Math.max(0, maxParticipants - joinedUsers),
-        user_entry_count: userEntryCount,
-        remaining_entries: Math.max(0, parseInt(plain.max_entries_per_user || 1, 10) - userEntryCount),
-      },
-      should_refresh: true,
-      unread_notifications: await unreadCount(user),
+    const result = await contestJoin.joinContest({
+      userRef: req.body.user_id,
+      contestRef: req.body.contest_id,
+      basketIds: req.body.basket_ids,
+      clientEntryFee: req.body.entry_fee,
     });
+    return res.status(result.status).json(result.body);
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }

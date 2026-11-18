@@ -21,25 +21,86 @@ const TIERS = {
 
 function isFixed() { const c = document.getElementById('category').value; return c === 'guaranteed' || c === 'practice'; }
 function num(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats — same rules as services/contest-formats.js
+let feeTouched = false;
+const NEW_FORMATS = ['h2h', 'winner_takes_all', 'multiplier'];
+const FORMAT_HINTS = {
+    mega: ['📈 Ranked prizes — pool grows with joins', 'text-success'],
+    equal: ['📈 Top winners share the pool equally — pool grows with joins', 'text-success'],
+    h2h: ['⚔️ 1 vs 1 — 2 spots, the winner takes the prize pool', 'text-primary'],
+    winner_takes_all: ['👑 Only rank 1 is paid — pool grows with joins', 'text-primary'],
+    multiplier: ['✖️ 1 in N players wins; winners share the pool equally (at least N × entry fee less platform fee)', 'text-primary'],
+    guaranteed: ['🔒 Fixed pool — tree total = prize pool', 'text-danger'],
+    practice: ['🔒 Fixed pool — tree total = prize pool', 'text-danger'],
+};
+function contestType() { return document.getElementById('category').value; }
+function isNewFormat() { return NEW_FORMATS.includes(contestType()); }
+function multiplierValue() { return parseInt(document.getElementById('multiplier')?.value, 10) || 2; }
+function winnersAt(spots) {
+    if (spots <= 0) return 0;
+    const t = contestType();
+    if (t === 'h2h' || t === 'winner_takes_all') return 1;
+    if (t === 'multiplier') return Math.floor(spots / multiplierValue());
+    return Math.max(1, Math.floor(spots * num('winning_percentage') / 100));
+}
+function formatFloor() {
+    const t = contestType();
+    if (t === 'multiplier') return multiplierValue();
+    if (t === 'h2h' || t === 'winner_takes_all') return 2;
+    return 1;
+}
+function applyFormatRules(userChanged) {
+    const t = contestType();
+    const form = window.CONTEST_FORM || {};
+    document.getElementById('multiplierBox')?.classList.toggle('d-none', t !== 'multiplier');
+    document.getElementById('winningBox')?.classList.toggle('d-none', isNewFormat());
+    const spots = document.getElementById('participants');
+    const maxEntries = document.getElementById('max_entries_per_user');
+    if (t === 'h2h') {
+        spots.value = 2; spots.readOnly = true;
+        if (maxEntries) { maxEntries.value = 1; maxEntries.readOnly = true; }
+    } else {
+        spots.readOnly = false;
+        if (maxEntries) maxEntries.readOnly = false;
+    }
+    if (userChanged && form.isCreate && !feeTouched && form.platformFees && form.platformFees[t] != null) {
+        document.getElementById('platform_fee').value = form.platformFees[t];
+    }
+    const minInput = document.getElementById('min_participants');
+    const minHint = document.getElementById('minHint');
+    if (minInput) {
+        minInput.min = formatFloor();
+        const def = isNewFormat() ? formatFloor() : 10;
+        minInput.placeholder = 'Default ' + def;
+        if (minHint) minHint.textContent = 'Fewer players → cancelled & refunded. Default ' + def + (isNewFormat() ? '' : ' (existing rule)') + '.';
+    }
+}
+function checkSpots() {
+    const hint = document.getElementById('spotsHint');
+    if (!hint) return;
+    const spots = num('participants');
+    const n = multiplierValue();
+    hint.textContent = contestType() === 'multiplier' && spots > 0 && (spots < n || spots % n !== 0)
+        ? 'Spots must be a multiple of ' + n + ' for a ' + n + 'x contest (e.g. ' + (n * 5) + ').'
+        : '';
+}
 function getPrizePool() {
     if (isFixed()) return getTreeTotal();
     const total = num('participants') * num('entry_fee');
     return total - (total * num('platform_fee') / 100);
 }
-function onCategoryChange() {
+function onCategoryChange(userChanged) {
     const fixed = isFixed();
     const hint = document.getElementById('categoryHint');
     document.getElementById('autoStructureBox').classList.toggle('d-none', fixed);
     document.getElementById('treeStructureBox').classList.toggle('d-none', !fixed);
     if (hint) {
-        if (fixed) {
-            hint.textContent = '🔒 Fixed pool — tree total = prize pool';
-            hint.className = 'text-danger fw-semibold';
-        } else {
-            hint.textContent = '📈 Dynamic pool — grows with actual joins';
-            hint.className = 'text-success fw-semibold';
-        }
+        const h = FORMAT_HINTS[contestType()] || FORMAT_HINTS.mega;
+        hint.textContent = h[0];
+        hint.className = h[1] + ' fw-semibold d-block';
     }
+    applyFormatRules(userChanged === true);
     recalc();
 }
 function recalc() {
@@ -50,7 +111,8 @@ function recalc() {
     const totalPool = participants * entryFee;
     const platformFeeAmt = totalPool * platformFee / 100;
     const prizePool = isFixed() ? getTreeTotal() : (totalPool - platformFeeAmt);
-    const winners = Math.max(1, Math.floor(participants * winPct / 100));
+    const winners = winnersAt(participants); // NEW IMPLEMENTATION — NODE.JS PROJECT: per-type winners
+    checkSpots();
     document.getElementById('o_totalPool').textContent = totalPool.toFixed(0);
     document.getElementById('o_platformFee').textContent = platformFeeAmt.toFixed(0);
     document.getElementById('o_prizePool').textContent = prizePool.toFixed(0);
@@ -70,15 +132,16 @@ function getClosestTierKey(n) {
 }
 function regenerateAutoTiers() {
     const pool = getPrizePool();
-    const winners = Math.max(1, Math.floor(num('participants') * num('winning_percentage') / 100));
+    const winners = winnersAt(num('participants')); // NEW IMPLEMENTATION — NODE.JS PROJECT: per-type winners
     const tbody = document.getElementById('autoTiersBody');
     tbody.innerHTML = '';
+    document.getElementById('autoTotal').textContent = '0';
     if (pool <= 0 || winners <= 0) return;
     const cat = document.getElementById('category').value;
-    if (cat === 'equal') {
+    if (cat === 'equal' || isNewFormat()) { // H2H / WTA / Nx: winners share the pool equally
         const perWinner = Math.floor(pool / winners);
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td>Rank 1–' + winners + '</td><td>' + winners + '</td><td>100%</td><td class="fw-bold text-success">' + perWinner + '</td><td>' + Math.floor(pool) + '</td>';
+        tr.innerHTML = '<td>Rank 1' + (winners > 1 ? '–' + winners : '') + '</td><td>' + winners + '</td><td>100%</td><td class="fw-bold text-success">' + perWinner + '</td><td>' + Math.floor(pool) + '</td>';
         tbody.appendChild(tr);
         document.getElementById('autoTotal').textContent = Math.floor(pool);
         document.getElementById('prize_distribution_hidden').value = JSON.stringify([{ label: 'Rank 1 to ' + winners, rank_start: 1, rank_end: winners, winners: winners, percent: 100, prize: pool, per_winner: perWinner }]);

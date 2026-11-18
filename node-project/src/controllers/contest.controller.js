@@ -9,6 +9,9 @@ const User = require('../models/user.model');
 const Transaction = require('../models/transaction.model');
 const Notification = require('../models/notification.model');
 const logger = require('../config/logger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats + safe joining
+const formats = require('../services/contest-formats');
+const contestJoin = require('../services/contest-join.service');
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -29,7 +32,7 @@ const PRIZE_TABLES = {
 function buildDynamicPrizeDistribution(totalWinners, prizePool, category = 'mega') {
   if (totalWinners <= 0 || prizePool <= 0) return [];
 
-  if (category === 'equal') {
+  if (formats.isEqualSplitCategory(category)) { // NEW IMPLEMENTATION — NODE.JS PROJECT: h2h / WTA / Nx split equally
     const perWinner = Math.round((prizePool / totalWinners) * 100) / 100;
     return [{
       rank_label: `Rank 1 to ${totalWinners}`,
@@ -132,7 +135,7 @@ const contestsBySession = async (req, res) => {
 
     const enriched = await Promise.all(contests.map(async (contest) => {
       const joinedCount = await ContestEntry.countDocuments({ contest_id: contest._id });
-      const isFixed = contest.is_fixed_prize || ['guaranteed', 'practice'].includes(contest.category);
+      const isFixed = formats.isFixedPool(contest);
       const entryFee = contest.entry_fee || 0;
       const platformFeePct = contest.platform_fee || 0;
 
@@ -149,16 +152,12 @@ const contestsBySession = async (req, res) => {
         firstPrize = Math.round((pd[0].per_winner || pd[0].per_winner_amount || pd[0].perWinner || 0) * 100) / 100;
       }
       if (!isFixed && ['live', 'completed'].includes(session.status) && prizePool > 0) {
-        const winPct = contest.winning_percentage || 30;
-        const actualWinners = Math.max(1, Math.floor(joinedCount * winPct / 100));
+        const actualWinners = formats.winnersFor(contest, joinedCount);
         const dist = buildDynamicPrizeDistribution(actualWinners, prizePool, contest.category);
         if (dist.length > 0) firstPrize = Math.round((dist[0].per_winner_amount || 0) * 100) / 100;
       }
 
-      let badge = null;
-      if (contest.is_pinned) badge = 'Featured';
-      else if (contest.category === 'guaranteed') badge = 'Guaranteed';
-      else if (contest.category === 'practice') badge = 'Practice';
+      const badge = formats.appBadge(contest);
 
       return {
         ...contest,
@@ -169,6 +168,7 @@ const contestsBySession = async (req, res) => {
         entry_fee: entryFee,
         is_pinned: !!contest.is_pinned,
         badge,
+        ...formats.publicFields(contest),
         first_prize: firstPrize,
       };
     }));
@@ -249,7 +249,7 @@ const getContest = async (req, res) => {
     const joinedCount = entries.length;
     const maxParticipants = contest.participants || 100;
     const sessionStatus = session?.status || 'upcoming';
-    const isFixed = contest.is_fixed_prize || ['guaranteed', 'practice'].includes(contest.category);
+    const isFixed = formats.isFixedPool(contest);
     const entryFee = contest.entry_fee || 0;
     const platformFeePct = contest.platform_fee || 0;
 
@@ -282,8 +282,7 @@ const getContest = async (req, res) => {
         };
       });
     } else if (displayPrizePool > 0) {
-      const winPct = contest.winning_percentage || 30;
-      const winners = Math.max(1, Math.floor(joinedCount * winPct / 100));
+      const winners = formats.winnersFor(contest, joinedCount);
       prizeDistribution = buildDynamicPrizeDistribution(winners, displayPrizePool, contest.category);
     }
 
@@ -341,6 +340,8 @@ const getContest = async (req, res) => {
         spots_left: Math.max(0, maxParticipants - joinedCount),
         winning_percentage: contest.winning_percentage || 0,
         calculation_started: calculationStarted,
+        ...formats.publicFields(contest), // NEW IMPLEMENTATION — NODE.JS PROJECT: contest type, badge, minimum players
+        badge: formats.appBadge(contest),
       },
       participants,
       user_joined: userJoined,
@@ -395,11 +396,11 @@ const getUserContests = async (req, res) => {
       const contestId = contest._id.toString();
       if (!sessionsMap[sessionId].contests[contestId]) {
         const joinedCount = await ContestEntry.countDocuments({ contest_id: contestId });
-        const isFixed = contest.is_fixed_prize || ['guaranteed', 'practice'].includes(contest.category);
+        const isFixed = formats.isFixedPool(contest);
         const entryFee = contest.entry_fee || 0;
         const platFee = contest.platform_fee || 0;
         const sessionStatus = sessionsMap[sessionId].session_status;
-        const isFlexible = ['mega', 'equal', 'flexible'].includes(contest.category) && ['live', 'completed'].includes(sessionStatus);
+        const isFlexible = !formats.isFixedPool(contest) && ['live', 'completed'].includes(sessionStatus);
 
         let prizePool = contest.prize_pool || 0;
         if (isFlexible) {
@@ -470,139 +471,20 @@ const getUserContests = async (req, res) => {
 /**
  * POST /api/v1/contests/bulk-join
  */
+// NEW IMPLEMENTATION — NODE.JS PROJECT: same safe join flow as POST /api/v1/bulk-join-contest
+// (the previous handler relied on MongoDB transactions, which this deployment does not support).
 const bulkJoinContest = async (req, res) => {
-  const session = await mongoose.startSession();
   try {
-    session.startTransaction();
-
-    const userId = parseInt(req.body.user_id) || req.body.user_id;
-    const contestId = req.body.contest_id;
-    const entryFee = parseFloat(req.body.entry_fee || 0);
-    const basketIds = req.body.basket_ids || [];
-
-    logger.info('=== BULK JOIN CONTEST REQUEST ===', { userId, contestId, entryFee, basketIds });
-
-    if (!userId || !contestId || !Array.isArray(basketIds) || basketIds.length === 0) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: 'Invalid input' });
-    }
-
-    const contest = await Contest.findById(contestId).session(session);
-    if (!contest) {
-      await session.abortTransaction();
-      return res.status(404).json({ success: false, message: 'Contest not found' });
-    }
-
-    // Check capacity
-    const totalEntriesInContest = await ContestEntry.countDocuments({ contest_id: contestId });
-    const maxParticipants = contest.participants || 100;
-    const availableSpots = maxParticipants - totalEntriesInContest;
-    if (basketIds.length > availableSpots) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: `Only ${availableSpots} spots available` });
-    }
-
-    // Check per-user limit
-    const userEntriesUsed = await ContestEntry.countDocuments({ contest_id: contestId, user_id: userId });
-    const maxEntries = contest.max_entries_per_user || 1;
-    const remainingEntries = maxEntries - userEntriesUsed;
-    if (basketIds.length > remainingEntries) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: `You can only select ${remainingEntries} more baskets` });
-    }
-
-    const user = await User.findById(userId).session(session);
-    if (!user) {
-      await session.abortTransaction();
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-
-    const totalFee = entryFee * basketIds.length;
-    const totalWalletBalance = (user.deposit_balance || 0) + (user.winnings_balance || 0);
-    if (totalWalletBalance < totalFee) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: 'Insufficient balance' });
-    }
-
-    const errors = [];
-    let successCount = 0;
-
-    for (const basketId of basketIds) {
-      try {
-        const alreadyJoined = await ContestEntry.exists({ user_id: userId, contest_id: contestId, basket_id: basketId });
-        if (alreadyJoined) { errors.push(`Basket ${basketId}: Already joined`); continue; }
-
-        const sourceBasket = await SavedBasket.findOne({ _id: basketId, user_id: userId, is_standalone: true }).session(session);
-        if (!sourceBasket) { errors.push(`Basket ${basketId}: Not found`); continue; }
-
-        const entry = await ContestEntry.create([{
-          user_id: userId,
-          contest_id: contestId,
-          basket_id: basketId,
-          session_id: contest.league_session_id,
-          total_score: 0,
-        }], { session });
-
-        const entryId = entry[0]._id;
-
-        // Deduct from deposit_balance first, then winnings_balance
-        let remainingFee = entryFee;
-        if (user.deposit_balance >= remainingFee) {
-          user.deposit_balance -= remainingFee;
-        } else {
-          remainingFee -= user.deposit_balance;
-          user.deposit_balance = 0;
-          user.winnings_balance -= remainingFee;
-        }
-        user.deposit_balance = Math.max(0, user.deposit_balance);
-        user.winnings_balance = Math.max(0, user.winnings_balance);
-
-        await Transaction.create([{
-          user_id: userId,
-          contest_id: contestId,
-          type: 'contest_entry',
-          amount: entryFee,
-          status: 'success',
-          transaction_id: `ENTRY_${contestId}_${entryId}_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`,
-          description: `Entry fee for Contest #${contestId}, entry ${entryId}`,
-        }], { session });
-
-        successCount++;
-      } catch (e) {
-        errors.push(`Basket ${basketId}: ${e.message}`);
-        logger.error(`Error processing basket ${basketId}:`, e.message);
-      }
-    }
-
-    await user.save({ session });
-    await session.commitTransaction();
-
-    // Get updated contest stats
-    const updatedJoinedCount = await ContestEntry.countDocuments({ contest_id: contestId });
-    const userEntryCount = await ContestEntry.countDocuments({ contest_id: contestId, user_id: userId });
-
-    return res.json({
-      success: true,
-      message: `Joined with ${successCount} basket(s)`,
-      success_count: successCount,
-      errors,
-      wallet_balance: parseFloat(((user.deposit_balance || 0) + (user.winnings_balance || 0)).toFixed(2)),
-      contest_updated: {
-        id: contestId,
-        joined_users: updatedJoinedCount,
-        spots_left: Math.max(0, maxParticipants - updatedJoinedCount),
-        user_entry_count: userEntryCount,
-        remaining_entries: Math.max(0, maxEntries - userEntryCount),
-      },
-      should_refresh: true,
-      unread_notifications: await getUnreadCount(userId),
+    const result = await contestJoin.joinContest({
+      userRef: req.body.user_id,
+      contestRef: req.body.contest_id,
+      basketIds: req.body.basket_ids,
+      clientEntryFee: req.body.entry_fee,
     });
+    return res.status(result.status).json(result.body);
   } catch (err) {
-    await session.abortTransaction();
     logger.error('bulkJoinContest error:', err.message);
-    res.status(500).json({ success: false, message: err.message });
-  } finally {
-    session.endSession();
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 

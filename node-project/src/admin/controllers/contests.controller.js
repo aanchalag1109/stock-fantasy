@@ -11,11 +11,14 @@ const { render } = require('../helpers/render');
 const { cancelContest: cancelContestService, refundBeforeDelete } = require('../../services/contest-cancellation.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — list filters
 const { parseListFilters, withStatus } = require('../helpers/list-filters');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats (H2H, Winner Takes All, 2x–10x)
+const formats = require('../../services/contest-formats');
+const contestSettings = require('../../services/contest-settings.service');
 
 const CONTEST_STATUSES = ['live', 'upcoming', 'completed', 'cancelled'];
 
 const PAGE_SIZE = 8;
-const CATEGORIES = ['mega', 'equal', 'practice', 'guaranteed'];
+const CATEGORIES = formats.CATEGORIES; // NEW IMPLEMENTATION — NODE.JS PROJECT: + h2h, winner_takes_all, multiplier
 
 const PRIZE_TABLES = {
   10: [[1, 1, 30], [2, 2, 18], [3, 3, 11], [4, 5, 13.5], [6, 10, 27.5]],
@@ -206,6 +209,8 @@ function generateDefaultPrizeDistribution(totalWinners, prizePool) {
 }
 
 function buildPrizeDistribution(body, category, totalWinners, prizePool) {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: H2H / WTA / Nx — winners share the pool equally
+  if (formats.isNewFormat({ category })) return formats.equalSplitRows(totalWinners, prizePool);
   const treeRows = asRows(body.tree_rows);
   if (treeRows.length) {
     return treeRows.map((row) => {
@@ -266,17 +271,31 @@ function validateFields(body, multiSession) {
   if (!Number.isFinite(participants) || participants < 2) errors.push('The participants must be an integer greater than or equal to 2.');
   const platformFee = parseFloat(body.platform_fee);
   if (!Number.isFinite(platformFee) || platformFee < 0 || platformFee > 100) errors.push('The platform fee must be between 0 and 100.');
-  const winning = parseFloat(body.winning_percentage);
-  if (!Number.isFinite(winning) || winning < 0 || winning > 100) errors.push('The winning percentage must be between 0 and 100.');
-  const maxEntries = parseInt(body.max_entries_per_user, 10);
+  const newFormat = formats.isNewFormat({ category: body.category });
+  let winning = parseFloat(body.winning_percentage);
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: H2H / WTA / Nx decide their winners themselves
+  if (!newFormat && (!Number.isFinite(winning) || winning < 0 || winning > 100)) errors.push('The winning percentage must be between 0 and 100.');
+  let maxEntries = parseInt(body.max_entries_per_user, 10);
   if (body.max_entries_per_user === undefined || body.max_entries_per_user === '' || !Number.isFinite(maxEntries) || maxEntries < 1) {
     errors.push('The max entries per user field is required.');
   }
-  return { errors, sessionIds, entryFee, participants, platformFee, winning, maxEntries };
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: type rules (H2H = 2 spots / 1 entry, Nx spots a multiple of N, minimum players)
+  const format = formats.validateFormat(body, { participants, maxEntries });
+  errors.push(...format.errors);
+  const spots = format.participants;
+  maxEntries = format.maxEntries;
+  if (newFormat && Number.isFinite(spots) && spots > 0) {
+    const contestLike = { category: body.category, multiplier: format.multiplier };
+    winning = Math.round((formats.winnersFor(contestLike, spots) / spots) * 100 * 10000) / 10000;
+  }
+  return {
+    errors, sessionIds, entryFee, participants: spots, platformFee, winning, maxEntries,
+    multiplier: format.multiplier, minParticipants: format.minParticipants,
+  };
 }
 
 function poolFrom(body, fields) {
-  const isFixed = ['guaranteed', 'practice'].includes(body.category);
+  const isFixed = formats.isFixedPool({ category: body.category });
   const fixedPool = parseFloat(body.fixed_prize_pool);
   const totalPool = fields.entryFee * fields.participants;
   let platformFeeAmount;
@@ -288,7 +307,9 @@ function poolFrom(body, fields) {
     platformFeeAmount = (totalPool * fields.platformFee) / 100;
     prizePool = totalPool - platformFeeAmount;
   }
-  const totalWinners = Math.max(1, Math.floor(fields.participants * (fields.winning / 100)));
+  const totalWinners = formats.isNewFormat({ category: body.category })
+    ? formats.winnersFor({ category: body.category, multiplier: fields.multiplier }, fields.participants)
+    : Math.max(1, Math.floor(fields.participants * (fields.winning / 100)));
   return { isFixed, totalPool, platformFeeAmount, prizePool, totalWinners };
 }
 
@@ -346,8 +367,19 @@ function contestPayload(body, fields, pools) {
     bot_count: phpInt(body.bot_count, 0),
     bot_join_minutes_before: phpInt(body.bot_join_minutes_before, 30),
     prize_distribution: buildPrizeDistribution(body, body.category, pools.totalWinners, pools.prizePool),
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats
+    multiplier: fields.multiplier,
+    min_participants: fields.minParticipants,
   };
 }
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: data the create/edit forms need for the contest types
+async function formViewData() {
+  const settings = await contestSettings.getSettings();
+  return { platformFees: settings.platform_fee, multipliers: formats.MULTIPLIERS };
+}
+
+const contestKeys = (contest) => [contest._id, contest.old_id].filter((k) => k != null);
 
 async function attachListMeta(contests) {
   const contestIds = contests.map((contest) => contest._id);
@@ -385,6 +417,8 @@ async function attachListMeta(contests) {
     return {
       ...contest,
       display_id: publicId(contest),
+      format_label: formats.labelFor(contest), // NEW IMPLEMENTATION — NODE.JS PROJECT
+      total_winners_display: formats.winnersFor(contest, spots),
       participants_count: participantsCount,
       progress_percentage: progress,
       session_name: session ? session.name : '',
@@ -460,6 +494,8 @@ const create = async (req, res) => {
       title: 'Create Contest',
       sessions,
       errors: [],
+      values: {},
+      ...(await formViewData()),
       admin: req.session.admin,
     });
   } catch (err) {
@@ -480,6 +516,8 @@ const store = async (req, res) => {
         title: 'Create Contest',
         sessions: upcoming,
         errors: fields.errors,
+        values: req.body,
+        ...(await formViewData()),
         admin: req.session.admin,
       });
     }
@@ -542,6 +580,8 @@ const show = async (req, res) => {
       joined,
       prizeState,
       prizes: Array.isArray(prizes) ? prizes : [],
+      formatLabel: formats.labelFor(lean), // NEW IMPLEMENTATION — NODE.JS PROJECT
+      minPlayers: formats.minParticipantsFor(lean),
       money0,
       dec2,
       ucfirst,
@@ -571,6 +611,8 @@ const edit = async (req, res) => {
       botJoinAtLocal: datetimeLocal(contest.bot_join_at),
       existingTree: JSON.stringify(Array.isArray(contest.prize_distribution) ? contest.prize_distribution : []).replace(/</g, '\\u003c'),
       errors: [],
+      joined: await ContestEntry.countDocuments({ contest_id: { $in: contestKeys(contest) } }),
+      ...(await formViewData()),
       admin: req.session.admin,
     });
   } catch (err) {
@@ -592,6 +634,14 @@ const update = async (req, res) => {
       session = matches[0];
       if (!session) fields.errors.push('The selected session does not exist.');
     }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: once players have joined, the contest type and
+    // multiplier are locked and spots cannot drop below the players already in.
+    const joined = await ContestEntry.countDocuments({ contest_id: { $in: contestKeys(contest) } });
+    if (joined > 0) {
+      if (req.body.category !== contest.category) fields.errors.push(`The contest type cannot be changed after players have joined (${joined} joined).`);
+      else if (contest.category === 'multiplier' && fields.multiplier !== contest.multiplier) fields.errors.push('The multiplier cannot be changed after players have joined.');
+      if (Number.isFinite(fields.participants) && fields.participants < joined) fields.errors.push(`Total spots cannot be less than the ${joined} players already joined.`);
+    }
     if (fields.errors.length) {
       const sessions = formSessions(await LeagueSession.find().sort({ old_id: 1 }).lean());
       return await render(res, 'contests/edit', {
@@ -603,6 +653,8 @@ const update = async (req, res) => {
         botJoinAtLocal: datetimeLocal(contest.bot_join_at),
         existingTree: JSON.stringify(Array.isArray(contest.prize_distribution) ? contest.prize_distribution : []).replace(/</g, '\\u003c'),
         errors: fields.errors,
+        joined,
+        ...(await formViewData()),
         admin: req.session.admin,
       });
     }

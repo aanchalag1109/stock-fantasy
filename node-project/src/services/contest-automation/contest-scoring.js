@@ -24,6 +24,7 @@ const ContestPerformancePrize = require('../../models/contest-performance-prize.
 const {
   keysOf, publicId, num, round2, scoreAssets, buildDynamicPrizeDistribution,
 } = require('../../helpers/mobile-compat');
+const formats = require('../contest-formats');
 
 const isOid = (v) => String(v).length === 24 && mongoose.isValidObjectId(String(v));
 
@@ -110,7 +111,8 @@ async function assignRanks(entries) {
   return ordered;
 }
 
-const isFixedPrize = (contest) => !!contest.is_fixed_prize || ['guaranteed', 'practice'].includes(contest.category);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: contest type rules live in services/contest-formats.js
+const isFixedPrize = (contest) => formats.isFixedPool(contest);
 
 /**
  * Dynamic prize rows (PHP PendingPrizesController::generatePrizeStructure):
@@ -119,7 +121,6 @@ const isFixedPrize = (contest) => !!contest.is_fixed_prize || ['guaranteed', 'pr
 function dynamicPrizeRows(contest, participants) {
   const entryFee = num(contest.entry_fee);
   const platformFeePct = contest.platform_fee == null ? 30 : num(contest.platform_fee);
-  const winningPct = contest.winning_percentage == null ? 50 : num(contest.winning_percentage);
   let totalPool;
   let prizePool;
   if (entryFee === 0) {
@@ -130,7 +131,9 @@ function dynamicPrizeRows(contest, participants) {
     prizePool = totalPool - totalPool * (platformFeePct / 100);
   }
   if (prizePool <= 0 || participants <= 0) return { rows: [], totalPool, prizePool, winners: 0 };
-  const winners = Math.max(1, Math.floor(participants * (winningPct / 100)));
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: per-type winners (h2h/WTA: 1, multiplier: joined ÷ N)
+  const winners = formats.winnersFor(contest, participants, 50);
+  if (winners <= 0) return { rows: [], totalPool, prizePool, winners: 0 };
   return { rows: buildDynamicPrizeDistribution(winners, prizePool, contest.category || 'mega'), totalPool, prizePool, winners };
 }
 

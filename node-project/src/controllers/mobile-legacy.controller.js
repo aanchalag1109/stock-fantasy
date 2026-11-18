@@ -17,6 +17,7 @@ const {
 const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
 const { notify } = require('../services/notifications/notification.service');
+const formats = require('../services/contest-formats'); // NEW IMPLEMENTATION — NODE.JS PROJECT: contest formats
 
 function input(req, name) {
   if (req.body && req.body[name] != null && req.body[name] !== '') return req.body[name];
@@ -180,7 +181,9 @@ async function prizesFor(contest) {
       per_winner_amount: num(row.per_winner || row.perWinner || row.per_winner_amount),
     }))
     : buildDynamicPrizeDistribution(
-      Math.max(1, Math.round((num(contest.participants) * num(contest.winning_percentage || 30)) / 100)),
+      formats.isNewFormat(contest) // NEW IMPLEMENTATION — NODE.JS PROJECT: h2h / WTA / Nx winners
+        ? formats.winnersFor(contest, num(contest.participants))
+        : Math.max(1, Math.round((num(contest.participants) * num(contest.winning_percentage || 30)) / 100)),
       num(contest.prize_pool),
       contest.category || 'mega'
     );

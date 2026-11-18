@@ -19,9 +19,15 @@
                                 <input type="text" class="form-control form-control-lg" style="border-radius: 12px;" value="<%= sessionName %>" readonly>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label fw-semibold text-dark"><i class="bi bi-tag me-1"></i>Category</label>
-                                <input type="text" class="form-control form-control-lg" style="border-radius: 12px;" value="<%= ucfirst(contest.category) %>" readonly>
+                                <label class="form-label fw-semibold text-dark"><i class="bi bi-tag me-1"></i>Contest Type</label>
+                                <input type="text" class="form-control form-control-lg" style="border-radius: 12px;" value="<%= typeof formatLabel !== 'undefined' ? formatLabel : ucfirst(contest.category) %>" readonly>
                             </div>
+                            <% if (typeof minPlayers !== 'undefined') { %>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold text-dark"><i class="bi bi-people me-1"></i>Minimum Players to Run</label>
+                                <input type="text" class="form-control form-control-lg" style="border-radius: 12px;" value="<%= minPlayers %> (fewer → cancelled &amp; refunded)" readonly>
+                            </div>
+                            <% } %>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-semibold text-dark"><i class="bi bi-person-check me-1"></i>Max Entries Per User</label>
                                 <input type="text" class="form-control form-control-lg" style="border-radius: 12px;" value="<%= contest.max_entries_per_user == null ? 1 : contest.max_entries_per_user %>" readonly>

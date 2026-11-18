@@ -3,6 +3,8 @@
 const mongoose = require('mongoose');
 const config = require('../config/env');
 const Notification = require('../models/notification.model');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats (equal-split types)
+const { isEqualSplitCategory } = require('../services/contest-formats');
 
 function isOid(value) {
   const text = String(value || '');
@@ -149,10 +151,11 @@ function round2(value) {
 
 function buildDynamicPrizeDistribution(totalWinners, prizePool, category = 'mega') {
   if (totalWinners <= 0 || prizePool <= 0) return [];
-  if (category === 'equal') {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: h2h, winner_takes_all and multiplier also split equally
+  if (isEqualSplitCategory(category)) {
     const perWinner = round2(prizePool / totalWinners);
     return [{
-      rank_label: `Rank 1 to ${totalWinners}`,
+      rank_label: totalWinners === 1 ? 'Rank 1' : `Rank 1 to ${totalWinners}`,
       rank_start: 1,
       rank_end: totalWinners,
       winners_count: totalWinners,

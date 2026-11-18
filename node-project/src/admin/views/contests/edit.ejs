@@ -1,11 +1,14 @@
 <%
   const fixedCategory = ['guaranteed', 'practice'].includes(contest.category) || contest.is_fixed_prize;
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: contest type label (H2H, 4x, …)
+  const typeLabels = { mega: 'Mega', equal: 'Equal', guaranteed: 'Guaranteed', practice: 'Practice', h2h: 'Head to Head', winner_takes_all: 'Winner Takes All' };
+  const typeLabel = contest.category === 'multiplier' ? ((contest.multiplier || 2) + 'x') : (typeLabels[contest.category] || contest.category || '');
 %>
 <div class="container-fluid py-3">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h1 class="h3 mb-1"><i class="bi bi-pencil-square text-warning me-2"></i>Edit Contest #<%= displayId %></h1>
-            <p class="text-muted mb-0">Category: <strong><%= contest.category ? contest.category.charAt(0).toUpperCase() + contest.category.slice(1) : '' %></strong> | <%= fixedCategory ? '🔒 Fixed Pool' : '📈 Dynamic Pool' %></p>
+            <p class="text-muted mb-0">Type: <strong><%= typeLabel %></strong> | <%= fixedCategory ? '🔒 Fixed Pool' : '📈 Dynamic Pool' %></p>
         </div>
         <a href="/contests" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
     </div>
@@ -32,22 +35,16 @@
                                     <% }) %>
                                 </select>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label fw-semibold">Category</label>
-                                <select id="category" name="category" class="form-select" required onchange="onCategoryChange()">
-                                    <option value="mega" <%= contest.category === 'mega' ? 'selected' : '' %>>🏆 Mega (Dynamic)</option>
-                                    <option value="equal" <%= contest.category === 'equal' ? 'selected' : '' %>>⚖️ Equal (Dynamic)</option>
-                                    <option value="guaranteed" <%= contest.category === 'guaranteed' ? 'selected' : '' %>>🎯 Guaranteed (Fixed)</option>
-                                    <option value="practice" <%= contest.category === 'practice' ? 'selected' : '' %>>🎓 Practice (Fixed)</option>
-                                </select>
-                            </div>
+                            <%- include('format-fields', { formFields: { category: contest.category, multiplier: contest.multiplier, min_participants: contest.min_participants, locked: joined > 0, isCreate: false } }) %>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-semibold">Max Entries / User</label>
-                                <input type="number" name="max_entries_per_user" class="form-control" value="<%= contest.max_entries_per_user == null ? 1 : contest.max_entries_per_user %>" min="1" required>
+                                <input type="number" id="max_entries_per_user" name="max_entries_per_user" class="form-control" value="<%= contest.max_entries_per_user == null ? 1 : contest.max_entries_per_user %>" min="1" required>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-semibold">Total Spots</label>
-                                <input type="number" id="participants" name="participants" class="form-control" value="<%= contest.participants %>" min="2" required oninput="recalc()">
+                                <input type="number" id="participants" name="participants" class="form-control" value="<%= contest.participants %>" min="<%= Math.max(2, joined) %>" required oninput="recalc()">
+                                <small id="spotsHint" class="text-danger fw-semibold"></small>
+                                <% if (joined > 0) { %><small class="text-muted d-block"><%= joined %> player(s) already joined</small><% } %>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-semibold">Entry Fee</label>
@@ -57,9 +54,9 @@
                                 <label class="form-label fw-semibold">Platform Fee %</label>
                                 <input type="number" id="platform_fee" name="platform_fee" class="form-control" value="<%= contest.platform_fee %>" min="0" max="100" step="0.1" required oninput="recalc()">
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6 mb-3" id="winningBox">
                                 <label class="form-label fw-semibold">Winning %</label>
-                                <input type="number" id="winning_percentage" name="winning_percentage" class="form-control" value="<%= contest.winning_percentage %>" min="0" max="100" step="0.1" required oninput="recalc()">
+                                <input type="number" id="winning_percentage" name="winning_percentage" class="form-control" value="<%= contest.winning_percentage %>" min="0" max="100" step="0.1" oninput="recalc()">
                             </div>
                         </div>
                     </div>
@@ -172,7 +169,7 @@
 <%- include('prize-script') %>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    onCategoryChange();
+    onCategoryChange(false);
     try {
         const existing = JSON.parse(document.getElementById('existingTreeData').textContent);
         if (Array.isArray(existing) && existing.length && isFixed()) {
