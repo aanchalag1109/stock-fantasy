@@ -28,6 +28,7 @@ router.post('/profile/update', upload.single('profile_image'), ctrl.updateProfil
 router.get('/payment-details', ctrl.getPaymentDetails);
 router.post('/payment-details/update', ctrl.updatePaymentDetails);
 router.post('/fcm-token', ctrl.updateFcmToken);
+router.post('/fcm-token/remove', ctrl.removeFcmToken); // NEW IMPLEMENTATION — NODE.JS PROJECT: clear token on logout
 
 // Also accept user_id-based profile fetch
 router.get('/user-profile', ctrl.getUserProfile);

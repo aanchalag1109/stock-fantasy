@@ -24,6 +24,7 @@ const otpService = require('../services/otp.service');
 const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
 const { notify } = require('../services/notifications/notification.service');
+const deviceTokens = require('../services/notifications/device-token.service');
 
 function authUser(user) {
   return {
@@ -57,10 +58,9 @@ const login = async (req, res) => {
     // PHP trusted the client's OTP check; the OTP from POST /send-otp is now verified here.
     const otpResult = await otpService.verifyOtp(mobile, 'login', req.body.otp);
     if (!otpResult.ok) return otpService.sendVerifyError(res, otpResult);
-    if (req.body.fcm_token) {
-      user.fcm_token = req.body.fcm_token;
-      await user.save();
-    }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: one device token per user
+    const fcmToken = deviceTokens.parseToken(req.body.fcm_token);
+    if (fcmToken) await deviceTokens.assignToken(user, fcmToken);
     await ensureOldId(User, user);
     return res.json({
       success: true,
@@ -112,6 +112,9 @@ const register = async (req, res) => {
       deposit_balance: 0,
       winnings_balance: 0,
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: save the device token at signup too
+    const signupToken = deviceTokens.parseToken(req.body.fcm_token);
+    if (signupToken) await deviceTokens.assignToken(user, signupToken);
     await ensureOldId(User, user);
     return res.json({
       success: true,

@@ -9,6 +9,9 @@ const config = require('../config/env');
 const logger = require('../config/logger');
 // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
 const otpService = require('../services/otp.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — FCM device tokens
+const deviceTokens = require('../services/notifications/device-token.service');
+const { findByPublicId } = require('../helpers/mobile-compat');
 
 // ─── Helper ───────────────────────────────────────────────────────────────
 function generateToken(userId) {
@@ -48,7 +51,8 @@ function buildUserResponse(user, token = null) {
  */
 const login = async (req, res) => {
   try {
-    const { mobile, fcm_token } = req.body;
+    const { mobile } = req.body;
+    const fcm_token = deviceTokens.parseToken(req.body.fcm_token);
     if (!mobile || String(mobile).trim().length < 10) {
       return res.status(400).json({ success: false, message: 'Valid mobile number required' });
     }
@@ -63,8 +67,8 @@ const login = async (req, res) => {
     if (!otpResult.ok) return otpService.sendVerifyError(res, otpResult);
 
     if (fcm_token) {
-      user.fcm_token = fcm_token;
-      await user.save();
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: one device token per user
+      await deviceTokens.assignToken(user, fcm_token);
     }
 
     const token = generateToken(user._id);
@@ -128,6 +132,9 @@ const register = async (req, res) => {
       deposit_balance: 0,
       winnings_balance: 0,
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: save the device token at signup too
+    const fcmToken = deviceTokens.parseToken(req.body.fcm_token);
+    if (fcmToken) await deviceTokens.assignToken(user, fcmToken);
 
     const token = generateToken(user._id);
     const unread = await getUnreadCount(user._id);
@@ -342,20 +349,47 @@ const updatePaymentDetails = async (req, res) => {
 };
 
 /**
- * POST /api/v1/auth/fcm-token
+ * POST /api/v1/auth/fcm-token  { user_id, fcm_token }
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: accepts the user `id` the mobile login returns
+ * (numeric legacy id) as well as a Mongo id; previously only Mongo ids worked.
  */
 const updateFcmToken = async (req, res) => {
   try {
     const userId = req.body.user_id || req.userId;
-    const { fcm_token } = req.body;
-    if (!userId || !fcm_token) {
-      return res.status(400).json({ success: false, message: 'user_id and fcm_token are required' });
+    const fcmToken = deviceTokens.parseToken(req.body.fcm_token);
+    if (!userId || !fcmToken) {
+      return res.status(400).json({ success: false, message: 'user_id and a valid fcm_token are required' });
     }
-    await User.findByIdAndUpdate(userId, { fcm_token });
+    const user = await findByPublicId(User, userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    await deviceTokens.assignToken(user, fcmToken);
     return res.json({ success: true, message: 'FCM token updated' });
   } catch (err) {
     logger.error('updateFcmToken error:', err.message);
     res.status(500).json({ success: false, message: 'Failed to update FCM token' });
+  }
+};
+
+/**
+ * POST /api/v1/auth/fcm-token/remove  { user_id, fcm_token }
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: call on logout so this phone stops getting the
+ * user's pushes. Only clears the token if it is still the one sent (another phone that
+ * logged in later keeps working).
+ */
+const removeFcmToken = async (req, res) => {
+  try {
+    const userId = req.body.user_id || req.userId;
+    const fcmToken = deviceTokens.parseToken(req.body.fcm_token);
+    if (!userId || !fcmToken) {
+      return res.status(400).json({ success: false, message: 'user_id and a valid fcm_token are required' });
+    }
+    const user = await findByPublicId(User, userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    await deviceTokens.clearToken(user, fcmToken);
+    return res.json({ success: true, message: 'FCM token removed' });
+  } catch (err) {
+    logger.error('removeFcmToken error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to remove FCM token' });
   }
 };
 
@@ -370,4 +404,5 @@ module.exports = {
   getPaymentDetails,
   updatePaymentDetails,
   updateFcmToken,
+  removeFcmToken,
 };
