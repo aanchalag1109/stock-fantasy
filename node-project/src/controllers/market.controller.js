@@ -26,7 +26,7 @@ const getAssets = async (req, res) => {
 };
 
 /**
- * GET /api/v1/market/categories?market=… — each with market, min_assets and description.
+ * GET /api/v1/market/categories?market=… — each with market, min_assets, max_assets (null = no limit) and description.
  */
 const getCategories = async (req, res) => {
   try {

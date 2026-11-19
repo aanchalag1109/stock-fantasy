@@ -520,7 +520,7 @@ describe('Session edit (PHP edit rules) and Refetch Missing Prices', () => {
     assert.equal(saved.assets[1].category_name, 'Large Cap Indian');
     assert.equal(saved.market, 'indian_stock');
     assert.equal(saved.market_type, 'stock');
-    assert.deepEqual(saved.categories, [{ category_id: 7, category_name: 'Large Cap Indian', min_assets: 2 }]);
+    assert.deepEqual(saved.categories, [{ category_id: 7, category_name: 'Large Cap Indian', min_assets: 2, max_assets: null }]);
     assert.equal(saved.max_stocks, 4);
     assert.equal(saved.status, 'upcoming');
   });

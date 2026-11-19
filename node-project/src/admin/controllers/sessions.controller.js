@@ -325,12 +325,13 @@ const show = async (req, res) => {
         grouped.get(category).set(asset.asset_symbol, asset);
       }
     });
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: each category shows its configured minimum
-    const minByName = new Map((session.categories || []).map((c) => [c.category_name, c.min_assets]));
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: each category shows its configured minimum and maximum
+    const limitsByName = new Map((session.categories || []).map((c) => [c.category_name, c]));
     const assetsByCategory = [...grouped.entries()].map(([name, symbols]) => ({
       name,
       assets: [...symbols.values()],
-      min_assets: minByName.get(name) || null,
+      min_assets: (limitsByName.get(name) || {}).min_assets || null,
+      max_assets: (limitsByName.get(name) || {}).max_assets || null,
     }));
     render(res, 'sessions/show', {
       title: 'View Session',

@@ -167,6 +167,7 @@
                     <i class="bi bi-tag me-1"></i><%= group.name %>
                     <span class="badge bg-primary ms-2"><%= group.assets.length %> assets</span>
                     <% if (group.min_assets) { %><span class="badge bg-light text-dark border ms-1">Min <%= group.min_assets %></span><% } %>
+                    <% if (group.max_assets) { %><span class="badge bg-light text-dark border ms-1">Max <%= group.max_assets %></span><% } %>
                 </h6>
                 <div class="row">
                     <% group.assets.forEach(asset => { %>

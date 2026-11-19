@@ -56,6 +56,7 @@
                             <th class="fw-semibold">Category Name</th>
                             <th class="fw-semibold">Market Type</th>
                             <th class="fw-semibold text-center">Min. Assets</th>
+                            <th class="fw-semibold text-center">Max. Assets</th>
                             <th class="fw-semibold">Status</th>
                             <th class="fw-semibold">Created</th>
                             <th class="fw-semibold text-center">Actions</th>
@@ -64,7 +65,7 @@
                     <tbody>
                         <% if (!categories.length) { %>
                         <tr>
-                            <td colspan="7" class="text-center py-5">
+                            <td colspan="8" class="text-center py-5">
                                 <div class="text-muted">
                                     <i class="bi bi-tags display-1 d-block mb-3"></i>
                                     <h5>No categories found</h5>
@@ -86,6 +87,7 @@
                             </td>
                             <td><span class="badge bg-<%= s[0] %>"><i class="bi bi-<%= s[1] %> me-1"></i><%= category.market ? allMarkets[category.market].label : 'Not set' %></span></td>
                             <td class="text-center"><span class="badge bg-light text-dark border fs-6"><%= category.min_assets || 1 %></span></td>
+                            <td class="text-center"><% if (category.max_assets) { %><span class="badge bg-light text-dark border fs-6"><%= category.max_assets %></span><% } else { %><span class="text-muted small">No limit</span><% } %></td>
                             <td>
                                 <span class="badge <%= category.status === 'active' ? 'bg-success' : 'bg-secondary' %>">
                                     <%= category.status === 'active' ? 'Active' : 'Inactive' %>

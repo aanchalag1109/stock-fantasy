@@ -740,6 +740,7 @@ async function categoryInput(body, existing = null) {
     name: String(body.name || '').trim(),
     description: String(body.description || '').trim(),
     min_assets: String(body.min_assets ?? '').trim(),
+    max_assets: String(body.max_assets ?? '').trim(),
     status: String(body.status || 'active'),
   };
   const errors = [];
@@ -750,7 +751,12 @@ async function categoryInput(body, existing = null) {
   else if (values.name.length > 100) errors.push('The category name must not be longer than 100 characters.');
   if (values.description.length > 500) errors.push('The description must not be longer than 500 characters.');
   const min = Number(values.min_assets);
-  if (!/^\d+$/.test(values.min_assets) || min < 1 || min > MAX_MIN_ASSETS) errors.push(`Minimum number of assets must be a whole number from 1 to ${MAX_MIN_ASSETS}.`);
+  const minOk = /^\d+$/.test(values.min_assets) && min >= 1 && min <= MAX_MIN_ASSETS;
+  if (!minOk) errors.push(`Minimum number of assets must be a whole number from 1 to ${MAX_MIN_ASSETS}.`);
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: maximum assets (client feedback)
+  const max = Number(values.max_assets);
+  if (!/^\d+$/.test(values.max_assets) || max < 1 || max > MAX_MIN_ASSETS) errors.push(`Maximum number of assets must be a whole number from 1 to ${MAX_MIN_ASSETS}.`);
+  else if (minOk && max < min) errors.push('Maximum number of assets cannot be less than the minimum.');
   if (!['active', 'inactive'].includes(values.status)) errors.push('The selected status is invalid.');
   if (!errors.length) {
     const duplicate = await MarketTypeCategory.findOne({
@@ -769,6 +775,7 @@ async function categoryInput(body, existing = null) {
       name: values.name,
       description: values.description,
       min_assets: min,
+      max_assets: max,
       status: values.status,
     },
   };
@@ -778,8 +785,8 @@ const categoryForm = (res, req, { category = null, values = null, errors = [] } 
   title: category ? 'Edit Market Category' : 'Create Market Category',
   category,
   values: values || (category
-    ? { market: category.market || '', name: category.name, description: category.description || '', min_assets: category.min_assets || 1, status: category.status || 'active' }
-    : { market: '', name: '', description: '', min_assets: 1, status: 'active' }),
+    ? { market: category.market || '', name: category.name, description: category.description || '', min_assets: category.min_assets || 1, max_assets: category.max_assets ?? '', status: category.status || 'active' }
+    : { market: '', name: '', description: '', min_assets: 1, max_assets: '', status: 'active' }),
   errors,
   marketOptions: markets.MARKETS,
   allMarkets: markets.ALL_MARKETS,

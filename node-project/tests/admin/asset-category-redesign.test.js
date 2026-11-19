@@ -128,18 +128,20 @@ describe('Market Categories: dynamic categories per market type', () => {
     assert.match(page, /<option value="us_stock" >US Stock<\/option>/);
     assert.match(page, /<option value="crypto" >Crypto<\/option>/);
     assert.match(page, /name="min_assets"/);
+    assert.match(page, /name="max_assets"/);
     assert.match(page, /name="description"/);
     assert.doesNotMatch(page, /Stock Market|value="stock"/, 'no "Stock Market + country" any more');
   });
 
   test('creates any category with a minimum; gets a numeric id; listed with its market and minimum', async () => {
     const admin = await login();
-    const res = await post(admin, '/market_type_categories', { market: 'crypto', name: 'Top Cryptocurrencies', description: 'Top coins by market cap', min_assets: '5', status: 'active' });
+    const res = await post(admin, '/market_type_categories', { market: 'crypto', name: 'Top Cryptocurrencies', description: 'Top coins by market cap', min_assets: '5', max_assets: '12', status: 'active' });
     assert.equal(res.status, 302);
     const created = db.MarketTypeCategory.find((c) => c.name === 'Top Cryptocurrencies');
     assert.equal(created.market, 'crypto');
     assert.equal(created.category_type, 'crypto');
     assert.equal(created.min_assets, 5);
+    assert.equal(created.max_assets, 12);
     assert.equal(created.description, 'Top coins by market cap');
     assert.equal(created.old_id, 31, 'numeric id, as sessions and app baskets store');
     const list = (await admin.get('/market_type_categories?market=crypto')).text;
@@ -150,12 +152,15 @@ describe('Market Categories: dynamic categories per market type', () => {
   test('validation: market, name, minimum 1–500, unique name per market; the form keeps the input', async () => {
     const admin = await login();
     const cases = [
-      [{ market: '', name: 'X', min_assets: '1' }, 'Choose a market type'],
-      [{ market: 'uk', name: 'X', min_assets: '1' }, 'Choose a market type'],
-      [{ market: 'us_stock', name: '', min_assets: '1' }, 'The category name is required.'],
-      [{ market: 'us_stock', name: 'X', min_assets: '0' }, 'Minimum number of assets must be a whole number from 1 to 500.'],
-      [{ market: 'us_stock', name: 'X', min_assets: '2.5' }, 'Minimum number of assets must be a whole number'],
-      [{ market: 'indian_stock', name: 'large cap indian', min_assets: '3' }, 'A Indian Stock category named &#34;large cap indian&#34; already exists.'],
+      [{ market: '', name: 'X', min_assets: '1', max_assets: '5' }, 'Choose a market type'],
+      [{ market: 'uk', name: 'X', min_assets: '1', max_assets: '5' }, 'Choose a market type'],
+      [{ market: 'us_stock', name: '', min_assets: '1', max_assets: '5' }, 'The category name is required.'],
+      [{ market: 'us_stock', name: 'X', min_assets: '0', max_assets: '5' }, 'Minimum number of assets must be a whole number from 1 to 500.'],
+      [{ market: 'us_stock', name: 'X', min_assets: '2.5', max_assets: '5' }, 'Minimum number of assets must be a whole number'],
+      [{ market: 'us_stock', name: 'X', min_assets: '1' }, 'Maximum number of assets must be a whole number from 1 to 500.'],
+      [{ market: 'us_stock', name: 'X', min_assets: '1', max_assets: '501' }, 'Maximum number of assets must be a whole number from 1 to 500.'],
+      [{ market: 'us_stock', name: 'X', min_assets: '6', max_assets: '5' }, 'Maximum number of assets cannot be less than the minimum.'],
+      [{ market: 'indian_stock', name: 'large cap indian', min_assets: '3', max_assets: '5' }, 'A Indian Stock category named &#34;large cap indian&#34; already exists.'],
     ];
     for (const [body, message] of cases) {
       const res = await post(admin, '/market_type_categories', { status: 'active', ...body });
@@ -164,16 +169,17 @@ describe('Market Categories: dynamic categories per market type', () => {
     }
     assert.match((await post(admin, '/market_type_categories', { market: 'us_stock', name: 'Typed', min_assets: '0', status: 'active' })).text, /value="Typed"/);
     // Same name in another market is fine.
-    await post(admin, '/market_type_categories', { market: 'us_stock', name: 'Large Cap Indian', min_assets: '1', status: 'active' });
+    await post(admin, '/market_type_categories', { market: 'us_stock', name: 'Large Cap Indian', min_assets: '1', max_assets: '1', status: 'active' });
     assert.equal(db.MarketTypeCategory.filter((c) => c.name === 'Large Cap Indian').length, 2);
   });
 
-  test('editing changes name/minimum/status', async () => {
+  test('editing changes name/minimum/maximum/status', async () => {
     const admin = await login();
     const cat = db.MarketTypeCategory[0];
-    await post(admin, `/market_type_categories/${cat._id}?_method=PUT`, { market: 'indian_stock', name: 'Large Cap India', min_assets: '8', status: 'inactive', description: '' });
+    await post(admin, `/market_type_categories/${cat._id}?_method=PUT`, { market: 'indian_stock', name: 'Large Cap India', min_assets: '8', max_assets: '15', status: 'inactive', description: '' });
     assert.equal(cat.name, 'Large Cap India');
     assert.equal(cat.min_assets, 8);
+    assert.equal(cat.max_assets, 15);
     assert.equal(cat.status, 'inactive');
   });
 });
@@ -196,7 +202,22 @@ describe('Session assignment rules', () => {
     r = await run({ 22: ['reliance'] });
     assert.deepEqual(r.errors, []);
     assert.deepEqual(r.rows, [{ category_id: 22, category_name: 'Large Cap Indian', asset_symbol: 'RELIANCE', asset_name: 'Reliance' }]);
-    assert.deepEqual(r.categories, [{ category_id: 22, category_name: 'Large Cap Indian', min_assets: 1 }]);
+    assert.deepEqual(r.categories, [{ category_id: 22, category_name: 'Large Cap Indian', min_assets: 1, max_assets: null }]);
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: maximum assets per category
+  test('a category with a maximum rejects more assets; no maximum means no limit', async () => {
+    const cat = db.MarketTypeCategory[0];
+    cat.min_assets = 1;
+    cat.max_assets = 1;
+    db.Asset.push({ _id: new ObjectId(), symbol: 'TCS', name: 'TCS', market: 'indian_stock', status: 'active' });
+    let r = await run({ 22: ['RELIANCE', 'TCS'] });
+    assert.ok(r.errors.includes('Large Cap Indian allows a maximum of 1 assets. Currently selected: 2.'), JSON.stringify(r.errors));
+    r = await run({ 22: ['RELIANCE'] });
+    assert.deepEqual(r.errors, []);
+    assert.deepEqual(r.categories, [{ category_id: 22, category_name: 'Large Cap Indian', min_assets: 1, max_assets: 1 }]);
+    cat.max_assets = null;
+    assert.ok(!(await run({ 22: ['RELIANCE', 'TCS'] })).errors.some((e) => /maximum/.test(e)), 'no limit when unset');
   });
 
   test('the client example message, and a chosen category with no assets fails its minimum', async () => {

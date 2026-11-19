@@ -23,7 +23,7 @@ const leagueSessionSchema = new mongoose.Schema({
   // categories chosen for this session, with the minimum assets each needed when it was created.
   // The asset ↔ category assignment of the session lives in `assets` (category_id/category_name).
   market: { type: String, default: null },
-  categories: { type: [{ _id: false, category_id: mongoose.Schema.Types.Mixed, category_name: String, min_assets: Number }], default: undefined },
+  categories: { type: [{ _id: false, category_id: mongoose.Schema.Types.Mixed, category_name: String, min_assets: Number, max_assets: { type: Number, default: null } }], default: undefined },
   max_stocks: { type: Number, default: 5 },
   user_joining_start_time: { type: Date, default: null },
   start_time: { type: Date, required: true, index: true },

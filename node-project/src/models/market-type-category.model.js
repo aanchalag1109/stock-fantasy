@@ -11,6 +11,9 @@ const marketTypeCategorySchema = new mongoose.Schema({
   market: { type: String, enum: ['indian_stock', 'us_stock', 'crypto', 'uk'], default: null, index: true },
   description: { type: String, default: '' },
   min_assets: { type: Number, default: 1, min: 1 },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: most assets a session may assign to this category
+  // (client feedback). null = no limit (categories saved before this field existed).
+  max_assets: { type: Number, default: null, min: 1 },
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

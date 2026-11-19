@@ -69,14 +69,19 @@
                                 </select>
                                 <div class="form-text">Only active categories can be chosen when creating a session.</div>
                             </div>
-                            <div class="col-md-8 mb-3">
+                            <div class="col-12 mb-3">
                                 <label for="name" class="form-label fw-semibold">Category Name <span class="text-danger">*</span></label>
                                 <input type="text" name="name" id="name" class="form-control form-control-lg" value="<%= values.name %>" maxlength="100" placeholder="e.g., Large Cap Indian, Top Cryptocurrencies" required>
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-6 mb-3">
                                 <label for="min_assets" class="form-label fw-semibold">Minimum Assets <span class="text-danger">*</span></label>
                                 <input type="number" name="min_assets" id="min_assets" class="form-control form-control-lg" value="<%= values.min_assets %>" min="1" max="500" step="1" required>
-                                <div class="form-text">Assets a session must assign to this category.</div>
+                                <div class="form-text">Fewest assets a session must assign to this category.</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="max_assets" class="form-label fw-semibold">Maximum Assets <span class="text-danger">*</span></label>
+                                <input type="number" name="max_assets" id="max_assets" class="form-control form-control-lg" value="<%= values.max_assets %>" min="1" max="500" step="1" required>
+                                <div class="form-text">Most assets a session may assign to this category (at least the minimum).</div>
                             </div>
                             <div class="col-12 mb-4">
                                 <label for="description" class="form-label fw-semibold">Description</label>

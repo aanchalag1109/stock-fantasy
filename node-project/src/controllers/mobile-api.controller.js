@@ -268,7 +268,7 @@ function sessionRow(session, extra = {}) {
     // NEW IMPLEMENTATION — NODE.JS PROJECT: market (indian_stock | us_stock | crypto) + chosen categories
     market: sessionMarkets.marketOfSession(session),
     market_label: sessionMarkets.labelOf(sessionMarkets.marketOfSession(session)),
-    categories: (session.categories || []).map((c) => ({ id: c.category_id, name: c.category_name, min_assets: c.min_assets })),
+    categories: (session.categories || []).map((c) => ({ id: c.category_id, name: c.category_name, min_assets: c.min_assets, max_assets: c.max_assets ?? null })),
     max_stocks: session.max_stocks,
     user_joining_start_time: sqlDate(session.user_joining_start_time),
     active: session.active == null ? true : !!session.active,

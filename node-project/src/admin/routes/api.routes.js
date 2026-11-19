@@ -26,7 +26,7 @@ router.get('/live-contests-count', requireAdmin, requirePermission('live_managem
 
 // NEW IMPLEMENTATION — NODE.JS PROJECT: dynamic market categories (client feedback).
 // GET /api/categories/:market — active categories of a market (indian_stock | us_stock | crypto;
-// the older 'stock' / 'crypto' still work). Each: id (numeric), name, market, min_assets, description.
+// the older 'stock' / 'crypto' still work). Each: id (numeric), name, market, min_assets, max_assets, description.
 const sessionAssets = require('../../services/session-assets.service');
 const marketsLib = require('../../services/markets');
 const assetRow = (asset) => ({ id: asset.old_id, name: asset.name, symbol: asset.symbol, image_url: asset.image_url || null, market: asset.market || null });
@@ -40,6 +40,7 @@ router.get('/categories/:type', requireAdmin, requirePermission('sessions.create
       market: category.market,
       market_label: marketsLib.labelOf(category.market),
       min_assets: sessionAssets.minOf(category),
+      max_assets: sessionAssets.maxOf(category), // NEW IMPLEMENTATION — NODE.JS PROJECT: null = no limit
       description: category.description || '',
     })));
   } catch (err) {

@@ -42,7 +42,7 @@
     var readOnly = !!opts.readOnly;
     var state = {
       market: opts.market || (marketSelect && marketSelect.value) || '',
-      categories: [],          // [{id, name, min_assets, description}]
+      categories: [],          // [{id, name, min_assets, max_assets (null = no limit), description}]
       assets: [],              // [{symbol, name, image_url}]
       chosen: new Set(),       // category ids (strings) used in the session
       assignment: new Map(),   // SYMBOL → category id (string)
@@ -79,6 +79,7 @@
         if (!state.chosen.has(id)) return;
         var n = countOf(id);
         if (n < c.min_assets) errors.push(c.name + ' requires a minimum of ' + c.min_assets + ' assets. Currently selected: ' + n + '.');
+        if (c.max_assets != null && n > c.max_assets) errors.push(c.name + ' allows a maximum of ' + c.max_assets + ' assets. Currently selected: ' + n + '.');
       });
       return errors;
     }
@@ -102,17 +103,20 @@
       });
       if (!state.assets.length) return '<div class="text-muted small py-2">No active assets for this market. Add them in Assets first.</div>';
       if (!rows.length) return '<div class="text-muted small py-2">No assets match “' + esc(state.search[id]) + '”.</div>';
-      return '<div class="row g-1">' + rows.map(function (a) {
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: at the maximum, the rest can't be ticked
+      var full = cat.max_assets != null && countOf(id) >= cat.max_assets;
+      return (full ? '<div class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i>Maximum of ' + cat.max_assets + ' reached — untick one to choose another.</div>' : '')
+        + '<div class="row g-1">' + rows.map(function (a) {
         var key = a.symbol.toUpperCase();
         var owner = state.assignment.get(key);
         var mine = owner === id;
-        var taken = owner && !mine;
+        var taken = (owner && !mine) || (!owner && full);
         var boxId = 'sap_' + id + '_' + key.replace(/[^A-Z0-9]/g, '_');
         return '<div class="col-md-4 col-sm-6"><div class="form-check border rounded px-4 py-1 ' + (mine ? 'border-success bg-success bg-opacity-10' : '') + (taken ? ' opacity-50' : '') + '">'
           + '<input class="form-check-input" type="checkbox" id="' + esc(boxId) + '" data-sap-asset="' + esc(key) + '" data-sap-cat="' + esc(id) + '"'
           + (mine ? ' checked' : '') + (taken || readOnly ? ' disabled' : '') + '>'
           + '<label class="form-check-label small w-100" for="' + esc(boxId) + '"><strong>' + esc(a.symbol) + '</strong> <span class="text-muted">' + esc(a.name || '') + '</span>'
-          + (taken ? '<br><span class="badge bg-secondary">in ' + esc(categoryName(owner)) + '</span>' : '') + '</label>'
+          + (owner && !mine ? '<br><span class="badge bg-secondary">in ' + esc(categoryName(owner)) + '</span>' : '') + '</label>'
           + '</div></div>';
       }).join('') + '</div>';
     }
@@ -142,7 +146,8 @@
         var id = String(c.id);
         var on = state.chosen.has(id);
         var n = countOf(id);
-        var ok = n >= c.min_assets;
+        var over = c.max_assets != null && n > c.max_assets;
+        var ok = n >= c.min_assets && !over;
         var open = on && state.open.has(id);
         html += '<div class="card mb-2 ' + (on ? (ok ? 'border-success' : 'border-danger') : '') + '">'
           + '<div class="card-body py-2">'
@@ -150,11 +155,12 @@
           + '<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" id="sapc_' + esc(id) + '" data-sap-use="' + esc(id) + '"' + (on ? ' checked' : '') + (readOnly ? ' disabled' : '') + '>'
           + '<label class="form-check-label fw-semibold" for="sapc_' + esc(id) + '">' + esc(c.name) + '</label></div>'
           + '<span class="badge bg-light text-dark border">Min ' + c.min_assets + '</span>'
+          + (c.max_assets != null ? '<span class="badge bg-light text-dark border">Max ' + c.max_assets + '</span>' : '')
           + (on ? '<span class="badge ' + (ok ? 'bg-success' : 'bg-danger') + '" data-sap-count="' + esc(id) + '">' + n + ' selected</span>' : '')
           + (on ? '<button type="button" class="btn btn-sm btn-outline-primary ms-auto" data-sap-toggle="' + esc(id) + '">' + (open ? 'Hide assets' : 'Assign assets') + '</button>' : '')
           + '</div>'
           + (c.description ? '<div class="small text-muted mt-1">' + esc(c.description) + '</div>' : '')
-          + (on && !ok ? '<div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>' + esc(c.name) + ' requires a minimum of ' + c.min_assets + ' assets. Currently selected: ' + n + '.</div>' : '')
+          + (on && !ok ? '<div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>' + esc(c.name) + (over ? ' allows a maximum of ' + c.max_assets : ' requires a minimum of ' + c.min_assets) + ' assets. Currently selected: ' + n + '.</div>' : '')
           + (open ? '<div class="mt-2"><input type="search" class="form-control form-control-sm mb-2" placeholder="Search symbol or name…" data-sap-search="' + esc(id) + '" value="' + esc(state.search[id] || '') + '">'
             + '<div style="max-height:320px;overflow-y:auto" data-sap-list="' + esc(id) + '">' + assetRows(c) + '</div></div>' : '')
           + '</div></div>';
@@ -167,7 +173,7 @@
     function summary(errors) {
       var total = 0;
       state.assignment.forEach(function (catId) { if (state.chosen.has(catId)) total += 1; });
-      if (!errors.length) return '<div class="alert alert-success py-2 mb-0"><i class="bi bi-check-circle me-1"></i>' + state.chosen.size + ' categor' + (state.chosen.size === 1 ? 'y' : 'ies') + ', ' + total + ' assets — all minimums met.</div>';
+      if (!errors.length) return '<div class="alert alert-success py-2 mb-0"><i class="bi bi-check-circle me-1"></i>' + state.chosen.size + ' categor' + (state.chosen.size === 1 ? 'y' : 'ies') + ', ' + total + ' assets — all limits met.</div>';
       return '<div class="alert alert-danger py-2 mb-0"><ul class="mb-0 ps-3">' + errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>';
     }
 
@@ -187,7 +193,11 @@
         getJson('/api/assets/market/' + encodeURIComponent(state.market)),
       ]).then(function (res) {
         if (my !== requestNo) return;
-        state.categories = res[0].map(function (c) { return { id: c.id, name: c.name, min_assets: Math.max(1, parseInt(c.min_assets, 10) || 1), description: c.description || '' }; });
+        state.categories = res[0].map(function (c) {
+          var min = Math.max(1, parseInt(c.min_assets, 10) || 1);
+          var max = parseInt(c.max_assets, 10);
+          return { id: c.id, name: c.name, min_assets: min, max_assets: max >= 1 ? Math.max(max, min) : null, description: c.description || '' };
+        });
         state.assets = res[1];
         var known = new Set(state.assets.map(function (a) { return a.symbol.toUpperCase(); }));
         var catIds = new Set(state.categories.map(function (c) { return String(c.id); }));

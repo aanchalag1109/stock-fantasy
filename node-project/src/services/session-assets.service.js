@@ -11,7 +11,8 @@
  *            - every asset is an active asset of that market;
  *            - an asset sits in only one category of the session (it can be in a
  *              different category in another session);
- *            - each category gets at least its configured minimum number of assets.
+ *            - each category gets at least its configured minimum number of assets, and no
+ *              more than its maximum (when one is set).
  * Origin: Newly implemented in node-project; not directly converted
  *          from the original PHP implementation.
  *
@@ -31,6 +32,11 @@ const markets = require('./markets');
 
 const categoryRef = (category) => (category.old_id != null ? category.old_id : String(category._id));
 const minOf = (category) => Math.max(1, parseInt(category.min_assets, 10) || 1);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: maximum assets per category; null = no limit (older categories)
+const maxOf = (category) => {
+  const max = parseInt(category.max_assets, 10);
+  return Number.isFinite(max) && max >= 1 ? Math.max(max, minOf(category)) : null;
+};
 
 /** Gives categories without a numeric id one (sessions and baskets store numeric ids). */
 async function withNumericIds(categories) {
@@ -97,7 +103,7 @@ function parseSelection(body = {}) {
  * Validates an assignment and builds the session asset rows.
  * @returns {Promise<{ errors: string[], rows: object[], categories: object[] }>}
  *   rows: { category_id, category_name, asset_symbol, asset_name } (session `assets` shape)
- *   categories: { category_id, category_name, min_assets } (session `categories` snapshot)
+ *   categories: { category_id, category_name, min_assets, max_assets } (session `categories` snapshot)
  */
 async function buildAssignment({ market, selection, categoryIds }) {
   const errors = [];
@@ -147,8 +153,10 @@ async function buildAssignment({ market, selection, categoryIds }) {
       rows.push({ category_id: categoryRef(category), category_name: category.name, asset_symbol: asset.symbol, asset_name: asset.name });
     });
     const min = minOf(category);
+    const max = maxOf(category);
     if (count < min) errors.push(`${category.name} requires a minimum of ${min} assets. Currently selected: ${count}.`);
-    snapshot.push({ category_id: categoryRef(category), category_name: category.name, min_assets: min });
+    if (max != null && count > max) errors.push(`${category.name} allows a maximum of ${max} assets. Currently selected: ${count}.`);
+    snapshot.push({ category_id: categoryRef(category), category_name: category.name, min_assets: min, max_assets: max });
   });
   return { errors: [...new Set(errors)], rows, categories: snapshot };
 }
@@ -176,5 +184,5 @@ function selectionOf(doc) {
 }
 
 module.exports = {
-  activeCategories, activeAssets, parseSelection, buildAssignment, templateAssetsData, selectionOf, categoryRef, minOf,
+  activeCategories, activeAssets, parseSelection, buildAssignment, templateAssetsData, selectionOf, categoryRef, minOf, maxOf,
 };
