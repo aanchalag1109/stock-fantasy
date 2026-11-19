@@ -13,21 +13,7 @@
   const statusIcons = { live: 'broadcast', upcoming: 'clock', completed: 'check-circle', draft: 'file-earmark' };
   const st = session.status || 'upcoming';
   const active = session.active !== false;
-  function countryOf(name) {
-    if (!name) return 'Unknown';
-    if (name.includes('Indian')) return '🇮🇳 Indian';
-    if (name.includes('US')) return '🇺🇸 US';
-    if (name.includes('UK')) return '🇬🇧 UK';
-    if (name.includes('Crypto')) return '💰 Crypto';
-    return 'Unknown';
-  }
-  function capOf(name) {
-    if (!name) return '';
-    if (name.includes('Small')) return 'Small Cap';
-    if (name.includes('Mid')) return 'Mid Cap';
-    if (name.includes('Large')) return 'Large Cap';
-    return '';
-  }
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: market label comes from the session (marketLabel), not from category names
 %>
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -89,7 +75,7 @@
                             <div>
                                 <span class="badge <%= session.market_type === 'stock' ? 'bg-primary' : 'bg-warning' %> fs-6">
                                     <i class="bi bi-<%= session.market_type === 'stock' ? 'graph-up' : 'currency-bitcoin' %> me-1"></i>
-                                    <%= (session.market_type || 'stock').charAt(0).toUpperCase() + (session.market_type || 'stock').slice(1) %>
+                                    <%= marketLabel || ((session.market_type || 'stock').charAt(0).toUpperCase() + (session.market_type || 'stock').slice(1)) %>
                                 </span>
                             </div>
                         </div>
@@ -175,14 +161,12 @@
             </div>
             <% } %>
             <% assetsByCategory.forEach(group => {
-                const cap = capOf(group.name);
             %>
             <div class="mb-4">
                 <h6 class="text-primary mb-3">
                     <i class="bi bi-tag me-1"></i><%= group.name %>
                     <span class="badge bg-primary ms-2"><%= group.assets.length %> assets</span>
-                    <span class="badge bg-info ms-1"><%= countryOf(group.name) %></span>
-                    <% if (cap) { %><span class="badge bg-warning ms-1"><%= cap %></span><% } %>
+                    <% if (group.min_assets) { %><span class="badge bg-light text-dark border ms-1">Min <%= group.min_assets %></span><% } %>
                 </h6>
                 <div class="row">
                     <% group.assets.forEach(asset => { %>

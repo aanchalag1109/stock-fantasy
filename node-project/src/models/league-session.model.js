@@ -14,7 +14,12 @@ const sessionAssetSchema = new mongoose.Schema({
 const leagueSessionSchema = new mongoose.Schema({
   old_id: { type: Number, index: true },
   name: { type: String, required: true },
-  market_type: { type: String, default: 'stock' }, // 'stock' or 'crypto'
+  market_type: { type: String, default: 'stock' }, // 'stock' or 'crypto' (derived from market)
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: market (indian_stock | us_stock | crypto) and the market
+  // categories chosen for this session, with the minimum assets each needed when it was created.
+  // The asset ↔ category assignment of the session lives in `assets` (category_id/category_name).
+  market: { type: String, default: null },
+  categories: { type: [{ _id: false, category_id: mongoose.Schema.Types.Mixed, category_name: String, min_assets: Number }], default: undefined },
   max_stocks: { type: Number, default: 5 },
   user_joining_start_time: { type: Date, default: null },
   start_time: { type: Date, required: true, index: true },

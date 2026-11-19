@@ -492,3 +492,19 @@ The USDT counterpart of **Deposit Orders** (LG Pay / INR), which is unchanged.
 - **New file:** `src/services/notifications/device-token.service.js`
 - **Modified:** `src/controllers/{auth,mobile-api}.controller.js`, `src/routes/auth.routes.js`
 - **Tests:** `tests/notifications/device-token.test.js`
+
+## 27. Asset, Market Category & Session redesign (client feedback)
+- **Market Type** is now one choice: **Indian Stock**, **US Stock** or **Crypto** (`market` = `indian_stock` | `us_stock` | `crypto`). It replaces "Stock Market + country". The older `market_type` (`stock`/`crypto`) and `category_type` are still written, derived from `market` (`src/services/markets.js`). UK is a legacy market: its data is kept, but it can't be chosen.
+- **Market Categories** are dynamic: market type, name (unique per market), description, **minimum number of assets** and status. Only active categories can be used in sessions. New categories get a numeric id (sessions and app baskets store it).
+- **Assets** are a central master list: Symbol, Name, Status (market is a form field and filter). There is no category link and no "move to category". A symbol is unique per market.
+- **Sessions:** choose the market, tick its active categories, and assign assets to each. An asset can be in only one category per session, but in different categories across sessions. Each category's minimum is enforced in the browser (`public/js/session-asset-picker.js`) **and** on the server (`src/services/session-assets.service.js`). The message format is "Large Cap Indian requires a minimum of 10 assets. Currently selected: 7." The session stores `market`, a `categories` snapshot `[{category_id, category_name, min_assets}]`, and the assignment in `assets[]` (unchanged shape). Draft-session edit and template edit use the same picker and rules. A rejected create re-renders the form with everything entered, including the uploaded image.
+- **Price feed:** the provider comes from the session's `market` (category names are free text now). Sessions without `market` keep the old "… Cap US/UK" name detection.
+- **APIs:** `GET /api/categories/:market` (admin; also accepts `stock`/`crypto`) now returns `market`, `min_assets` and `description`. New `GET /api/assets/market/:market` (admin). `GET /api/assets/:categoryId` returns the category's market assets. App session payloads add `market`, `market_label` and `categories`. Basket lists add `categories` (grouped by the real category name; `lc`/`mc`/`sc` kept). `GET /api/v1/market/assets?market=…` and `/market/categories?market=…`.
+- **Migration:** `node scripts/migration/redesign-asset-categories.js` (dry run) / `--apply`. It backs up to `scripts/migration/backups/`, then:
+  - sets each category's market and `min_assets = 1`, and makes UK categories inactive;
+  - merges the per-category copies of each asset into one row per (market, symbol), drops `category_id`, and makes UK assets inactive;
+  - sets `market` and the `categories` snapshot on sessions and templates.
+  Session asset rows, contests, baskets and scores are not touched. Safe to run again.
+- **New files:** `src/services/markets.js`, `src/services/session-assets.service.js`, `public/js/session-asset-picker.js`, `scripts/migration/redesign-asset-categories.js`
+- **Modified:** `src/models/{asset,market-type-category,league-session,session-template}.model.js`, `src/admin/controllers/{assets,sessions,pages}.controller.js`, `src/admin/routes/api.routes.js`, `src/admin/views/{assets,market_type_categories}/{index,form}.ejs`, `src/admin/views/sessions/{create,edit,show}.ejs`, `src/admin/views/templates/edit.ejs`, `src/services/contest-automation/price-feed.js`, `src/controllers/{market,mobile-api}.controller.js`
+- **Tests:** `tests/admin/asset-category-redesign.test.js` (new), `tests/admin/assets.test.js`, `tests/admin/php-parity-contests-sessions.test.js`, `tests/admin/php-parity-templates.test.js`

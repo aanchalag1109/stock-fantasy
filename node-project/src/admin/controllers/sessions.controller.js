@@ -4,8 +4,6 @@ const mongoose = require('mongoose');
 const LeagueSession = require('../../models/league-session.model');
 const SessionTemplate = require('../../models/session-template.model');
 const Contest = require('../../models/contest.model');
-const Asset = require('../../models/asset.model');
-const MarketTypeCategory = require('../../models/market-type-category.model');
 const { render } = require('../helpers/render');
 // PHP PARITY: session cancel / refetch prices (services/session-management.service.js)
 const sessionService = require('../../services/session-management.service');
@@ -13,6 +11,9 @@ const sessionService = require('../../services/session-management.service');
 const { parseListFilters, withStatus } = require('../helpers/list-filters');
 const { refundBeforeDelete } = require('../../services/contest-cancellation.service');
 const { keysOf } = require('../../helpers/mobile-compat');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: market types + session-level category ↔ asset assignment
+const markets = require('../../services/markets');
+const sessionAssets = require('../../services/session-assets.service');
 
 const LIST_STATUSES = ['live', 'upcoming', 'completed', 'draft', 'cancelled'];
 
@@ -48,56 +49,6 @@ function istSql(value) {
   const get = (type) => (parts.find((part) => part.type === type) || {}).value || '';
   if (!get('year')) return null;
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
-}
-
-function postedAssetMap(input, body = {}, fieldName = '') {
-  const out = {};
-  // PHP PARITY fix: multer parses `stocks[22][]` into a sparse ARRAY indexed by category id
-  // ([null, …, ['RELIANCE', 'TCS']]). Arrays used to be skipped, so sessions created from the
-  // form were saved with no assets. Object.entries keeps the index (= category id).
-  if (input && typeof input === 'object') {
-    Object.entries(input).forEach(([categoryId, assets]) => {
-      if (assets == null) return;
-      const list = (Array.isArray(assets) ? assets : [assets]).map((asset) => String(asset || '').trim()).filter(Boolean);
-      if (list.length) out[categoryId] = list;
-    });
-  }
-  if (fieldName) {
-    const pattern = new RegExp(`^${fieldName}\\[([^\\]]+)\\](?:\\[\\])?$`);
-    Object.entries(body).forEach(([key, assets]) => {
-      const match = key.match(pattern);
-      if (!match) return;
-      const list = (Array.isArray(assets) ? assets : [assets]).map((asset) => String(asset || '').trim()).filter(Boolean);
-      if (list.length) out[match[1]] = [...(out[match[1]] || []), ...list];
-    });
-  }
-  return out;
-}
-
-async function buildSessionAssets(stocks, cryptos) {
-  const maps = [stocks, cryptos];
-  const categoryIds = [...new Set(maps.flatMap((map) => Object.keys(map)))].map(Number).filter((id) => !Number.isNaN(id));
-  const symbols = [...new Set(maps.flatMap((map) => Object.values(map).flat()))];
-  const [categories, assetDocs] = await Promise.all([
-    categoryIds.length ? MarketTypeCategory.find({ old_id: { $in: categoryIds } }).select('old_id name').lean() : [],
-    symbols.length ? Asset.find({ symbol: { $in: symbols } }).select('symbol name').lean() : [],
-  ]);
-  const categoryName = new Map(categories.map((category) => [String(category.old_id), category.name]));
-  const assetName = new Map(assetDocs.map((asset) => [asset.symbol, asset.name]));
-  const rows = [];
-  maps.forEach((map) => {
-    Object.entries(map).forEach(([categoryId, list]) => {
-      list.forEach((symbol) => {
-        rows.push({
-          category_id: Number(categoryId),
-          category_name: categoryName.get(String(categoryId)) || '',
-          asset_symbol: symbol,
-          asset_name: assetName.get(symbol) || '',
-        });
-      });
-    });
-  });
-  return rows;
 }
 
 function sessionKeys(session) {
@@ -194,14 +145,23 @@ const updateStatus = async (req, res) => {
   }
 };
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: the create form re-renders with the admin's input (incl. the
+// category ↔ asset assignment and an already-uploaded image) when server-side validation fails.
+async function renderCreate(res, req, { errors = [], prefill = null } = {}) {
+  const templates = await SessionTemplate.find({ active: true }).sort({ old_id: 1, _id: 1 }).lean();
+  return render(res, 'sessions/create', {
+    title: 'Create New Session',
+    templates,
+    errors,
+    prefill,
+    marketOptions: markets.MARKETS,
+    admin: req.session.admin,
+  });
+}
+
 const create = async (req, res) => {
   try {
-    const templates = await SessionTemplate.find({ active: true }).sort({ old_id: 1, _id: 1 }).lean();
-    await render(res, 'sessions/create', {
-      title: 'Create New Session',
-      templates,
-      admin: req.session.admin,
-    });
+    await renderCreate(res, req);
   } catch (err) { res.status(500).send(err.message); }
 };
 
@@ -225,6 +185,8 @@ const getTemplate = async (req, res) => {
       name: template.name,
       template_name: template.template_name,
       market_type: template.market_type,
+      market: markets.marketOfSession(template), // NEW IMPLEMENTATION — NODE.JS PROJECT
+      selection: sessionAssets.selectionOf(template),
       max_stocks: template.max_stocks,
       user_joining_start_time: istSql(template.user_joining_start_time),
       start_time: istSql(template.start_time),
@@ -244,7 +206,9 @@ const store = async (req, res) => {
     const body = req.body || {};
     const errors = [];
     const name = String(body.name || '').trim();
-    const marketType = String(body.market_type || '').trim();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: one Market Type (Indian Stock / US Stock / Crypto)
+    // replaces "Stock Market + country"; market_type ('stock'/'crypto') is derived from it.
+    const market = String(body.market || '').trim();
     const maxRaw = String(body.max_stocks ?? '').trim();
     const maxStocks = Number(maxRaw);
     const startTime = parseIstDate(body.start_time);
@@ -255,7 +219,6 @@ const store = async (req, res) => {
 
     if (!name) errors.push('The name field is required.');
     else if (name.length > 255) errors.push('The name must not be greater than 255 characters.');
-    if (!marketType) errors.push('The market type field is required.');
     if (!/^-?\d+$/.test(maxRaw)) errors.push('The max stocks must be an integer.');
     if (!body.start_time) errors.push('The start time field is required.');
     else if (!startTime) errors.push('The start time is not a valid date.');
@@ -267,10 +230,6 @@ const store = async (req, res) => {
     if (!['1', '0', true, false, 1, 0].includes(activeRaw)) {
       errors.push('The active field must be true or false.');
     }
-    if (errors.length) {
-      req.flash('error', errors[0]);
-      return res.redirect('/league_sessions/create');
-    }
 
     let imageUrl = null;
     if (req.file) {
@@ -280,14 +239,35 @@ const store = async (req, res) => {
       if (existing.startsWith('uploads/sessions/') && !existing.includes('..')) imageUrl = existing;
     }
 
-    const stocks = postedAssetMap(body.stocks, body, 'stocks');
-    const cryptos = postedAssetMap(body.cryptos, body, 'cryptos');
-    const assets = await buildSessionAssets(stocks, cryptos);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: categories + assets chosen for this session, validated
+    // on the server (market, active categories, one category per asset, minimum assets).
+    const { selection, categoryIds } = sessionAssets.parseSelection(body);
+    const assignment = await sessionAssets.buildAssignment({ market, selection, categoryIds });
+    errors.push(...assignment.errors);
+
+    if (errors.length) {
+      res.status(422);
+      return await renderCreate(res, req, {
+        errors,
+        prefill: {
+          name, market, max_stocks: maxRaw, status, active: String(activeRaw ?? '1'),
+          user_joining_start_time: body.user_joining_start_time || '', start_time: body.start_time || '', end_time: body.end_time || '',
+          save_as_template: Object.prototype.hasOwnProperty.call(body, 'save_as_template'), template_name: String(body.template_name || ''),
+          existing_image: imageUrl,
+          selection: Object.fromEntries(selection),
+          categoryIds,
+        },
+      });
+    }
+
     const active = activeRaw === true || activeRaw === 1 || activeRaw === '1' || activeRaw === 'true';
+    const marketType = markets.typeOf(market);
 
     await LeagueSession.create({
       name,
+      market,
       market_type: marketType,
+      categories: assignment.categories,
       max_stocks: maxStocks,
       user_joining_start_time: joiningTime,
       start_time: startTime,
@@ -295,24 +275,14 @@ const store = async (req, res) => {
       status,
       active,
       image_url: imageUrl,
-      assets,
+      assets: assignment.rows,
     });
 
     if (Object.prototype.hasOwnProperty.call(body, 'save_as_template') && String(body.template_name || '').trim()) {
-      const grouped = {};
-      assets.forEach((asset) => {
-        const key = asset.category_name || '';
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push({
-          asset_symbol: asset.asset_symbol,
-          asset_name: asset.asset_name,
-          category_name: asset.category_name,
-          category_id: String(asset.category_id),
-        });
-      });
       await SessionTemplate.create({
         name,
         template_name: String(body.template_name).trim(),
+        market,
         market_type: marketType,
         max_stocks: maxStocks,
         user_joining_start_time: joiningTime,
@@ -321,7 +291,7 @@ const store = async (req, res) => {
         status,
         active,
         image_url: imageUrl,
-        assets_data: grouped,
+        assets_data: sessionAssets.templateAssetsData(assignment.rows),
       });
     }
 
@@ -352,9 +322,12 @@ const show = async (req, res) => {
         grouped.get(category).set(asset.asset_symbol, asset);
       }
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: each category shows its configured minimum
+    const minByName = new Map((session.categories || []).map((c) => [c.category_name, c.min_assets]));
     const assetsByCategory = [...grouped.entries()].map(([name, symbols]) => ({
       name,
       assets: [...symbols.values()],
+      min_assets: minByName.get(name) || null,
     }));
     render(res, 'sessions/show', {
       title: 'View Session',
@@ -364,6 +337,7 @@ const show = async (req, res) => {
       totalParticipants,
       uniqueAssets,
       assetsByCategory,
+      marketLabel: markets.labelOf(markets.marketOfSession(session)),
       admin: req.session.admin,
     });
   } catch (err) { res.status(500).send(err.message); }
@@ -385,7 +359,7 @@ const show = async (req, res) => {
 const EDITABLE = {
   upcoming: ['start_time', 'end_time', 'user_joining_start_time'],
   live: ['name', 'active'],
-  draft: ['name', 'market_type', 'max_stocks', 'start_time', 'end_time', 'user_joining_start_time', 'status', 'active', 'assets'],
+  draft: ['name', 'market', 'max_stocks', 'start_time', 'end_time', 'user_joining_start_time', 'status', 'active', 'assets'],
 };
 const editableFor = (status) => EDITABLE[status] || EDITABLE.draft;
 const isTrue = (v) => v === true || v === '1' || v === 'true';
@@ -407,6 +381,11 @@ const edit = async (req, res) => {
         user_joining_start_time: istSql(session.user_joining_start_time),
       },
       selectedAssets: (session.assets || []).map((a) => a.asset_symbol).filter(Boolean),
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: market + current category ↔ asset assignment for the picker
+      market: markets.marketOfSession(session),
+      marketOptions: markets.MARKETS,
+      selection: sessionAssets.selectionOf(session),
+      selectedCategoryIds: (session.categories || []).map((c) => String(c.category_id)),
       admin: req.session.admin,
     });
   } catch (err) { res.status(500).send(err.message); }
@@ -430,10 +409,7 @@ const update = async (req, res) => {
       if (!name || name.length > 255) { req.flash('error', 'The name field is required.'); return res.redirect(back); }
       set.name = name;
     }
-    if (allowed.has('market_type') && body.market_type) {
-      if (!['stock', 'crypto'].includes(body.market_type)) { req.flash('error', 'Invalid market type.'); return res.redirect(back); }
-      set.market_type = body.market_type;
-    }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: draft sessions change market + assets together (below)
     if (allowed.has('max_stocks') && body.max_stocks !== undefined) {
       const max = parseInt(body.max_stocks, 10);
       if (!Number.isInteger(max) || max < 1 || max > 50) { req.flash('error', 'Max assets must be between 1 and 50.'); return res.redirect(back); }
@@ -452,21 +428,19 @@ const update = async (req, res) => {
       if (!['draft', 'upcoming', 'live', 'completed'].includes(body.status)) { req.flash('error', 'Invalid status.'); return res.redirect(back); }
       set.status = body.status;
     }
-    if (allowed.has('assets')) {
-      // The edit form posts asset_selection[] = "<categoryId>:<symbol>" (independent of how the
-      // body parser treats numeric keys); stocks/cryptos maps are still accepted.
-      const stocks = postedAssetMap(body.stocks, body, 'stocks');
-      const cryptos = postedAssetMap(body.cryptos, body, 'cryptos');
-      const target = (set.market_type || session.market_type) === 'crypto' ? cryptos : stocks;
-      [].concat(body.asset_selection || []).forEach((value) => {
-        const match = String(value).match(/^(\d+):(.+)$/);
-        if (match) target[match[1]] = [...(target[match[1]] || []), match[2].trim()];
-      });
-      if (Object.keys(stocks).length || Object.keys(cryptos).length) {
-        const rows = await buildSessionAssets(stocks, cryptos);
-        const existing = new Map((session.assets || []).map((a) => [a.asset_symbol, a]));
-        set.assets = rows.map((row) => ({ ...(existing.get(row.asset_symbol) || {}), ...row })); // keep captured prices
-      }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: draft sessions — market, categories and assets are
+    // validated with the same rules as on create. Only applied once the picker has loaded
+    // (assets_loaded=1), so a page error can never wipe the session's assets.
+    if (allowed.has('assets') && body.assets_loaded === '1') {
+      const market = String(body.market || markets.marketOfSession(session) || '').trim();
+      const { selection, categoryIds } = sessionAssets.parseSelection(body);
+      const assignment = await sessionAssets.buildAssignment({ market, selection, categoryIds });
+      if (assignment.errors.length) { req.flash('error', assignment.errors.join(' ')); return res.redirect(back); }
+      const existing = new Map((session.assets || []).map((a) => [a.asset_symbol, a]));
+      set.assets = assignment.rows.map((row) => ({ ...(existing.get(row.asset_symbol) || {}), ...row })); // keep captured prices
+      set.categories = assignment.categories;
+      set.market = market;
+      set.market_type = markets.typeOf(market);
     }
     const wantsActive = allowed.has('active') && body.active !== undefined ? isTrue(body.active) : null;
     const deactivatingLive = session.status === 'live' && wantsActive === false && session.active !== false;

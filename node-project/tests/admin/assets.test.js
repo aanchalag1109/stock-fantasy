@@ -2,8 +2,8 @@
 
 /**
  * NEW IMPLEMENTATION — NODE.JS PROJECT
- * Admin → Assets: list/filter, add (with Twelve Data check for US), edit/move, delete,
- * bulk move/status/delete, and permissions. Runs the real admin app against an in-memory
+ * Admin → Assets: the central master list (client feedback: no categories on assets) — list/filter,
+ * add (with Twelve Data check for US), edit, delete, bulk status/delete, and permissions. Runs the real admin app against an in-memory
  * store; axios is stubbed so nothing leaves the machine.
  */
 
@@ -79,7 +79,7 @@ function stub(name) {
   M.countDocuments = async (f) => all().filter((d) => matches(d, f || {})).length;
   M.aggregate = async () => {
     const counts = new Map();
-    all().forEach((d) => counts.set(String(d.category_id), { _id: d.category_id, n: ((counts.get(String(d.category_id)) || {}).n || 0) + 1 }));
+    all().forEach((d) => counts.set(String(d.market), { _id: d.market, n: ((counts.get(String(d.market)) || {}).n || 0) + 1 }));
     return [...counts.values()];
   };
   M.create = async (doc) => { const d = { _id: new ObjectId(), ...doc }; all().push(d); return d; };
@@ -125,18 +125,13 @@ function reset() {
     MarketTypeCategory: [],
     Asset: [],
   };
-  [['largeUS', 23, 'Large Cap US', 'stock'], ['smallUS', 17, 'Small Cap US', 'stock'], ['largeIN', 22, 'Large Cap Indian', 'stock'],
-    ['largeUK', 24, 'Large Cap UK', 'stock'], ['largeCR', 27, 'Large Cap Crypto', 'crypto']].forEach(([key, oldId, name, type]) => {
-    cat[key] = { _id: new ObjectId(), old_id: oldId, name, category_type: type, status: 'active' };
-    db.MarketTypeCategory.push(cat[key]);
-  });
-  // Legacy-shaped rows: numeric old_id, no `type`
+  // Master list after the redesign migration: one row per (market, symbol), no category.
   db.Asset.push(
-    { _id: new ObjectId(), old_id: 1, symbol: 'AAPL', name: 'Apple Inc.', category_id: cat.largeUS._id, status: 'active' },
-    { _id: new ObjectId(), old_id: 2, symbol: 'MSFT', name: 'Microsoft Corp.', category_id: cat.largeUS._id, status: 'active' },
-    { _id: new ObjectId(), old_id: 3, symbol: 'AAPL', name: 'Apple Inc.', category_id: cat.smallUS._id, status: 'active' },
-    { _id: new ObjectId(), old_id: 4, symbol: 'RELIANCE', name: 'Reliance Industries', category_id: cat.largeIN._id, status: 'active' },
-    { _id: new ObjectId(), old_id: 5, symbol: 'BTC-USD', name: 'Bitcoin', category_id: cat.largeCR._id, status: 'inactive' },
+    { _id: new ObjectId(), old_id: 1, symbol: 'AAPL', name: 'Apple Inc.', market: 'us_stock', type: 'stock', status: 'active' },
+    { _id: new ObjectId(), old_id: 2, symbol: 'MSFT', name: 'Microsoft Corp.', market: 'us_stock', type: 'stock', status: 'active' },
+    { _id: new ObjectId(), old_id: 3, symbol: 'RELIANCE', name: 'Reliance Industries', market: 'indian_stock', type: 'stock', status: 'active' },
+    { _id: new ObjectId(), old_id: 4, symbol: 'BTC-USD', name: 'Bitcoin', market: 'crypto', type: 'crypto', status: 'inactive' },
+    { _id: new ObjectId(), old_id: 5, symbol: 'SHEL.L', name: 'Shell plc', market: 'uk', type: 'stock', status: 'inactive' },
   );
 }
 async function login(email = 'super@test.local') {
@@ -152,14 +147,16 @@ const post = (agent, url, body) => agent.post(url).type('form').send(body);
 describe('Admin → Assets: list', () => {
   beforeEach(reset);
 
-  test('lists assets with category filter, market filter, status and search', async () => {
+  test('shows only Symbol, Name and Status columns, with market/status/search filters', async () => {
     const admin = await login();
     const page = (await admin.get('/market-assets')).text;
     assert.equal(symbolsOn(page).length, 5);
-    assert.match(page, /Large Cap US \(2\)/, 'category dropdown shows counts');
-    assert.deepEqual(symbolsOn((await admin.get(`/market-assets?category=${cat.largeUS._id}`)).text).sort(), ['AAPL', 'MSFT']);
-    assert.deepEqual(symbolsOn((await admin.get('/market-assets?market=us')).text).sort(), ['AAPL', 'AAPL', 'MSFT']);
-    assert.deepEqual(symbolsOn((await admin.get('/market-assets?status=inactive')).text), ['BTC-USD']);
+    const headers = [...page.match(/<thead class="table-light">([\s\S]*?)<\/thead>/)[1].matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1].trim()).filter(Boolean);
+    assert.deepEqual(headers, ['Symbol', 'Name', 'Status', 'Actions']);
+    assert.doesNotMatch(page, /Move to category|name="target_category"/, 'no category assignment');
+    assert.match(page, /US Stock \(2\)/, 'market filter shows counts');
+    assert.deepEqual(symbolsOn((await admin.get('/market-assets?market=us_stock')).text).sort(), ['AAPL', 'MSFT']);
+    assert.deepEqual(symbolsOn((await admin.get('/market-assets?status=inactive')).text).sort(), ['BTC-USD', 'SHEL.L']);
     assert.deepEqual(symbolsOn((await admin.get('/market-assets?search=relia')).text), ['RELIANCE']);
     assert.deepEqual(symbolsOn((await admin.get('/market-assets?search=(.*')).text), [], 'search is literal, not a regex');
   });
@@ -175,19 +172,21 @@ describe('Admin → Assets: add', () => {
 
   test('a US symbol is verified on Twelve Data; empty name is filled with the official name', async () => {
     const admin = await login();
-    const res = await post(admin, '/market-assets', { category_id: String(cat.smallUS._id), symbol: 'msft', name: '', status: 'active' });
+    const res = await post(admin, '/market-assets', { market: 'us_stock', symbol: 'brk.b', name: '', status: 'active' });
     assert.equal(res.status, 302);
-    const created = db.Asset.find((a) => a.symbol === 'MSFT' && same(a.category_id, cat.smallUS._id));
-    assert.equal(created.name, 'Microsoft Corporation');
+    const created = db.Asset.find((a) => a.symbol === 'BRK.B');
+    assert.equal(created.name, 'Berkshire Hathaway Inc. Class B');
+    assert.equal(created.market, 'us_stock');
     assert.equal(created.type, 'stock');
+    assert.equal(created.category_id, undefined, 'assets have no category');
     assert.equal(created.old_id, 6, 'gets the next numeric id like migrated assets');
-    assert.deepEqual(lookups, ['MSFT']);
+    assert.deepEqual(lookups, ['BRK.B']);
   });
 
   test('a US typo is rejected and nothing is saved', async () => {
     const admin = await login();
     const before = db.Asset.length;
-    const res = await post(admin, '/market-assets', { category_id: String(cat.largeUS._id), symbol: 'APPL', name: 'Apple', status: 'active' });
+    const res = await post(admin, '/market-assets', { market: 'us_stock', symbol: 'APPL', name: 'Apple', status: 'active' });
     assert.equal(res.status, 200, 'form is shown again');
     assert.match(res.text, /APPL was not found on any US exchange/);
     assert.match(res.text, /value="APPL"/, 'keeps what the admin typed');
@@ -197,7 +196,7 @@ describe('Admin → Assets: add', () => {
   test('if Twelve Data is unreachable the asset is saved with a warning', async () => {
     twelveDown = true;
     const admin = await login();
-    await post(admin, '/market-assets', { category_id: String(cat.largeUS._id), symbol: 'NVDA', name: 'NVIDIA', status: 'active' });
+    await post(admin, '/market-assets', { market: 'us_stock', symbol: 'NVDA', name: 'NVIDIA', status: 'active' });
     assert.ok(db.Asset.find((a) => a.symbol === 'NVDA'));
     assert.match((await admin.get('/market-assets')).text, /NVDA could not be verified with Twelve Data/);
   });
@@ -205,40 +204,39 @@ describe('Admin → Assets: add', () => {
   test('format and duplicate rules per market; non-US symbols are not sent to Twelve Data', async () => {
     const admin = await login();
     const cases = [
-      [{ category_id: String(cat.largeUS._id), symbol: 'AAPL', name: 'x' }, 'AAPL is already in Large Cap US.'],
-      [{ category_id: String(cat.largeCR._id), symbol: 'ETH', name: 'Ether' }, 'Crypto symbols must look like BTC-USD.'],
-      [{ category_id: String(cat.largeUK._id), symbol: 'SHEL', name: 'Shell' }, 'must end in .L'],
-      [{ category_id: String(cat.largeIN._id), symbol: 'SHEL.L', name: 'Shell' }, 'SHEL.L is not a Indian stock symbol.'],
-      [{ category_id: String(cat.largeIN._id), symbol: 'TCS', name: '' }, 'The name field is required.'],
-      [{ category_id: '', symbol: 'TCS', name: 'TCS' }, 'Please choose a category.'],
-      [{ category_id: String(cat.largeIN._id), symbol: 'BAD SYMBOL', name: 'x' }, 'may only contain'],
+      [{ market: 'us_stock', symbol: 'AAPL', name: 'x' }, 'AAPL is already in the US Stock list.'],
+      [{ market: 'crypto', symbol: 'ETH', name: 'Ether' }, 'Crypto symbols must look like BTC-USD.'],
+      [{ market: 'indian_stock', symbol: 'SHEL.L', name: 'Shell' }, 'SHEL.L is not a Indian Stock symbol.'],
+      [{ market: 'indian_stock', symbol: 'TCS', name: '' }, 'The name field is required.'],
+      [{ market: '', symbol: 'TCS', name: 'TCS' }, 'Please choose a market'],
+      [{ market: 'uk', symbol: 'BP.L', name: 'BP' }, 'Please choose a market', 'UK is no longer a market for new assets'],
+      [{ market: 'indian_stock', symbol: 'BAD SYMBOL', name: 'x' }, 'may only contain'],
     ];
     for (const [body, message] of cases) {
       const res = await post(admin, '/market-assets', { status: 'active', ...body });
       assert.ok(res.text.includes(message), message);
     }
-    await post(admin, '/market-assets', { category_id: String(cat.largeIN._id), symbol: 'tcs', name: 'Tata Consultancy', status: 'active' });
-    await post(admin, '/market-assets', { category_id: String(cat.largeCR._id), symbol: 'eth-usd', name: 'Ethereum', status: 'active' });
-    assert.ok(db.Asset.find((a) => a.symbol === 'TCS'));
+    await post(admin, '/market-assets', { market: 'indian_stock', symbol: 'tcs', name: 'Tata Consultancy', status: 'active' });
+    await post(admin, '/market-assets', { market: 'crypto', symbol: 'eth-usd', name: 'Ethereum', status: 'active' });
+    assert.equal(db.Asset.find((a) => a.symbol === 'TCS').market, 'indian_stock');
     assert.equal(db.Asset.find((a) => a.symbol === 'ETH-USD').type, 'crypto');
-    assert.deepEqual(lookups, ['AAPL'].filter(() => false), 'no Twelve Data lookups for duplicates or non-US');
+    assert.deepEqual(lookups, [], 'no Twelve Data lookups for duplicates or non-US');
   });
 
-  test('the same symbol may be added to another category', async () => {
+  test('a symbol is unique per market, but may exist in another market', async () => {
     const admin = await login();
-    await post(admin, '/market-assets', { category_id: String(cat.smallUS._id), symbol: 'MSFT', name: 'Microsoft', status: 'active' });
-    assert.equal(db.Asset.filter((a) => a.symbol === 'MSFT').length, 2);
+    await post(admin, '/market-assets', { market: 'indian_stock', symbol: 'AAPL', name: 'Apple (NSE listing)', status: 'active' });
+    assert.equal(db.Asset.filter((a) => a.symbol === 'AAPL').length, 2);
   });
 });
 
-describe('Admin → Assets: edit, move, delete', () => {
+describe('Admin → Assets: edit, delete', () => {
   beforeEach(reset);
 
-  test('edit renames and moves; an unchanged US symbol is not re-checked', async () => {
+  test('edit renames and changes status; an unchanged US symbol is not re-checked', async () => {
     const msft = db.Asset[1];
     const admin = await login();
-    await post(admin, `/market-assets/${msft._id}?_method=PUT`, { category_id: String(cat.smallUS._id), symbol: 'MSFT', name: 'Microsoft Corporation', status: 'inactive' });
-    assert.ok(same(get(msft._id).category_id, cat.smallUS._id));
+    await post(admin, `/market-assets/${msft._id}?_method=PUT`, { market: 'us_stock', symbol: 'MSFT', name: 'Microsoft Corporation', status: 'inactive' });
     assert.equal(get(msft._id).name, 'Microsoft Corporation');
     assert.equal(get(msft._id).status, 'inactive');
     assert.deepEqual(lookups, []);
@@ -247,20 +245,30 @@ describe('Admin → Assets: edit, move, delete', () => {
   test('changing a symbol to a US typo is rejected', async () => {
     const msft = db.Asset[1];
     const admin = await login();
-    const res = await post(admin, `/market-assets/${msft._id}?_method=PUT`, { category_id: String(cat.largeUS._id), symbol: 'MSFTT', name: 'x', status: 'active' });
+    const res = await post(admin, `/market-assets/${msft._id}?_method=PUT`, { market: 'us_stock', symbol: 'MSFTT', name: 'x', status: 'active' });
     assert.match(res.text, /MSFTT was not found/);
     assert.equal(get(msft._id).symbol, 'MSFT');
   });
 
-  test('moving into a category that already has the symbol is rejected', async () => {
-    const aaplLarge = db.Asset[0];
+  test('renaming into a symbol the market already has is rejected', async () => {
+    const msft = db.Asset[1];
     const admin = await login();
-    const res = await post(admin, `/market-assets/${aaplLarge._id}?_method=PUT`, { category_id: String(cat.smallUS._id), symbol: 'AAPL', name: 'Apple', status: 'active' });
-    assert.match(res.text, /AAPL is already in Small Cap US/);
+    const res = await post(admin, `/market-assets/${msft._id}?_method=PUT`, { market: 'us_stock', symbol: 'AAPL', name: 'Apple', status: 'active' });
+    assert.match(res.text, /AAPL is already in the US Stock list/);
+  });
+
+  test('a legacy UK asset can still be edited in its own market', async () => {
+    const shel = db.Asset[4];
+    const admin = await login();
+    await post(admin, `/market-assets/${shel._id}?_method=PUT`, { market: 'uk', symbol: 'SHEL.L', name: 'Shell', status: 'inactive' });
+    assert.equal(get(shel._id).name, 'Shell');
+    const rel = db.Asset[2];
+    const res = await post(admin, `/market-assets/${rel._id}?_method=PUT`, { market: 'uk', symbol: 'RELIANCE', name: 'x', status: 'active' });
+    assert.match(res.text, /Please choose a market/, 'nothing can be moved into UK');
   });
 
   test('delete removes the asset', async () => {
-    const rel = db.Asset[3];
+    const rel = db.Asset[2];
     const admin = await login();
     await admin.post(`/market-assets/${rel._id}?_method=DELETE`);
     assert.equal(get(rel._id), undefined);
@@ -270,23 +278,12 @@ describe('Admin → Assets: edit, move, delete', () => {
 describe('Admin → Assets: bulk actions', () => {
   beforeEach(reset);
 
-  test('bulk move within a market; skips duplicates and cross-market moves', async () => {
-    const [aaplLarge, msft, , rel] = db.Asset;
+  test('bulk activate/deactivate and delete; category moves no longer exist', async () => {
     const admin = await login();
-    await post(admin, '/market-assets/bulk', { action: 'move', target_category: String(cat.smallUS._id), 'asset_ids[]': [String(aaplLarge._id), String(msft._id), String(rel._id)] });
-    assert.ok(same(get(msft._id).category_id, cat.smallUS._id), 'MSFT moved');
-    assert.ok(same(get(aaplLarge._id).category_id, cat.largeUS._id), 'AAPL already in Small Cap US → skipped');
-    assert.ok(same(get(rel._id).category_id, cat.largeIN._id), 'Indian → US is refused');
-    const page = (await admin.get('/market-assets')).text;
-    assert.match(page, /Moved 1 asset\(s\) to Small Cap US/);
-    assert.match(page, /AAPL \(already in Small Cap US\)/);
-    assert.match(page, /RELIANCE \(Indian → US: use Edit\)/);
-  });
-
-  test('bulk activate/deactivate and delete', async () => {
-    const admin = await login();
-    await post(admin, '/market-assets/bulk', { action: 'activate', 'asset_ids[]': [String(db.Asset[4]._id)] });
-    assert.equal(db.Asset[4].status, 'active');
+    await post(admin, '/market-assets/bulk', { action: 'activate', 'asset_ids[]': [String(db.Asset[3]._id)] });
+    assert.equal(db.Asset[3].status, 'active');
+    await post(admin, '/market-assets/bulk', { action: 'move', 'asset_ids[]': [String(db.Asset[0]._id)] });
+    assert.match((await admin.get('/market-assets')).text, /Unknown action/);
     await post(admin, '/market-assets/bulk', { action: 'delete', 'asset_ids[]': [String(db.Asset[0]._id), String(db.Asset[1]._id)] });
     assert.equal(db.Asset.length, 3);
   });
@@ -301,12 +298,12 @@ describe('Admin → Assets: permissions', () => {
     assert.equal(page.status, 200);
     assert.doesNotMatch(page.text, /href="\/market-assets\/create|\/edit"|id="bulkAction"|form="delete-/);
     assert.equal((await viewer.get('/market-assets/create').set('Accept', 'application/json')).status, 403);
-    assert.equal((await post(viewer, '/market-assets', { category_id: String(cat.largeIN._id), symbol: 'TCS', name: 'TCS' }).set('Accept', 'application/json')).status, 403);
+    assert.equal((await post(viewer, '/market-assets', { market: 'indian_stock', symbol: 'TCS', name: 'TCS' }).set('Accept', 'application/json')).status, 403);
     assert.equal((await post(viewer, '/market-assets/bulk', { action: 'delete', 'asset_ids[]': [String(db.Asset[0]._id)] }).set('Accept', 'application/json')).status, 403);
     assert.equal(db.Asset.length, 5);
   });
 
-  test('an editor can move but not bulk-delete', async () => {
+  test('an editor can change status but not bulk-delete', async () => {
     const editor = await login('editor@test.local');
     await post(editor, '/market-assets/bulk', { action: 'delete', 'asset_ids[]': [String(db.Asset[0]._id)] });
     assert.equal(db.Asset.length, 5);
@@ -319,11 +316,11 @@ describe('Admin → Assets: live symbol check', () => {
 
   test('check-symbol answers found / not found / not US', async () => {
     const admin = await login();
-    const ok = (await admin.get(`/market-assets/check-symbol?symbol=brk.b&category_id=${cat.largeUS._id}`)).body;
+    const ok = (await admin.get('/market-assets/check-symbol?symbol=brk.b&market=us_stock')).body;
     assert.equal(ok.found, true);
     assert.equal(ok.name, 'Berkshire Hathaway Inc. Class B');
-    assert.equal((await admin.get(`/market-assets/check-symbol?symbol=XXXX&category_id=${cat.largeUS._id}`)).body.found, false);
-    assert.equal((await admin.get(`/market-assets/check-symbol?symbol=TCS&category_id=${cat.largeIN._id}`)).body.checked, false);
+    assert.equal((await admin.get('/market-assets/check-symbol?symbol=XXXX&market=us_stock')).body.found, false);
+    assert.equal((await admin.get('/market-assets/check-symbol?symbol=TCS&market=indian_stock')).body.checked, false);
   });
 });
 
@@ -347,43 +344,43 @@ describe('Admin → Assets: logos', () => {
 
   test('adding without a logo fills the standard one; a custom logo is kept', async () => {
     const admin = await login();
-    await post(admin, '/market-assets', { category_id: String(cat.largeIN._id), symbol: 'TCS', name: 'Tata Consultancy', image_url: '', status: 'active' });
-    await post(admin, '/market-assets', { category_id: String(cat.largeIN._id), symbol: 'INFY', name: 'Infosys', image_url: 'https://cdn.example.com/infy.png', status: 'active' });
+    await post(admin, '/market-assets', { market: 'indian_stock', symbol: 'TCS', name: 'Tata Consultancy', image_url: '', status: 'active' });
+    await post(admin, '/market-assets', { market: 'indian_stock', symbol: 'INFY', name: 'Infosys', image_url: 'https://cdn.example.com/infy.png', status: 'active' });
     assert.equal(db.Asset.find((a) => a.symbol === 'TCS').image_url, 'https://financialmodelingprep.com/image-stock/TCS.NS.png');
     assert.equal(db.Asset.find((a) => a.symbol === 'INFY').image_url, 'https://cdn.example.com/infy.png');
   });
 
   test('saving a legacy asset replaces its localhost logo', async () => {
-    const rel = db.Asset[3];
+    const rel = db.Asset[2];
     rel.image_url = 'http://localhost/storage/stocks/RELIANCE.png';
     const admin = await login();
-    await post(admin, `/market-assets/${rel._id}?_method=PUT`, { category_id: String(cat.largeIN._id), symbol: 'RELIANCE', name: 'Reliance Industries', image_url: rel.image_url, status: 'active' });
+    await post(admin, `/market-assets/${rel._id}?_method=PUT`, { market: 'indian_stock', symbol: 'RELIANCE', name: 'Reliance Industries', image_url: rel.image_url, status: 'active' });
     assert.equal(get(rel._id).image_url, 'https://financialmodelingprep.com/image-stock/RELIANCE.NS.png');
   });
 
   test('"Fix broken logos" repairs every missing/localhost logo and leaves good ones alone', async () => {
-    db.Asset[3].image_url = 'http://localhost/storage/stocks/RELIANCE.png';
-    db.Asset[4].image_url = null; // BTC-USD
+    db.Asset[2].image_url = 'http://localhost/storage/stocks/RELIANCE.png';
+    db.Asset[3].image_url = null; // BTC-USD
     db.Asset[0].image_url = 'https://financialmodelingprep.com/image-stock/AAPL.png';
-    db.Asset[1].image_url = 'https://financialmodelingprep.com/image-stock/MSFT.png';
-    db.Asset[2].image_url = 'https://cdn.example.com/aapl.png';
+    db.Asset[1].image_url = 'https://cdn.example.com/msft.png';
+    db.Asset[4].image_url = 'https://financialmodelingprep.com/image-stock/SHEL.L.png';
     const admin = await login();
     assert.match((await admin.get('/market-assets')).text, /<strong>2<\/strong> asset\(s\) have a missing or broken logo/);
     await admin.post('/market-assets/fix-logos');
-    assert.equal(db.Asset[3].image_url, 'https://financialmodelingprep.com/image-stock/RELIANCE.NS.png');
-    assert.equal(db.Asset[4].image_url, 'https://assets.coincap.io/assets/icons/btc@2x.png');
-    assert.equal(db.Asset[2].image_url, 'https://cdn.example.com/aapl.png');
+    assert.equal(db.Asset[2].image_url, 'https://financialmodelingprep.com/image-stock/RELIANCE.NS.png');
+    assert.equal(db.Asset[3].image_url, 'https://assets.coincap.io/assets/icons/btc@2x.png');
+    assert.equal(db.Asset[1].image_url, 'https://cdn.example.com/msft.png');
     const page = (await admin.get('/market-assets')).text;
     assert.match(page, /Fixed 2 logo\(s\)\./);
     assert.doesNotMatch(page, /have a missing or broken logo/);
   });
 
   test('view-only admins cannot fix logos', async () => {
-    db.Asset[3].image_url = 'http://localhost/storage/stocks/RELIANCE.png';
+    db.Asset[2].image_url = 'http://localhost/storage/stocks/RELIANCE.png';
     const viewer = await login('viewer@test.local');
     assert.doesNotMatch((await viewer.get('/market-assets')).text, /action="\/market-assets\/fix-logos"/);
     assert.equal((await viewer.post('/market-assets/fix-logos').set('Accept', 'application/json')).status, 403);
-    assert.equal(db.Asset[3].image_url, 'http://localhost/storage/stocks/RELIANCE.png');
+    assert.equal(db.Asset[2].image_url, 'http://localhost/storage/stocks/RELIANCE.png');
   });
 });
 
@@ -401,7 +398,7 @@ describe('Admin → TradingView chart on stock click', () => {
     assert.match(page, /data-tv-symbol="BTC-USD" data-tv-market="crypto"/);
   });
 
-  test('/api/asset-markets resolves markets from the asset categories', async () => {
+  test('/api/asset-markets resolves markets from each asset market', async () => {
     const admin = await login();
     const res = await admin.get('/api/asset-markets?symbols=AAPL,RELIANCE,SHEL.L,BTC-USD');
     assert.deepEqual(res.body.markets, { AAPL: 'us', RELIANCE: 'indian', 'SHEL.L': 'uk', 'BTC-USD': 'crypto' });

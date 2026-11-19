@@ -13,7 +13,6 @@
   const sections = [
     { title: 'Main', items: [
       { show: can('dashboard.view'), href: '/dashboard', icon: 'bi-speedometer2', label: 'Dashboard', active: on('/dashboard') },
-      { show: can('live_management.view'), href: '/live-management', icon: 'bi-broadcast-pin', label: 'Live Management', active: on('/live-management'), liveBadge: true },
     ] },
     { title: 'Sessions & Contests', items: [
       { show: can('sessions.view'), href: '/league_sessions', icon: 'bi-calendar2-week', label: 'Leagues / Sessions', active: on('/league_sessions') || on('/sessions') },
@@ -38,6 +37,8 @@
       { show: can('probcoin_conversion.view'), href: '/probcoin-conversion', icon: 'bi-currency-exchange', label: 'ProbCoin Conversion', active: on('/probcoin-conversion') },
     ] },
     { title: 'Analytics', items: [
+      // Client feedback: Live Management moved from Main to Analytics
+      { show: can('live_management.view'), href: '/live-management', icon: 'bi-broadcast-pin', label: 'Live Management', active: on('/live-management'), liveBadge: true },
       { show: can('performance.view'), href: '/performance', icon: 'bi-graph-up-arrow', label: 'Performance', active: on('/performance') },
       { show: can('contest_analysis.view'), href: '/contest-analysis', icon: 'bi-bar-chart-line', label: 'Contest Analysis', active: on('/contest-analysis') },
       { show: can('live_price_feeds.view'), href: '/live-price-feeds', icon: 'bi-graph-up', label: 'Live Price Feeds', active: on('/live-price-feeds') },

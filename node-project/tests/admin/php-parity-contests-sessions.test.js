@@ -29,6 +29,7 @@ const models = {
   AdminRole: require('../../src/models/admin-role.model'),
   Asset: require('../../src/models/asset.model'),
   MarketTypeCategory: require('../../src/models/market-type-category.model'),
+  SessionTemplate: require('../../src/models/session-template.model'),
 };
 const Setting = require('../../src/models/setting.model');
 const priceFeed = require('../../src/services/contest-automation/price-feed');
@@ -497,37 +498,91 @@ describe('Session edit (PHP edit rules) and Refetch Missing Prices', () => {
     assert.equal(get('LeagueSession', live._id).status, 'live');
   });
 
-  test('draft: assets can be edited and captured prices are kept', async () => {
-    db.MarketTypeCategory.push({ _id: new ObjectId(), old_id: 7, name: 'Large Cap Indian', category_type: 'stock', status: 'active' });
-    db.Asset.push({ _id: new ObjectId(), symbol: 'CCC', name: 'Ccc Ltd', status: 'active' });
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): market type + per-session category ↔ asset assignment
+  test('draft: categories/assets can be edited with the minimum enforced; captured prices are kept', async () => {
+    db.MarketTypeCategory.push({ _id: new ObjectId(), old_id: 7, name: 'Large Cap Indian', category_type: 'stock', market: 'indian_stock', min_assets: 2, status: 'active' });
+    db.Asset.push(
+      { _id: new ObjectId(), symbol: 'AAA', name: 'Aaa Ltd', market: 'indian_stock', status: 'active' },
+      { _id: new ObjectId(), symbol: 'CCC', name: 'Ccc Ltd', market: 'indian_stock', status: 'active' },
+    );
     const s = addSession({ status: 'draft' });
     const admin = await login();
-    // Exactly what the edit page's checkbox grid posts (asset_selection[]=<categoryId>:<symbol>).
-    await admin.post(`/league_sessions/${s._id}?_method=PUT`).type('form').send(
-      'name=Draft&market_type=stock&max_stocks=4&start_time=2026-11-05T09%3A30&end_time=2026-11-05T15%3A30'
-      + '&status=upcoming&active=1&asset_selection%5B%5D=7%3AAAA&asset_selection%5B%5D=7%3ACCC',
-    );
+    const base = 'name=Draft&market=indian_stock&max_stocks=4&start_time=2026-11-05T09%3A30&end_time=2026-11-05T15%3A30&status=upcoming&active=1&assets_loaded=1&session_categories%5B%5D=7';
+    // Below the minimum: rejected, nothing changes.
+    await admin.post(`/league_sessions/${s._id}?_method=PUT`).type('form').send(`${base}&asset_selection%5B%5D=7%3AAAA`);
+    assert.equal(get('LeagueSession', s._id).status, 'draft');
+    assert.match((await admin.get(`/league_sessions/${s._id}/edit`)).text, /Large Cap Indian requires a minimum of 2 assets\. Currently selected: 1\./);
+    // Exactly what the picker posts (asset_selection[]=<categoryId>:<symbol>).
+    await admin.post(`/league_sessions/${s._id}?_method=PUT`).type('form').send(`${base}&asset_selection%5B%5D=7%3AAAA&asset_selection%5B%5D=7%3ACCC`);
     const saved = get('LeagueSession', s._id);
     assert.deepEqual(saved.assets.map((a) => a.asset_symbol), ['AAA', 'CCC']);
     assert.equal(saved.assets[0].start_price, 100, 'existing price kept');
     assert.equal(saved.assets[1].category_name, 'Large Cap Indian');
+    assert.equal(saved.market, 'indian_stock');
+    assert.equal(saved.market_type, 'stock');
+    assert.deepEqual(saved.categories, [{ category_id: 7, category_name: 'Large Cap Indian', min_assets: 2 }]);
     assert.equal(saved.max_stocks, 4);
     assert.equal(saved.status, 'upcoming');
   });
 
-  test('session CREATE keeps the selected assets (multer parses stocks[22][] into a sparse array)', async () => {
-    db.MarketTypeCategory.push({ _id: new ObjectId(), old_id: 22, name: 'Large Cap Indian', category_type: 'stock', status: 'active' });
-    db.Asset.push({ _id: new ObjectId(), symbol: 'RELIANCE', name: 'Reliance', status: 'active' }, { _id: new ObjectId(), symbol: 'TCS', name: 'TCS', status: 'active' });
+  test('session CREATE: market type, categories and assets; old stocks[22][] posts still work', async () => {
+    db.MarketTypeCategory.push({ _id: new ObjectId(), old_id: 22, name: 'Large Cap Indian', category_type: 'stock', market: 'indian_stock', min_assets: 2, status: 'active' });
+    db.Asset.push(
+      { _id: new ObjectId(), symbol: 'RELIANCE', name: 'Reliance', market: 'indian_stock', status: 'active' },
+      { _id: new ObjectId(), symbol: 'TCS', name: 'TCS', market: 'indian_stock', status: 'active' },
+    );
     const admin = await login();
     const res = await admin.post('/league_sessions')
-      .field('name', 'Nifty 50').field('market_type', 'stock').field('max_stocks', '5')
+      .field('name', 'Nifty 50').field('market', 'indian_stock').field('max_stocks', '5')
       .field('start_time', '2026-11-06T09:30').field('end_time', '2026-11-06T15:30')
       .field('status', 'upcoming').field('active', '1')
-      .field('stocks[22][]', 'RELIANCE').field('stocks[22][]', 'TCS');
+      .field('stocks[22][]', 'RELIANCE').field('stocks[22][]', 'TCS'); // multer parses this into a sparse array
     assert.equal(res.status, 302);
     const created = db.LeagueSession.find((x) => x.name === 'Nifty 50');
     assert.ok(created, 'session created');
+    assert.equal(created.market, 'indian_stock');
+    assert.equal(created.market_type, 'stock');
     assert.deepEqual(created.assets.map((a) => [a.category_id, a.category_name, a.asset_symbol]), [[22, 'Large Cap Indian', 'RELIANCE'], [22, 'Large Cap Indian', 'TCS']]);
+  });
+
+  test('session CREATE is refused on the server below a category minimum, and the form keeps the input', async () => {
+    db.MarketTypeCategory.push(
+      { _id: new ObjectId(), old_id: 22, name: 'Large Cap Indian', category_type: 'stock', market: 'indian_stock', min_assets: 10, status: 'active' },
+      { _id: new ObjectId(), old_id: 23, name: 'Large Cap US', category_type: 'stock', market: 'us_stock', min_assets: 1, status: 'active' },
+    );
+    db.Asset.push(
+      { _id: new ObjectId(), symbol: 'RELIANCE', name: 'Reliance', market: 'indian_stock', status: 'active' },
+      { _id: new ObjectId(), symbol: 'AAPL', name: 'Apple', market: 'us_stock', status: 'active' },
+    );
+    const admin = await login();
+    const res = await admin.post('/league_sessions')
+      .field('name', 'Too Few').field('market', 'indian_stock').field('max_stocks', '5')
+      .field('start_time', '2026-11-06T09:30').field('end_time', '2026-11-06T15:30')
+      .field('status', 'upcoming').field('active', '1')
+      .field('session_categories[]', '22').field('session_categories[]', '23')
+      .field('asset_selection[]', '22:RELIANCE').field('asset_selection[]', '22:AAPL');
+    assert.equal(res.status, 422);
+    assert.match(res.text, /Large Cap Indian requires a minimum of 10 assets\. Currently selected: 1\./);
+    assert.match(res.text, /Large Cap US is not a Indian Stock category\./, 'categories must match the market');
+    assert.match(res.text, /AAPL is not an active Indian Stock asset\./, 'assets must match the market');
+    assert.match(res.text, /value="Too Few"/, 'the form keeps the input');
+    assert.equal(db.LeagueSession.find((x) => x.name === 'Too Few'), undefined, 'nothing created');
+  });
+
+  test('session CREATE refuses one asset in two categories of the same session', async () => {
+    db.MarketTypeCategory.push(
+      { _id: new ObjectId(), old_id: 22, name: 'Large Cap Indian', category_type: 'stock', market: 'indian_stock', min_assets: 1, status: 'active' },
+      { _id: new ObjectId(), old_id: 19, name: 'Mid Cap Indian', category_type: 'stock', market: 'indian_stock', min_assets: 1, status: 'active' },
+    );
+    db.Asset.push({ _id: new ObjectId(), symbol: 'RELIANCE', name: 'Reliance', market: 'indian_stock', status: 'active' });
+    const admin = await login();
+    const res = await admin.post('/league_sessions')
+      .field('name', 'Dup').field('market', 'indian_stock').field('max_stocks', '5')
+      .field('start_time', '2026-11-06T09:30').field('end_time', '2026-11-06T15:30')
+      .field('status', 'upcoming').field('active', '1')
+      .field('asset_selection[]', '22:RELIANCE').field('asset_selection[]', '19:RELIANCE');
+    assert.equal(res.status, 422);
+    assert.match(res.text, /RELIANCE is assigned to both Large Cap Indian and Mid Cap Indian/);
   });
 
   test('completed and cancelled sessions are read-only', async () => {

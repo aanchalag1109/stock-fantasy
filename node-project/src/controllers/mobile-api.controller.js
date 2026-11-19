@@ -28,6 +28,7 @@ const deviceTokens = require('../services/notifications/device-token.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats + safe joining
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
+const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION — NODE.JS PROJECT: market types
 
 function authUser(user) {
   return {
@@ -262,6 +263,10 @@ function sessionRow(session, extra = {}) {
     end_time: sqlDate(session.end_time),
     status: session.status,
     market_type: session.market_type,
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: market (indian_stock | us_stock | crypto) + chosen categories
+    market: sessionMarkets.marketOfSession(session),
+    market_label: sessionMarkets.labelOf(sessionMarkets.marketOfSession(session)),
+    categories: (session.categories || []).map((c) => ({ id: c.category_id, name: c.category_name, min_assets: c.min_assets })),
     max_stocks: session.max_stocks,
     user_joining_start_time: sqlDate(session.user_joining_start_time),
     active: session.active == null ? true : !!session.active,
@@ -1025,11 +1030,17 @@ const savedBaskets = async (req, res) => {
       const session = await findByPublicId(LeagueSession, basket.session_id);
       const scored = scoreAssets(basket.assets || [], basket.multipliers || [], priceMaps(session && session.toObject()));
       const grouped = { lc: [], mc: [], sc: [] };
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: category names are admin-defined now, so baskets are
+      // also grouped by their actual category name (lc/mc/sc kept for older app builds).
+      const byCategory = new Map();
       scored.rows.forEach((asset) => {
         const sector = String(asset.sector || '').toLowerCase();
         if (sector.includes('large cap')) grouped.lc.push(asset);
         else if (sector.includes('mid cap')) grouped.mc.push(asset);
         else if (sector.includes('small cap')) grouped.sc.push(asset);
+        const name = asset.sector || 'Other';
+        if (!byCategory.has(name)) byCategory.set(name, { name, category_id: asset.category_id ?? null, assets: [] });
+        byCategory.get(name).assets.push(asset);
       });
       data.push({
         id: publicId(basket),
@@ -1047,6 +1058,7 @@ const savedBaskets = async (req, res) => {
         prize_pool: 0,
         is_standalone: !!basket.is_standalone,
         assets_by_category: grouped,
+        categories: [...byCategory.values()].map((c) => ({ ...c, count: c.assets.length })),
         lc_count: grouped.lc.length,
         mc_count: grouped.mc.length,
         sc_count: grouped.sc.length,
@@ -1143,11 +1155,17 @@ const getUserContestBaskets = async (req, res) => {
       const session = await findByPublicId(LeagueSession, (entry && entry.session_id) || basket.session_id || (contest && contest.league_session_id));
       const scored = scoreAssets(basket.assets || [], basket.multipliers || [], priceMaps(session && session.toObject()));
       const grouped = { lc: [], mc: [], sc: [] };
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: category names are admin-defined now, so baskets are
+      // also grouped by their actual category name (lc/mc/sc kept for older app builds).
+      const byCategory = new Map();
       scored.rows.forEach((asset) => {
         const sector = String(asset.sector || '').toLowerCase();
         if (sector.includes('large cap')) grouped.lc.push(asset);
         else if (sector.includes('mid cap')) grouped.mc.push(asset);
         else if (sector.includes('small cap')) grouped.sc.push(asset);
+        const name = asset.sector || 'Other';
+        if (!byCategory.has(name)) byCategory.set(name, { name, category_id: asset.category_id ?? null, assets: [] });
+        byCategory.get(name).assets.push(asset);
       });
       data.push({
         id: publicId(basket),
@@ -1167,6 +1185,7 @@ const getUserContestBaskets = async (req, res) => {
         category: contest ? contest.category : null,
         is_standalone: !!basket.is_standalone,
         assets_by_category: grouped,
+        categories: [...byCategory.values()].map((c) => ({ ...c, count: c.assets.length })),
         lc_count: grouped.lc.length,
         mc_count: grouped.mc.length,
         sc_count: grouped.sc.length,

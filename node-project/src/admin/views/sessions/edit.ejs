@@ -37,27 +37,34 @@
                         <% if (!can('name')) { %><%- lockNote(`Locked for ${session.status} sessions`) %><% } %>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label for="market_type" class="form-label fw-semibold">Market Type <span class="text-danger">*</span></label>
-                        <select class="form-select form-select-lg" id="market_type" name="market_type" <%= can('market_type') ? '' : 'disabled' %>>
-                            <option value="stock" <%= session.market_type === 'stock' ? 'selected' : '' %>>Stock Market</option>
-                            <option value="crypto" <%= session.market_type === 'crypto' ? 'selected' : '' %>>Cryptocurrency</option>
+                        <%# NEW IMPLEMENTATION — NODE.JS PROJECT: one Market Type (Indian Stock / US Stock / Crypto) %>
+                        <label for="market" class="form-label fw-semibold">Market Type <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-lg" id="market" name="market" <%= can('market') ? '' : 'disabled' %>>
+                            <% Object.entries(marketOptions).forEach(([key, m]) => { %>
+                            <option value="<%= key %>" <%= market === key ? 'selected' : '' %>><%= m.label %></option>
+                            <% }) %>
+                            <% if (!marketOptions[market]) { %><option value="<%= market %>" selected><%= market %> (legacy)</option><% } %>
                         </select>
-                        <% if (!can('market_type')) { %><%- lockNote(`Locked for ${session.status} sessions`) %><% } %>
+                        <% if (!can('market')) { %><%- lockNote(`Locked for ${session.status} sessions`) %><% } %>
                     </div>
                 </div>
 
-                <h6 class="text-warning mb-3"><i class="bi bi-collection me-2"></i>Asset Selection</h6>
+                <h6 class="text-warning mb-3"><i class="bi bi-collection me-2"></i>Market Categories &amp; Assets</h6>
                 <div class="card border-0 bg-light mb-4"><div class="card-body">
                     <% if (can('assets')) { %>
-                        <ul class="nav nav-pills mb-3" id="categoryTabs"></ul>
-                        <div class="tab-content" id="categoryTabContent"><div class="text-muted">Loading assets…</div></div>
-                        <div class="form-text">Selected: <strong id="selectedCount"><%= selectedAssets.length %></strong>. Leave everything unchecked to keep the current assets.</div>
-                    <% } else { %>
-                        <div class="d-flex flex-wrap gap-1 mb-2">
-                            <% selectedAssets.forEach(sym => { %><span class="badge bg-secondary"><%= sym %></span><% }) %>
-                            <% if (!selectedAssets.length) { %><span class="text-muted">No assets</span><% } %>
-                        </div>
-                        <%- lockNote(`Asset selection is locked for ${session.status} sessions.`) %>
+                        <input type="hidden" name="assets_loaded" id="assets_loaded" value="0">
+                        <div id="asset-picker"></div>
+                        <div class="form-text">The current categories and assets are pre-selected. If the picker can't load, saving keeps the current assets.</div>
+                    <% } else {
+                        const groups = {};
+                        (session.assets || []).forEach(a => { const k = a.category_name || 'Uncategorised'; (groups[k] = groups[k] || []).push(a.asset_symbol); });
+                    %>
+                        <% Object.entries(groups).forEach(([name, syms]) => { %>
+                            <div class="mb-2"><strong class="small"><%= name %></strong> <span class="badge bg-primary"><%= syms.length %></span>
+                            <div class="d-flex flex-wrap gap-1 mt-1"><% syms.forEach(sym => { %><span class="badge bg-secondary"><%= sym %></span><% }) %></div></div>
+                        <% }) %>
+                        <% if (!Object.keys(groups).length) { %><span class="text-muted">No assets</span><% } %>
+                        <%- lockNote(`Category and asset selection is locked for ${session.status} sessions.`) %>
                     <% } %>
                 </div></div>
 
@@ -119,58 +126,34 @@
     </div>
 </div>
 
+<% if (can('assets')) { %><script src="/js/session-asset-picker.js"></script><% } %>
 <script>
 (function () {
     var form = document.getElementById('sessionEditForm');
     var IS_LIVE_ACTIVE = <%= isLive && isActive ? 'true' : 'false' %>;
+    <% if (can('assets')) { %>
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: same category ↔ asset picker and minimum checks as Create Session
+    var picker = SessionAssetPicker({
+        root: document.getElementById('asset-picker'),
+        marketSelect: document.getElementById('market'),
+        market: <%- JSON.stringify(market).replace(/</g, '\\u003c') %>,
+        selection: <%- JSON.stringify(selection).replace(/</g, '\\u003c') %>,
+        categoryIds: <%- JSON.stringify(selectedCategoryIds).replace(/</g, '\\u003c') %>,
+        loadedInput: document.getElementById('assets_loaded'),
+    });
+    <% } %>
     form.addEventListener('submit', function (e) {
+        <% if (can('assets')) { %>
+        if (picker.isReady()) {
+            var problems = picker.validate();
+            if (problems.length) { e.preventDefault(); picker.showErrors(); return; }
+        }
+        <% } %>
         var active = document.getElementById('active');
         if (IS_LIVE_ACTIVE && active && active.value === '0'
             && !confirm('Deactivating this live session will cancel all its contests and refund every user. Are you sure?')) {
             e.preventDefault();
         }
     });
-
-    <% if (can('assets')) { %>
-    var SELECTED = new Set(<%- JSON.stringify(selectedAssets) %>);
-    var market = document.getElementById('market_type');
-    var tabs = document.getElementById('categoryTabs');
-    var content = document.getElementById('categoryTabContent');
-    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-    function countSelected() { document.getElementById('selectedCount').textContent = content.querySelectorAll('input[type=checkbox]:checked').length; }
-    function loadCategories() {
-        var type = market.value;
-        tabs.innerHTML = '';
-        content.innerHTML = '<div class="text-muted">Loading assets…</div>';
-        fetch('/api/categories/' + encodeURIComponent(type), { headers: { Accept: 'application/json' } })
-            .then(function (r) { return r.json(); })
-            .then(function (categories) {
-                return Promise.all(categories.map(function (cat) {
-                    return fetch('/api/assets/' + encodeURIComponent(cat.id), { headers: { Accept: 'application/json' } })
-                        .then(function (r) { return r.json(); })
-                        .then(function (assets) { return { cat: cat, assets: assets }; });
-                }));
-            })
-            .then(function (groups) {
-                tabs.innerHTML = groups.map(function (g, i) {
-                    return '<li class="nav-item"><button class="nav-link' + (i === 0 ? ' active' : '') + '" type="button" data-bs-toggle="tab" data-bs-target="#cat-' + esc(g.cat.id) + '">' + esc(g.cat.name) + '</button></li>';
-                }).join('');
-                content.innerHTML = groups.map(function (g, i) {
-                    var boxes = g.assets.map(function (a) {
-                        var id = 'a_' + g.cat.id + '_' + String(a.symbol).replace(/[^A-Za-z0-9]/g, '_');
-                        return '<div class="col-md-3 col-6"><div class="form-check"><input class="form-check-input" type="checkbox" id="' + esc(id) + '" name="asset_selection[]" value="' + esc(g.cat.id) + ':' + esc(a.symbol) + '"' + (SELECTED.has(a.symbol) ? ' checked' : '') + '>'
-                            + '<label class="form-check-label small" for="' + esc(id) + '">' + esc(a.symbol) + ' <span class="text-muted">' + esc(a.name || '') + '</span></label>'
-                            + ' <i class="bi bi-graph-up tv-chart-icon" data-tv-symbol="' + esc(a.symbol) + '" data-tv-category="' + esc(g.cat.name) + '" data-tv-name="' + esc(a.name || '') + '" title="Open chart"></i></div></div>';
-                    }).join('') || '<div class="text-muted">No assets in this category</div>';
-                    return '<div class="tab-pane fade' + (i === 0 ? ' show active' : '') + '" id="cat-' + esc(g.cat.id) + '"><div class="row g-1">' + boxes + '</div></div>';
-                }).join('') || '<div class="text-muted">No categories for this market type</div>';
-                countSelected();
-            })
-            .catch(function () { content.innerHTML = '<div class="text-danger">Failed to load assets</div>'; });
-    }
-    content.addEventListener('change', countSelected);
-    market.addEventListener('change', loadCategories);
-    loadCategories();
-    <% } %>
 })();
 </script>

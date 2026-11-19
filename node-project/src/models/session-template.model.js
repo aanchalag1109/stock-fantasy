@@ -6,6 +6,7 @@ const sessionTemplateSchema = new mongoose.Schema({
   template_name: { type: String, required: true },
   image_url: { type: String, default: null },
   market_type: { type: String, required: true },
+  market: { type: String, default: null }, // NEW IMPLEMENTATION — NODE.JS PROJECT: indian_stock | us_stock | crypto
   max_stocks: { type: Number, default: 5 },
   user_joining_start_time: { type: Date, default: null },
   start_time: { type: Date, default: null },

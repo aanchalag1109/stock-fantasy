@@ -24,38 +24,51 @@ router.get('/live-contests-count', requireAdmin, requirePermission('live_managem
   }
 });
 
-// PHP admin/api/categories/{type} returns id + name. id is the MySQL category id.
+// NEW IMPLEMENTATION — NODE.JS PROJECT: dynamic market categories (client feedback).
+// GET /api/categories/:market — active categories of a market (indian_stock | us_stock | crypto;
+// the older 'stock' / 'crypto' still work). Each: id (numeric), name, market, min_assets, description.
+const sessionAssets = require('../../services/session-assets.service');
+const marketsLib = require('../../services/markets');
+const assetRow = (asset) => ({ id: asset.old_id, name: asset.name, symbol: asset.symbol, image_url: asset.image_url || null, market: asset.market || null });
+
 router.get('/categories/:type', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'templates.edit'), async (req, res) => {
-  const categories = await MarketTypeCategory.find({ category_type: req.params.type, status: 'active' })
-    .sort({ old_id: 1, _id: 1 })
-    .select('old_id name')
-    .lean();
-  res.json(categories.map((category) => ({ id: category.old_id, name: category.name })));
+  try {
+    const categories = await sessionAssets.activeCategories(req.params.type);
+    res.json(categories.map((category) => ({
+      id: category.old_id,
+      name: category.name,
+      market: category.market,
+      market_label: marketsLib.labelOf(category.market),
+      min_assets: sessionAssets.minOf(category),
+      description: category.description || '',
+    })));
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-// PHP admin/api/assets/{categoryId} filters by the numeric category id.
-router.get('/assets/:categoryId', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'templates.edit'), async (req, res) => {
-  const categoryId = String(req.params.categoryId);
-  const categoryKeys = [];
-  if (/^\d+$/.test(categoryId)) {
-    categoryKeys.push(Number(categoryId));
-    const category = await MarketTypeCategory.findOne({ old_id: Number(categoryId) }).select('_id').lean();
-    if (category) categoryKeys.push(category._id);
-  } else if (mongoose.isValidObjectId(categoryId) && categoryId.length === 24) {
-    categoryKeys.push(new mongoose.Types.ObjectId(categoryId));
+// GET /api/assets/market/:market — the active master-list assets of a market (session form).
+router.get('/assets/market/:market', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'templates.edit'), async (req, res) => {
+  try {
+    res.json((await sessionAssets.activeAssets(req.params.market)).map(assetRow));
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
-  const assets = categoryKeys.length
-    ? await Asset.find({ category_id: { $in: categoryKeys }, status: 'active' })
-      .sort({ old_id: 1, _id: 1 })
-      .select('old_id name symbol image_url')
-      .lean()
-    : [];
-  res.json(assets.map((asset) => ({
-    id: asset.old_id,
-    name: asset.name,
-    symbol: asset.symbol,
-    image_url: asset.image_url || null,
-  })));
+});
+
+// PHP admin/api/assets/{categoryId}. Assets no longer belong to a category, so this now returns the
+// active assets of the category's market (kept for older pages and bookmarks).
+router.get('/assets/:categoryId', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'templates.edit'), async (req, res) => {
+  try {
+    const categoryId = String(req.params.categoryId);
+    let category = null;
+    if (/^\d+$/.test(categoryId)) category = await MarketTypeCategory.findOne({ old_id: Number(categoryId) }).lean();
+    else if (mongoose.isValidObjectId(categoryId) && categoryId.length === 24) category = await MarketTypeCategory.findById(categoryId).lean();
+    const market = category && (category.market || marketsLib.marketFromLegacyCategory(category.name, category.category_type));
+    res.json(market ? (await sessionAssets.activeAssets(market)).map(assetRow) : []);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 router.get('/v1/stock-live-price', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'live_price_feeds.view'), async (req, res) => {

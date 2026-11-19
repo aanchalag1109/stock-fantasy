@@ -30,6 +30,7 @@ const axios = require('axios');
 const config = require('../../config/env');
 const logger = require('../../config/logger');
 const twelveData = require('../market-data/twelve-data');
+const marketsLib = require('../markets'); // NEW IMPLEMENTATION — NODE.JS PROJECT: session/asset market
 
 const NSE_HOST = 'indian-stock-market-data-nse-bse-bcd-mcx-cds-nfo.p.rapidapi.com';
 const CMC_BATCH = 100;
@@ -114,19 +115,30 @@ async function getPrices(session, assets) {
   const list = assets.filter((a) => a && a.asset_symbol);
   if (!list.length) return { prices, unsupported };
 
-  if (session.market_type === 'crypto') {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: category names are now free text ("Top Tech"), so the
+  // provider comes from the session's market. Sessions saved before the redesign have no market
+  // and keep the old detection from the "… Cap US/UK" category names.
+  const market = marketsLib.isKnownMarket(session.market) ? session.market : null;
+  if (market === 'crypto' || (!market && session.market_type === 'crypto')) {
     return { prices: await cryptoPrices(list.map((a) => a.asset_symbol)), unsupported };
   }
+  if (market === 'uk') {
+    list.forEach((a) => unsupported.push(a.asset_symbol));
+    logger.warn(`[price-feed] no price provider for UK stocks: ${unsupported.join(', ')}`);
+    return { prices, unsupported };
+  }
+  const isUs = market ? () => market === 'us_stock' : isUsStock;
+  const isIndian = market ? () => market === 'indian_stock' : (a) => !isInternationalStock(a);
+  if (!market) list.filter(isUkStock).forEach((a) => unsupported.push(a.asset_symbol));
 
   // US stocks: one batched Twelve Data request per plan-minute of credits.
-  const us = list.filter(isUsStock);
+  const us = list.filter(isUs);
   if (us.length) {
     const usPrices = await twelveData.getUsPrices(us.map((a) => a.asset_symbol));
     us.forEach((a) => { const p = usPrices.get(String(a.asset_symbol).trim()); if (p) prices.set(a.asset_symbol, p); });
   }
-  list.filter(isUkStock).forEach((a) => unsupported.push(a.asset_symbol));
 
-  const indian = list.filter((a) => !isInternationalStock(a));
+  const indian = list.filter(isIndian);
   const delay = Number.isFinite(config.STOCK_PRICE_REQUEST_DELAY_MS) ? config.STOCK_PRICE_REQUEST_DELAY_MS : 500;
   for (let i = 0; i < indian.length; i += 1) {
     const price = await indianStockPrice(indian[i].asset_symbol);
@@ -153,16 +165,19 @@ async function stockMarketOf(symbol) {
     try {
       const Asset = require('../../models/asset.model');
       const MarketTypeCategory = require('../../models/market-type-category.model');
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: assets carry their own market; the category lookup
+      // only covers rows not yet migrated (scripts/migration/redesign-asset-categories.js).
       const [categories, assets] = await Promise.all([
         MarketTypeCategory.find({}).select('_id old_id name').lean(),
-        Asset.find({}).select('symbol category_id').lean(),
+        Asset.find({}).select('symbol market category_id').lean(),
       ]);
       const nameOf = new Map();
       categories.forEach((c) => { nameOf.set(String(c._id), c.name); if (c.old_id != null) nameOf.set(String(c.old_id), c.name); });
       const map = new Map();
       assets.forEach((a) => {
         const name = nameOf.get(String(a.category_id)) || '';
-        const market = /\bUK\b/.test(name) ? 'uk' : /\bUS\b/.test(name) ? 'us' : /crypto/i.test(name) ? 'crypto' : 'indian';
+        const market = marketsLib.providerOf(a.market)
+          || (/\bUK\b/.test(name) ? 'uk' : /\bUS\b/.test(name) ? 'us' : /crypto/i.test(name) ? 'crypto' : 'indian');
         const markets = map.get(a.symbol) || new Set();
         markets.add(market);
         map.set(a.symbol, markets);

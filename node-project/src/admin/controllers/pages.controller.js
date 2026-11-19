@@ -17,6 +17,10 @@ const { render, renderStandalone } = require('../helpers/render');
 const prizePayout = require('../../services/contest-automation/prize-payout.service');
 const logger = require('../../config/logger');
 const formats = require('../../services/contest-formats'); // NEW IMPLEMENTATION — NODE.JS PROJECT: contest formats
+// NEW IMPLEMENTATION — NODE.JS PROJECT: market types, dynamic categories, session-level asset assignment
+const markets = require('../../services/markets');
+const sessionAssets = require('../../services/session-assets.service');
+const { ensureOldId } = require('../../helpers/mobile-compat');
 // PHP PARITY: Payment Orders actions
 const paymentOrders = require('../../services/payment-orders.service');
 // PHP PARITY: Performance "How It Works" diagnostics
@@ -37,22 +41,42 @@ const templates = {
   edit: async (req, res) => {
     const template = await SessionTemplate.findById(req.params.id).lean();
     if (!template) { req.flash('error', 'Template not found'); return res.redirect('/templates'); }
-    render(res, 'templates/edit', { title: 'Edit Template', template, admin: req.session.admin });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: market type + category ↔ asset picker (as Create Session)
+    const selection = sessionAssets.selectionOf(template);
+    render(res, 'templates/edit', {
+      title: 'Edit Template', template,
+      market: markets.marketOfSession(template), marketOptions: markets.MARKETS,
+      selection, selectedCategoryIds: Object.keys(selection),
+      admin: req.session.admin,
+    });
   },
-  // PHP PARITY — TemplateController::update also rebuilds the template's assets from the ticked
-  // stocks/cryptos, grouped by category name: { "<category>": [{ asset_symbol, asset_name,
-  // category_name, category_id }] } (the format session create reads).
+  // Rebuilds the template's assets in the format session create reads:
+  // { "<category>": [{ asset_symbol, asset_name, category_name, category_id }] }.
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: validated with the same rules as a session (market,
+  // active categories of that market, one category per asset, each category's minimum).
   update: async (req, res) => {
+    const template = await SessionTemplate.findById(req.params.id).lean();
+    if (!template) { req.flash('error', 'Template not found'); return res.redirect('/templates'); }
+    const market = markets.isMarket(req.body.market) ? req.body.market : markets.marketOfSession(template);
     const set = {
       template_name: req.body.template_name,
       name: req.body.name,
-      market_type: req.body.market_type,
+      market,
+      market_type: markets.typeOf(market),
       max_stocks: parseInt(req.body.max_stocks, 10) || 5,
     };
     // Only replace the assets once the picker has loaded (assets_loaded=1), so a page error can
-    // never wipe them; unticking everything still clears them, as in PHP.
-    if (req.body.assets_loaded === '1') set.assets_data = await buildTemplateAssets(req.body.asset_selection);
-    await SessionTemplate.findByIdAndUpdate(req.params.id, set);
+    // never wipe them.
+    if (req.body.assets_loaded === '1') {
+      const { selection, categoryIds } = sessionAssets.parseSelection(req.body);
+      const assignment = await sessionAssets.buildAssignment({ market, selection, categoryIds });
+      if (assignment.errors.length) {
+        req.flash('error', assignment.errors.join(' '));
+        return res.redirect(`/templates/${template._id}/edit`);
+      }
+      set.assets_data = sessionAssets.templateAssetsData(assignment.rows);
+    }
+    await SessionTemplate.findByIdAndUpdate(template._id, set);
     req.flash('success', 'Template updated successfully!');
     res.redirect('/templates');
   },
@@ -62,29 +86,6 @@ const templates = {
     res.redirect('/templates');
   },
 };
-
-// PHP PARITY: posted asset_selection[] = "<categoryId>:<symbol>" → PHP assets_data grouping.
-async function buildTemplateAssets(selection) {
-  const picked = [].concat(selection || []).map((v) => String(v).match(/^(\d+):(.+)$/)).filter(Boolean);
-  const categoryIds = [...new Set(picked.map((m) => Number(m[1])))];
-  const symbols = [...new Set(picked.map((m) => m[2].trim()))];
-  const [categories, assets] = await Promise.all([
-    categoryIds.length ? MarketTypeCategory.find({ old_id: { $in: categoryIds } }).select('old_id name').lean() : [],
-    symbols.length ? Asset.find({ symbol: { $in: symbols } }).select('symbol name').lean() : [],
-  ]);
-  const categoryName = new Map(categories.map((c) => [String(c.old_id), c.name]));
-  const assetName = new Map(assets.map((a) => [a.symbol, a.name]));
-  const data = {};
-  picked.forEach(([, categoryId, rawSymbol]) => {
-    const name = categoryName.get(categoryId);
-    if (!name) return; // PHP skips unknown categories
-    const symbol = rawSymbol.trim();
-    if (!data[name]) data[name] = [];
-    if (data[name].some((row) => row.asset_symbol === symbol)) return;
-    data[name].push({ asset_symbol: symbol, asset_name: assetName.get(symbol) || symbol, category_name: name, category_id: categoryId });
-  });
-  return data;
-}
 
 async function findSession(id) {
   const mongoose = require('mongoose');
@@ -726,74 +727,115 @@ const contestAnalysis = {
   },
 };
 
-function categoryError(body) {
-  const name = String(body.name || '').trim();
-  if (!name || name.length > 255) return 'The name field is required.';
-  if (!['stock', 'crypto'].includes(body.category_type)) return 'The selected category type is invalid.';
-  if (!['active', 'inactive'].includes(body.status)) return 'The selected status is invalid.';
-  return null;
+// NEW IMPLEMENTATION — NODE.JS PROJECT: dynamic market categories (client feedback). Each category
+// belongs to a market (Indian Stock / US Stock / Crypto) and has a minimum number of assets an
+// admin must assign to it in a session. Names are free text, unique per market. Assets are not
+// linked here: they're assigned to categories per session.
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const MAX_MIN_ASSETS = 500;
+
+async function categoryInput(body, existing = null) {
+  const values = {
+    market: String(body.market || '').trim(),
+    name: String(body.name || '').trim(),
+    description: String(body.description || '').trim(),
+    min_assets: String(body.min_assets ?? '').trim(),
+    status: String(body.status || 'active'),
+  };
+  const errors = [];
+  // A legacy (UK) category keeps its market when edited; it can't be moved into one.
+  const marketOk = markets.isMarket(values.market) || (existing && existing.market === values.market && markets.isKnownMarket(values.market));
+  if (!marketOk) errors.push('Choose a market type: Indian Stock, US Stock or Crypto.');
+  if (!values.name) errors.push('The category name is required.');
+  else if (values.name.length > 100) errors.push('The category name must not be longer than 100 characters.');
+  if (values.description.length > 500) errors.push('The description must not be longer than 500 characters.');
+  const min = Number(values.min_assets);
+  if (!/^\d+$/.test(values.min_assets) || min < 1 || min > MAX_MIN_ASSETS) errors.push(`Minimum number of assets must be a whole number from 1 to ${MAX_MIN_ASSETS}.`);
+  if (!['active', 'inactive'].includes(values.status)) errors.push('The selected status is invalid.');
+  if (!errors.length) {
+    const duplicate = await MarketTypeCategory.findOne({
+      market: values.market,
+      name: new RegExp(`^${escapeRegExp(values.name)}$`, 'i'),
+      ...(existing ? { _id: { $ne: existing._id } } : {}),
+    }).select('_id').lean();
+    if (duplicate) errors.push(`A ${markets.labelOf(values.market)} category named "${values.name}" already exists.`);
+  }
+  return {
+    values,
+    errors,
+    doc: {
+      market: values.market,
+      category_type: markets.typeOf(values.market),
+      name: values.name,
+      description: values.description,
+      min_assets: min,
+      status: values.status,
+    },
+  };
 }
+
+const categoryForm = (res, req, { category = null, values = null, errors = [] } = {}) => render(res, 'market_type_categories/form', {
+  title: category ? 'Edit Market Category' : 'Create Market Category',
+  category,
+  values: values || (category
+    ? { market: category.market || '', name: category.name, description: category.description || '', min_assets: category.min_assets || 1, status: category.status || 'active' }
+    : { market: '', name: '', description: '', min_assets: 1, status: 'active' }),
+  errors,
+  marketOptions: markets.MARKETS,
+  allMarkets: markets.ALL_MARKETS,
+  admin: req.session.admin,
+});
 
 const categories = {
   index: async (req, res) => {
-    const type = req.query.type || '';
-    const categories = await MarketTypeCategory.aggregate([
+    const market = markets.isKnownMarket(req.query.market) ? req.query.market : '';
+    const all = await MarketTypeCategory.aggregate([
       { $addFields: { created_missing: { $cond: [{ $ifNull: ['$created_at', false] }, 0, 1] } } },
       { $sort: { created_missing: 1, created_at: -1, old_id: 1 } },
       { $project: { created_missing: 0 } },
     ]);
+    const counts = { all: all.length };
+    markets.ALL_MARKET_KEYS.forEach((key) => { counts[key] = all.filter((c) => c.market === key).length; });
     await render(res, 'market_type_categories/index', {
       title: 'Market Categories',
-      categories,
-      allCount: categories.length,
-      stockCount: categories.filter((c) => c.category_type === 'stock').length,
-      cryptoCount: categories.filter((c) => c.category_type === 'crypto').length,
-      type,
+      categories: market ? all.filter((c) => c.market === market) : all,
+      counts,
+      market,
+      marketOptions: markets.MARKETS,
+      allMarkets: markets.ALL_MARKETS,
       admin: req.session.admin,
     });
   },
   create: async (req, res) => {
-    await render(res, 'market_type_categories/form', { title: 'Create Market Category', category: null, admin: req.session.admin });
+    await categoryForm(res, req);
   },
   store: async (req, res) => {
-    const error = categoryError(req.body);
-    if (error) {
-      req.flash('error', error);
-      return res.redirect('/market_type_categories/create');
-    }
-    await MarketTypeCategory.create({
-      name: String(req.body.name).trim(),
-      category_type: req.body.category_type,
-      status: req.body.status,
-    });
-    req.flash('success', 'Category created successfully');
+    const { values, errors, doc } = await categoryInput(req.body);
+    if (errors.length) { res.status(422); return categoryForm(res, req, { values, errors }); }
+    const created = await MarketTypeCategory.create(doc);
+    await ensureOldId(MarketTypeCategory, created);
+    req.flash('success', `Category "${doc.name}" created for ${markets.labelOf(doc.market)}.`);
     res.redirect('/market_type_categories');
   },
   edit: async (req, res) => {
     const category = await findDoc(MarketTypeCategory, req.params.id);
     if (!category) { req.flash('error', 'Not found'); return res.redirect('/market_type_categories'); }
-    await render(res, 'market_type_categories/form', { title: 'Edit Market Category', category, admin: req.session.admin });
+    await categoryForm(res, req, { category });
   },
   update: async (req, res) => {
     const category = await findDoc(MarketTypeCategory, req.params.id);
     if (!category) { req.flash('error', 'Not found'); return res.redirect('/market_type_categories'); }
-    const error = categoryError(req.body);
-    if (error) {
-      req.flash('error', error);
-      return res.redirect('/market_type_categories/' + category._id + '/edit');
-    }
-    await MarketTypeCategory.findByIdAndUpdate(category._id, {
-      name: String(req.body.name).trim(),
-      category_type: req.body.category_type,
-      status: req.body.status,
-    });
-    req.flash('success', 'Category updated successfully');
+    const { values, errors, doc } = await categoryInput(req.body, category);
+    if (errors.length) { res.status(422); return categoryForm(res, req, { category, values, errors }); }
+    await MarketTypeCategory.updateOne({ _id: category._id }, { $set: { ...doc, updated_at: new Date() } });
+    if (category.old_id == null) await ensureOldId(MarketTypeCategory, category);
+    req.flash('success', 'Category updated successfully. Sessions created earlier keep their own copy of the categories they used.');
     res.redirect('/market_type_categories');
   },
   destroy: async (req, res) => {
     const category = await findDoc(MarketTypeCategory, req.params.id);
     if (category) await MarketTypeCategory.findByIdAndDelete(category._id);
-    req.flash('success', 'Category deleted successfully');
+    req.flash('success', 'Category deleted. Existing sessions keep the assets they had in it.');
     res.redirect('/market_type_categories');
   },
 };
