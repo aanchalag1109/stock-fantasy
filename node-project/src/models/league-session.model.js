@@ -8,7 +8,11 @@ const sessionAssetSchema = new mongoose.Schema({
   start_price: { type: Number, default: null },
   end_price: { type: Number, default: null },
   start_price_fetched_at: { type: Date, default: null },
-  end_price_fetched_at: { type: Date, default: null }
+  end_price_fetched_at: { type: Date, default: null },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: latest price while the session is live (live-scores job).
+  // Only used to show live scores; settlement always uses end_price, which this never touches.
+  live_price: { type: Number, default: null },
+  live_price_at: { type: Date, default: null }
 }, { _id: false });
 
 const leagueSessionSchema = new mongoose.Schema({
@@ -39,6 +43,7 @@ const leagueSessionSchema = new mongoose.Schema({
   // when it has captured this session's prices; sessions without them are never auto-scored.
   start_prices_captured_at: { type: Date, default: null },
   end_prices_captured_at: { type: Date, default: null },
+  live_prices_at: { type: Date, default: null }, // NEW IMPLEMENTATION — NODE.JS PROJECT: last live-scores refresh
   // PHP PARITY (Performance → RUN ALL): true while a RUN ALL job drives this session, so the
   // scheduled automation leaves it alone (no double status flips, price captures or refunds).
   run_all_active: { type: Boolean, default: false }

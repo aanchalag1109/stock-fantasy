@@ -21,7 +21,7 @@ const { retryPendingPushes } = require('./services/notifications/notification.se
  *
  * Feature: Contest Automation — port of the PHP Laravel scheduler (app/Console/Kernel.php):
  *   league:update-status         every 30 s  → session lifecycle + start/end prices
- *   contest:update-live-scores   every 15 min → live scores and ranks
+ *   contest:update-live-scores   every 5 min  → live scores and ranks
  *   contest:calculate-performance every 2 min → final scores/ranks, <10-entry refunds
  * Each job runs under a lease lock, so with both servers running it executes once.
  * Disable with CONTEST_AUTOMATION_ENABLED=false.
@@ -34,7 +34,7 @@ const { runContestResults } = require('./services/contest-automation/results.job
 
 const CONTEST_JOBS = [
   { name: 'session-lifecycle', cron: '*/30 * * * * *', leaseMs: 5 * 60 * 1000, run: runSessionLifecycle },
-  { name: 'live-scores', cron: '*/15 * * * *', leaseMs: 14 * 60 * 1000, run: runLiveScores },
+  { name: 'live-scores', cron: '*/5 * * * *', leaseMs: 4 * 60 * 1000, run: runLiveScores }, // NEW IMPLEMENTATION — NODE.JS PROJECT: 5 min, as PHP
   { name: 'contest-results', cron: '*/2 * * * *', leaseMs: 10 * 60 * 1000, run: runContestResults },
 ];
 
@@ -55,7 +55,7 @@ function startContestAutomation() {
     return;
   }
   CONTEST_JOBS.forEach((job) => nodeCron.schedule(job.cron, () => runContestJob(job)));
-  logger.info('Contest automation scheduled (session lifecycle 30s, live scores 15m, results 2m)');
+  logger.info('Contest automation scheduled (session lifecycle 30s, live scores 5m, results 2m)');
 }
 
 let notificationJobsRunning = false;

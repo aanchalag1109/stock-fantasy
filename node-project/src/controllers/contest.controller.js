@@ -12,7 +12,7 @@ const logger = require('../config/logger');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats + safe joining
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
-const { keysOf, findByPublicId } = require('../helpers/mobile-compat');
+const { keysOf, findByPublicId, priceMaps } = require('../helpers/mobile-compat');
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -201,16 +201,17 @@ const getContest = async (req, res) => {
     // matching the raw URL string found none, so the app showed 0 joined / all spots left.
     const contestKeys = [...keysOf(contest), String(contest._id)];
 
-    const session = await LeagueSession.findById(contest.league_session_id).lean();
+    const sessionDoc = await findByPublicId(LeagueSession, contest.league_session_id);
+    const session = sessionDoc && sessionDoc.toObject ? sessionDoc.toObject() : sessionDoc;
 
     // Get session asset prices from assets embedded in session
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: same prices as the mobile API (live prices while live)
+    const prices = priceMaps(session);
     const startPricesMap = {};
     const endPricesMap = {};
-    (session?.assets || []).forEach((a) => {
-      if (a.start_price) startPricesMap[a.asset_symbol] = { start_price: a.start_price };
-      if (a.end_price) endPricesMap[a.asset_symbol] = { end_price: a.end_price };
-    });
-    const calculationStarted = Object.keys(endPricesMap).length > 0;
+    Object.entries(prices.start).forEach(([sym, price]) => { if (price) startPricesMap[sym] = { start_price: price }; });
+    Object.entries(prices.end).forEach(([sym, price]) => { if (price) endPricesMap[sym] = { end_price: price }; });
+    const calculationStarted = prices.started;
 
     // Get all entries
     const entries = await ContestEntry.find({ contest_id: { $in: contestKeys } })
@@ -553,7 +554,7 @@ const calculateResults = async (req, res) => {
 
     const sessionDoc = await findByPublicId(LeagueSession, contest.league_session_id);
     const session = sessionDoc && sessionDoc.toObject ? sessionDoc.toObject() : sessionDoc;
-const startPricesMap = {};
+    const startPricesMap = {};
     const endPricesMap = {};
     (session?.assets || []).forEach((a) => {
       startPricesMap[a.asset_symbol] = { price: a.start_price || 0 };

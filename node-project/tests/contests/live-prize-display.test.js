@@ -75,6 +75,24 @@ describe('live contest detail follows actual joins', () => {
     assert.ok(rows[0].per_winner_amount < 2700, 'not the full-house rank-1 prize');
   });
 
+  test('live session without end prices: leaderboard uses the live prices and saved scores', async () => {
+    reset({ joined: 3, sessionStatus: 'live', ended: false });
+    db.session.assets[0].live_price = 12; // start 10 → +20%
+    db.entries.forEach((e, i) => { e.total_score = [50, 300, -20][i]; });
+    const body = await fetchContest();
+    assert.equal(body.contest.calculation_started, true);
+    assert.deepEqual(body.participants.map((p) => p.total_score), [300, 50, -20], 'sorted by saved live score');
+    assert.deepEqual(body.participants.map((p) => p.rank), [1, 2, 3]);
+  });
+
+  test('live prices never replace real end prices, and are ignored once the session is completed', () => {
+    const { priceMaps } = require('../../src/helpers/mobile-compat');
+    const assets = [{ asset_symbol: 'AAA', start_price: 10, live_price: 12 }];
+    assert.deepEqual(priceMaps({ status: 'live', assets }).end, { AAA: 12 });
+    assert.equal(priceMaps({ status: 'completed', assets }).started, false);
+    assert.deepEqual(priceMaps({ status: 'live', assets: [{ ...assets[0], end_price: 11 }] }).end, { AAA: 11 });
+  });
+
   test('before the session starts the saved structure is shown unchanged', async () => {
     reset({ sessionStatus: 'upcoming', ended: false });
     const body = await fetchContest();

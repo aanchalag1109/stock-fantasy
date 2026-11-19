@@ -86,12 +86,20 @@ async function ensureOldId(Model, doc) {
 function priceMaps(session) {
   const start = {};
   const end = {};
+  const live = {};
   (session && session.assets ? session.assets : []).forEach((asset) => {
     if (!asset.asset_symbol) return;
     if (asset.start_price != null) start[asset.asset_symbol] = num(asset.start_price);
     if (asset.end_price != null) end[asset.asset_symbol] = num(asset.end_price);
+    if (num(asset.live_price) > 0) live[asset.asset_symbol] = num(asset.live_price);
   });
-  return { start, end, started: Object.keys(end).length > 0 };
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: while a session is live it has no end prices yet, so the app
+  // showed 0 scores / no ranks. Use the live-scores job's latest prices then (PHP stored them as
+  // end_price). Real end prices always win; display only — settlement uses contest-scoring.
+  if (!Object.keys(end).length && Object.keys(live).length && session && ['live', 'completing'].includes(session.status)) {
+    return { start, end: live, started: true, live: true };
+  }
+  return { start, end, started: Object.keys(end).length > 0, live: false };
 }
 
 function scoreAssets(assets, multipliers, prices) {

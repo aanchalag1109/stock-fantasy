@@ -102,6 +102,13 @@ async function captureStart(session, now) {
   }
   await LeagueSession.updateOne({ _id: session._id }, { $set: { start_prices_captured_at: now } });
   logger.info(`[contest-automation] session ${session._id} started: ${Object.keys(start).length} start prices captured`);
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: first live scores right away, so the leaderboard is not
+  // empty until the next 5-minute live-scores run. A failure here only delays it to that run.
+  try {
+    await require('./live-scores.job').refreshSession(result.session, new Date());
+  } catch (err) {
+    logger.warn(`[contest-automation] session ${session._id}: first live scores failed: ${err.message}`);
+  }
   return true;
 }
 
