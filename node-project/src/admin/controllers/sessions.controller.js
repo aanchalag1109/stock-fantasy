@@ -10,7 +10,7 @@ const sessionService = require('../../services/session-management.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — list filters + refund-safe delete
 const { parseListFilters, withStatus } = require('../helpers/list-filters');
 const { refundBeforeDelete } = require('../../services/contest-cancellation.service');
-const { keysOf } = require('../../helpers/mobile-compat');
+const { keysOf, ensureOldId } = require('../../helpers/mobile-compat');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: market types + session-level category ↔ asset assignment
 const markets = require('../../services/markets');
 const sessionAssets = require('../../services/session-assets.service');
@@ -263,7 +263,7 @@ const store = async (req, res) => {
     const active = activeRaw === true || activeRaw === 1 || activeRaw === '1' || activeRaw === 'true';
     const marketType = markets.typeOf(market);
 
-    await LeagueSession.create({
+    const created = await LeagueSession.create({
       name,
       market,
       market_type: marketType,
@@ -277,6 +277,9 @@ const store = async (req, res) => {
       image_url: imageUrl,
       assets: assignment.rows,
     });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: numeric public id, like migrated sessions, so the app's
+    // session APIs return the usual shape (sessions without one broke "join from inside the contest").
+    await ensureOldId(LeagueSession, created);
 
     if (Object.prototype.hasOwnProperty.call(body, 'save_as_template') && String(body.template_name || '').trim()) {
       await SessionTemplate.create({

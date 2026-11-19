@@ -45,12 +45,14 @@ router.post('/check-user', api.checkUser);
 
 router.get('/banners', api.banners);
 router.get('/upcoming-sessions', api.upcomingSessions);
-router.get('/sessions/:sessionId(\\d+)', api.getSession);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: ObjectId ids too — they used to fall through to the older
+// handlers in session/contest.controller, which return a different shape (no `id`, other date format).
+router.get('/sessions/:sessionId(\\d+|[0-9a-fA-F]{24})', api.getSession);
 router.get('/contests/session/:sessionId', api.contestsBySession);
 router.get('/my-contests/session/:sessionId', api.myContestsBySession);
 router.get('/user-contests', api.getUserContests);
 router.get('/user-joined-sessions', api.getUserJoinedSessions);
-router.get('/contests/:id(\\d+)', api.getContest);
+router.get('/contests/:id(\\d+|[0-9a-fA-F]{24})', api.getContest);
 router.post('/bulk-join-contest', requireSupportedAppVersion, api.bulkJoinContest); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android/iOS app version guard
 
 router.get('/sessions', api.getUserSessions);
