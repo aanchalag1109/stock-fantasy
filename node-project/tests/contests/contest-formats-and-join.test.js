@@ -274,7 +274,7 @@ describe('auto-create on full', () => {
     await join(player(100));
     assert.equal(copies().length, 1);
     const next = copies()[0];
-    assert.equal(next.old_id, undefined, 'new public id');
+    assert.equal(next.old_id, 71, 'gets the next numeric public id');
     assert.ok(same(next.league_session_id, session._id));
     assert.deepEqual([next.category, next.participants, next.entry_fee, next.auto_create_on_full], ['h2h', 2, 100, true]);
     assert.equal(next.bots_joined, false);

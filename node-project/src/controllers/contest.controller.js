@@ -12,6 +12,7 @@ const logger = require('../config/logger');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats + safe joining
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
+const { keysOf, findByPublicId } = require('../helpers/mobile-compat');
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -193,8 +194,12 @@ const getContest = async (req, res) => {
     const { id } = req.params;
     const userId = req.query.user_id;
 
-    const contest = await Contest.findById(id).lean();
+    const found = await findByPublicId(Contest, id);
+    const contest = found && found.toObject ? found.toObject() : found;
     if (!contest) return res.status(404).json({ success: false, message: 'Contest not found' });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: entries store the contest's ObjectId (or a PHP numeric id);
+    // matching the raw URL string found none, so the app showed 0 joined / all spots left.
+    const contestKeys = [...keysOf(contest), String(contest._id)];
 
     const session = await LeagueSession.findById(contest.league_session_id).lean();
 
@@ -208,7 +213,7 @@ const getContest = async (req, res) => {
     const calculationStarted = Object.keys(endPricesMap).length > 0;
 
     // Get all entries
-    const entries = await ContestEntry.find({ contest_id: id })
+    const entries = await ContestEntry.find({ contest_id: { $in: contestKeys } })
       .populate({ path: 'basket_id', model: 'SavedBasket', select: 'assets multipliers serial_no' })
       .populate({ path: 'user_id', model: 'User', select: 'name' })
       .lean();
@@ -316,7 +321,9 @@ const getContest = async (req, res) => {
     let userJoined = false;
     let userEntryCount = 0;
     if (userId) {
-      userEntryCount = await ContestEntry.countDocuments({ contest_id: id, user_id: userId });
+      const user = await findByPublicId(User, userId);
+      const userKeys = user ? [...keysOf(user), String(user._id)] : [userId];
+      userEntryCount = await ContestEntry.countDocuments({ contest_id: { $in: contestKeys }, user_id: { $in: userKeys } });
       userJoined = userEntryCount > 0;
     }
 
@@ -542,8 +549,9 @@ const calculateResults = async (req, res) => {
     const contest = await Contest.findById(contest_id).lean();
     if (!contest) return res.status(404).json({ success: false, error: 'Contest not found' });
 
-    const session = await LeagueSession.findById(contest.league_session_id).lean();
-    const startPricesMap = {};
+    const sessionDoc = await findByPublicId(LeagueSession, contest.league_session_id);
+    const session = sessionDoc && sessionDoc.toObject ? sessionDoc.toObject() : sessionDoc;
+const startPricesMap = {};
     const endPricesMap = {};
     (session?.assets || []).forEach((a) => {
       startPricesMap[a.asset_symbol] = { price: a.start_price || 0 };

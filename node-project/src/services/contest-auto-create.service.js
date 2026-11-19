@@ -18,7 +18,7 @@ const Contest = require('../models/contest.model');
 const ContestEntry = require('../models/contest-entry.model');
 const LeagueSession = require('../models/league-session.model');
 const logger = require('../config/logger');
-const { keysOf, publicId, findByPublicId } = require('../helpers/mobile-compat');
+const { keysOf, publicId, findByPublicId, ensureOldId } = require('../helpers/mobile-compat');
 
 // Per-contest runtime state that must start fresh on the copy.
 const RESET_FIELDS = [
@@ -61,6 +61,7 @@ async function createNextIfFull(contestId) {
         auto_created_from: contest._id,
         bots_joined: false,
       });
+      await ensureOldId(Contest, created); // numeric public id, like every other contest the app sees
       logger.info(`[contest-auto-create] contest ${publicId(contest)} is full — created contest ${publicId(created)}`);
       return created;
     } catch (err) {

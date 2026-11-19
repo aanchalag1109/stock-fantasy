@@ -14,6 +14,7 @@ const { parseListFilters, withStatus } = require('../helpers/list-filters');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats (H2H, Winner Takes All, 2x–10x)
 const formats = require('../../services/contest-formats');
 const contestSettings = require('../../services/contest-settings.service');
+const { ensureOldId } = require('../../helpers/mobile-compat');
 
 const CONTEST_STATUSES = ['live', 'upcoming', 'completed', 'cancelled'];
 
@@ -527,11 +528,15 @@ const store = async (req, res) => {
     const payload = contestPayload(req.body, fields, pools);
     const created = [];
     for (const session of sessions) {
-      created.push(await Contest.create({
+      const contest = await Contest.create({
         ...payload,
         league_session_id: session._id,
         status: 'active',
-      }));
+      });
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: numeric public id, so the app's contest APIs (which route
+      // numeric ids) find it — without one, the contest detail showed 0 joined / all spots left.
+      await ensureOldId(Contest, contest);
+      created.push(contest);
     }
     req.flash('success', `${created.length} contest(s) created successfully.`);
     res.redirect('/contests');
