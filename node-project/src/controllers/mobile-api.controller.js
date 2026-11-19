@@ -28,6 +28,8 @@ const deviceTokens = require('../services/notifications/device-token.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats + safe joining
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: live prize rows use the payout's own calculation
+const { dynamicPrizeRows } = require('../services/contest-automation/contest-scoring');
 const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION — NODE.JS PROJECT: market types
 
 function authUser(user) {
@@ -478,6 +480,8 @@ const getUserJoinedSessions = async (req, res) => {
     }).lean();
     const filtered = req.query.status ? sessions.filter((session) => session.status === req.query.status) : sessions;
     filtered.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: live pools count every player's entries, not just this user's
+    const allCounts = await joinedCounts(contests);
     const payload = filtered.map((session) => {
       const sessionContests = contests.filter((contest) => keysOf(session).map(String).includes(String(contest.league_session_id)));
       const sessionContestKeys = new Set(sessionContests.flatMap((contest) => keysOf(contest).map(String)));
@@ -487,7 +491,7 @@ const getUserJoinedSessions = async (req, res) => {
         let prizePool = num(contest.prize_pool);
         const category = String(contest.category || '').toLowerCase();
         if (['live', 'completed'].includes(session.status) && (category === 'flexible' || !formats.isFixedPool(contest))) {
-          const joinedCount = entries.filter((entry) => keysOf(contest).map(String).includes(String(entry.contest_id))).length;
+          const joinedCount = countFor(contest, allCounts);
           const totalPool = joinedCount * num(contest.entry_fee);
           prizePool = totalPool - (totalPool * num(contest.platform_fee)) / 100;
         }
@@ -629,8 +633,10 @@ const myContestsBySession = async (req, res) => {
           row.prize_pool = totalPool - (totalPool * num(contest.platform_fee)) / 100;
           row.is_flexible_prize = true;
         }
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: once live, contestPublic already gives the first prize from actual joins
         const distribution = asPrizeArray(contest.prize_distribution);
-        if (!formats.isNewFormat(contest)) row.first_prize = distribution.length ? round2(distribution[0].perWinner ?? distribution[0].per_winner ?? 0) : 0;
+        const live = ['live', 'completed'].includes(plain.status);
+        if (!formats.isNewFormat(contest) && !(live && flexible)) row.first_prize = distribution.length ? round2(distribution[0].perWinner ?? distribution[0].per_winner ?? 0) : 0;
         return row;
       }),
       session: {
@@ -700,26 +706,22 @@ const getContest = async (req, res) => {
     const entryFee = num(plain.entry_fee);
     const platformFeePercent = num(plain.platform_fee);
     const isFixed = formats.isFixedPool(plain);
-    let displayPrizePool;
-    let totalPool;
-    let platformFeeAmount;
-    if (isFixed || sessionStatus === 'upcoming') {
-      displayPrizePool = num(plain.prize_pool);
-      totalPool = num(plain.total_pool);
-      platformFeeAmount = num(plain.platform_fee_amount);
-    } else {
-      totalPool = joinedUsersCount * entryFee;
-      platformFeeAmount = (totalPool * platformFeePercent) / 100;
-      displayPrizePool = totalPool - platformFeeAmount;
-    }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: once the session has started, a flexible contest's pool and
+    // prize structure follow the actual joins, using the same calculation the payout uses. Previously
+    // live mega/equal contests kept showing the full-house prize rows saved at creation (and ₹0 prize amounts).
+    const started = !!prices.started || ['live', 'completed'].includes(sessionStatus);
+    let displayPrizePool = num(plain.prize_pool);
+    let totalPool = num(plain.total_pool);
+    let platformFeeAmount = num(plain.platform_fee_amount);
     let prizeDistribution = [];
     const stored = asPrizeArray(plain.prize_distribution);
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: once a new-type contest is live, prizes follow the actual joins
-    const liveNewFormat = formats.isNewFormat(plain) && (prices.started || ['live', 'completed'].includes(sessionStatus));
-    if (liveNewFormat) {
-      const winners = formats.winnersFor(plain, joinedUsersCount);
-      prizeDistribution = buildDynamicPrizeDistribution(winners, displayPrizePool, plain.category);
-    } else if (isFixed || !(prices.started || sessionStatus === 'live')) {
+    if (!isFixed && started) {
+      const live = dynamicPrizeRows(plain, joinedUsersCount);
+      totalPool = live.totalPool;
+      displayPrizePool = live.prizePool;
+      platformFeeAmount = live.totalPool - live.prizePool;
+      prizeDistribution = live.rows;
+    } else {
       prizeDistribution = stored.map((item) => {
         const winnersCount = parseInt(item.winners || item.winners_count || 1, 10);
         const rankStart = parseInt(item.rank_start || 1, 10);
@@ -738,19 +740,6 @@ const getContest = async (req, res) => {
           per_winner_amount: round2(perWinner),
         };
       });
-    } else if (stored.length) {
-      prizeDistribution = stored.map((item) => ({
-        rank_label: item.rank_label || item.label,
-        rank_start: parseInt(item.rank_start, 10),
-        rank_end: parseInt(item.rank_end, 10),
-        winners_count: parseInt(item.winners_count || item.winners || 1, 10),
-        percentage: round2(item.percentage || item.percent),
-        prize_amount: round2(item.prize_amount),
-        per_winner_amount: round2(item.per_winner_amount || item.per_winner),
-      }));
-    } else if (joinedUsersCount > 0 && displayPrizePool > 0) {
-      const winners = formats.winnersFor(plain, joinedUsersCount);
-      prizeDistribution = buildDynamicPrizeDistribution(winners, displayPrizePool, plain.category);
     }
     participants = participants.map((participant, index) => {
       if (!prices.started) {
@@ -781,7 +770,7 @@ const getContest = async (req, res) => {
         id: publicId(plain),
         category: plain.category,
         prize_pool: round2(displayPrizePool),
-        is_flexible_prize: !isFixed && sessionStatus !== 'upcoming',
+        is_flexible_prize: !isFixed && started,
         entry_fee: entryFee,
         platform_fee_percent: platformFeePercent,
         platform_fee_amount: round2(platformFeeAmount),
