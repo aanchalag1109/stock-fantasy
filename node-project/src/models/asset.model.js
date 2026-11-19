@@ -16,6 +16,8 @@ const assetSchema = new mongoose.Schema({
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
 
-assetSchema.index({ market: 1, symbol: 1 });
+// NEW IMPLEMENTATION — NODE.JS PROJECT: unique, so the database itself refuses a second copy of a
+// symbol in a market (scripts/migration/merge-duplicate-assets.js removed the PHP-era copies).
+assetSchema.index({ market: 1, symbol: 1 }, { unique: true });
 
 module.exports = mongoose.model('Asset', assetSchema);

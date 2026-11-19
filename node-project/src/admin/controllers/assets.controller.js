@@ -40,6 +40,10 @@ const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$
 const isOid = (v) => String(v).length === 24 && mongoose.isValidObjectId(String(v));
 const logoFor = (market, symbol, url) => (isBrokenLogo(url) ? defaultLogoUrl(markets.providerOf(market), symbol) : url);
 
+// The unique { market, symbol } index is the final guard (e.g. two saves at the same moment).
+const isDuplicateKey = (err) => err && err.code === 11000;
+const duplicateMessage = ({ symbol, market }) => `${symbol} is already in the ${markets.labelOf(market)} list.`;
+
 async function findAsset(id) {
   const value = String(id || '');
   if (isOid(value)) return Asset.findById(value).lean();
@@ -81,7 +85,7 @@ async function validateForm(body, { existing = null } = {}) {
     symbol: new RegExp(`^${escapeRegex(symbol)}$`, 'i'),
     ...(existing ? { _id: { $ne: existing._id } } : {}),
   }).select('_id').lean();
-  if (duplicate) return { values, error: `${symbol} is already in the ${markets.labelOf(market)} list.` };
+  if (duplicate) return { values, error: duplicateMessage(values) };
 
   // US symbols: check on Twelve Data unless the symbol is unchanged on an existing US asset.
   let warning = null;
@@ -173,14 +177,20 @@ const assets = {
     const { values, error, warning } = await validateForm(req.body);
     // Re-render with the admin's input; flash would only show on the next page.
     if (error) return formView(res, req, { values, error });
-    const doc = await Asset.create({
-      symbol: values.symbol,
-      name: values.name,
-      market: values.market,
-      type: markets.typeOf(values.market),
-      image_url: logoFor(values.market, values.symbol, values.image_url),
-      status: values.status,
-    });
+    let doc;
+    try {
+      doc = await Asset.create({
+        symbol: values.symbol,
+        name: values.name,
+        market: values.market,
+        type: markets.typeOf(values.market),
+        image_url: logoFor(values.market, values.symbol, values.image_url),
+        status: values.status,
+      });
+    } catch (err) {
+      if (isDuplicateKey(err)) return formView(res, req, { values, error: duplicateMessage(values) });
+      throw err;
+    }
     await ensureOldId(Asset, doc);
     priceFeed._resetMarketCache();
     if (warning) req.flash('warning', warning);
@@ -203,17 +213,22 @@ const assets = {
     const { values, error, warning } = await validateForm(req.body, { existing: asset });
     if (error) return formView(res, req, { asset, values, error });
     // Atomic update: migrated assets may not satisfy every schema rule (e.g. missing `type`).
-    await Asset.updateOne({ _id: asset._id }, {
-      $set: {
-        symbol: values.symbol,
-        name: values.name,
-        market: values.market,
-        type: markets.typeOf(values.market),
-        image_url: logoFor(values.market, values.symbol, values.image_url),
-        status: values.status,
-        updated_at: new Date(),
-      },
-    });
+    try {
+      await Asset.updateOne({ _id: asset._id }, {
+        $set: {
+          symbol: values.symbol,
+          name: values.name,
+          market: values.market,
+          type: markets.typeOf(values.market),
+          image_url: logoFor(values.market, values.symbol, values.image_url),
+          status: values.status,
+          updated_at: new Date(),
+        },
+      });
+    } catch (err) {
+      if (isDuplicateKey(err)) return formView(res, req, { asset, values, error: duplicateMessage(values) });
+      throw err;
+    }
     priceFeed._resetMarketCache();
     if (warning) req.flash('warning', warning);
     req.flash('success', `${values.symbol} updated.`);
