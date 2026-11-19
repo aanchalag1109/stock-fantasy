@@ -354,6 +354,8 @@ const getContest = async (req, res) => {
       user_joined: userJoined,
       user_entry_count: userEntryCount,
       remaining_entries: Math.max(0, (contest.max_entries_per_user || 1) - userEntryCount),
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: cap for the basket selection when joining
+      max_selectable: contestJoin.selectionLimit(contest, session, joinedCount, userEntryCount).max_selectable,
       unread_notifications: await getUnreadCount(userId),
     });
   } catch (err) {

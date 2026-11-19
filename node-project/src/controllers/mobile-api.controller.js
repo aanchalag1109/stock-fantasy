@@ -794,6 +794,8 @@ const getContest = async (req, res) => {
       user_joined: userEntryCount > 0,
       user_entry_count: userEntryCount,
       remaining_entries: Math.max(0, parseInt(plain.max_entries_per_user || 1, 10) - userEntryCount),
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: cap for the basket selection when joining
+      max_selectable: contestJoin.selectionLimit(plain, sessionPlain, joinedUsersCount, userEntryCount).max_selectable,
       unread_notifications: await unreadCount(requestUser),
     });
   } catch (err) {
@@ -1006,12 +1008,26 @@ const savedBaskets = async (req, res) => {
       if (session) filter.session_id = { $in: keysOf(session.toObject()) };
     }
     let baskets = await SavedBasket.find(filter).sort({ created_at: -1 }).lean();
-    if (req.query.contest_id && req.query.exclude_joined) {
-      const contest = await findByPublicId(Contest, req.query.contest_id);
-      if (contest) {
-        const joined = await ContestEntry.find({ user_id: { $in: keysOf(user) }, contest_id: { $in: keysOf(contest.toObject()) } }).select('basket_id').lean();
-        const used = new Set(joined.map((entry) => String(entry.basket_id)));
-        baskets = baskets.filter((basket) => !used.has(String(basket._id)) && !used.has(String(basket.old_id)));
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: with contest_id, also tell the app how many baskets it may select
+    let limit = null;
+    if (req.query.contest_id) {
+      const contestDoc = await findByPublicId(Contest, req.query.contest_id);
+      if (contestDoc) {
+        const contest = contestDoc.toObject();
+        const [all, joined, contestSession] = await Promise.all([
+          ContestEntry.countDocuments({ contest_id: { $in: keysOf(contest) } }),
+          ContestEntry.find({ user_id: { $in: keysOf(user) }, contest_id: { $in: keysOf(contest) } }).select('basket_id').lean(),
+          findByPublicId(LeagueSession, contest.league_session_id),
+        ]);
+        limit = {
+          max_entries_per_user: parseInt(contest.max_entries_per_user || 1, 10),
+          user_entry_count: joined.length,
+          ...contestJoin.selectionLimit(contest, contestSession, all, joined.length),
+        };
+        if (req.query.exclude_joined) {
+          const used = new Set(joined.map((entry) => String(entry.basket_id)));
+          baskets = baskets.filter((basket) => !used.has(String(basket._id)) && !used.has(String(basket.old_id)));
+        }
       }
     }
     const data = [];
@@ -1055,7 +1071,7 @@ const savedBaskets = async (req, res) => {
         updated_at: sqlDate(basket.updated_at),
       });
     }
-    return res.json({ success: true, data });
+    return res.json({ success: true, data, ...(limit || {}) });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to fetch baskets' });
   }

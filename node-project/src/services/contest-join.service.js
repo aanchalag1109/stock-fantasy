@@ -87,6 +87,28 @@ const refund = (userId, charge) => (charge.fromDeposit || charge.fromWinnings
   ? User.updateOne({ _id: userId }, { $inc: { deposit_balance: charge.fromDeposit, winnings_balance: charge.fromWinnings } })
   : null);
 
+/** Same "joining is open" rule joinContest applies. */
+function isJoinOpen(contest, session) {
+  if (!contest || ['cancelled', 'completed', 'live'].includes(contest.status)) return false;
+  return !!session && session.status === 'upcoming' && new Date(session.start_time) > new Date();
+}
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: how many baskets the user may select when joining now —
+ * the smaller of their remaining entries and the contest's spots left (0 when joining is closed).
+ * joinContest rejects anything above this, so the app can cap its basket selection with it.
+ */
+function selectionLimit(contest, session, joinedCount, userEntryCount) {
+  const maxEntries = parseInt(contest.max_entries_per_user || 1, 10);
+  const remainingEntries = Math.max(0, maxEntries - (userEntryCount || 0));
+  const spotsLeft = Math.max(0, parseInt(contest.participants || 100, 10) - (joinedCount || 0));
+  return {
+    remaining_entries: remainingEntries,
+    spots_left: spotsLeft,
+    max_selectable: isJoinOpen(contest, session) ? Math.min(remainingEntries, spotsLeft) : 0,
+  };
+}
+
 /**
  * @param {{ userRef, contestRef, basketIds: Array, clientEntryFee? }} input
  * @returns {Promise<{ status: number, body: object }>}
@@ -99,7 +121,7 @@ async function joinContest({ userRef, contestRef, basketIds, clientEntryFee }) {
 
   if (['cancelled', 'completed', 'live'].includes(plain.status)) return fail(400, 'This contest is closed for joining.');
   const session = await findByPublicId(LeagueSession, plain.league_session_id);
-  if (!session || session.status !== 'upcoming' || !(new Date(session.start_time) > new Date())) {
+  if (!isJoinOpen(plain, session)) {
     return fail(400, 'Joining is closed — this session has already started.');
   }
 
@@ -205,4 +227,4 @@ async function joinContest({ userRef, contestRef, basketIds, clientEntryFee }) {
   };
 }
 
-module.exports = { joinContest, debit, acquireLock, releaseLock, LOCK_MS };
+module.exports = { joinContest, debit, acquireLock, releaseLock, LOCK_MS, isJoinOpen, selectionLimit };

@@ -260,6 +260,38 @@ describe('contest join', () => {
   });
 });
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: basket selection cap shown to the app
+describe('selection limit', () => {
+  const { selectionLimit } = require('../../src/services/contest-join.service');
+  const open = { status: 'upcoming', start_time: new Date(Date.now() + 60000) };
+
+  test('smaller of remaining entries and spots left; 0 when joining is closed', () => {
+    const c = { status: 'active', participants: 10, max_entries_per_user: 5 };
+    assert.deepEqual(selectionLimit(c, open, 0, 2), { remaining_entries: 3, spots_left: 10, max_selectable: 3 });
+    assert.equal(selectionLimit(c, open, 8, 0).max_selectable, 2, 'spots left is smaller');
+    assert.equal(selectionLimit(c, open, 4, 5).max_selectable, 0, 'limit used up');
+    assert.equal(selectionLimit(c, { ...open, start_time: new Date(Date.now() - 1000) }, 0, 0).max_selectable, 0, 'session started');
+    assert.equal(selectionLimit({ ...c, status: 'cancelled' }, open, 0, 0).max_selectable, 0, 'contest closed');
+  });
+
+  test('the join accepts exactly max_selectable baskets and rejects one more', async () => {
+    reset({ participants: 10, maxEntries: 3 });
+    const p = player(1000);
+    const extra = [1, 2, 3].map(() => {
+      const b = { _id: new ObjectId(), user_id: p.user._id, is_standalone: true };
+      db.SavedBasket.push(b);
+      return String(b._id);
+    });
+    assert.equal((await join(p)).body.success_count, 1);
+    const { max_selectable: cap } = selectionLimit(contest, session, db.ContestEntry.length, 1);
+    assert.equal(cap, 2);
+    const tooMany = await joinContest({ userRef: String(p.user._id), contestRef: String(contest._id), basketIds: extra });
+    assert.match(tooMany.body.message, /only select 2 more/);
+    const ok = await joinContest({ userRef: String(p.user._id), contestRef: String(contest._id), basketIds: extra.slice(0, cap) });
+    assert.equal(ok.body.success_count, 2);
+  });
+});
+
 // NEW IMPLEMENTATION — NODE.JS PROJECT: auto-create a fresh contest when one fills up
 describe('auto-create on full', () => {
   const { createNextIfFull } = require('../../src/services/contest-auto-create.service');
