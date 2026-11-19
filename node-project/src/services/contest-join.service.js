@@ -31,6 +31,7 @@ const SavedBasket = require('../models/saved-basket.model');
 const Transaction = require('../models/transaction.model');
 const User = require('../models/user.model');
 const logger = require('../config/logger');
+const { createNextIfFull } = require('./contest-auto-create.service');
 const {
   keysOf, publicId, num, round2, walletOf, findByPublicId, ensureOldId, unreadCount,
 } = require('../helpers/mobile-compat');
@@ -175,6 +176,11 @@ async function joinContest({ userRef, contestRef, basketIds, clientEntryFee }) {
     userEntryCount = userEntries.length + successCount;
   } finally {
     await releaseLock(contest._id, token).catch((err) => logger.error(`[contest-join] lock release failed: ${err.message}`));
+  }
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: this join filled the contest → open a fresh copy if enabled
+  if (plain.auto_create_on_full && successCount > 0 && joinedUsers >= maxParticipants) {
+    await createNextIfFull(contest._id);
   }
 
   const fresh = await User.findById(user._id).lean();

@@ -65,9 +65,70 @@ async function usersByIds(ids) {
 // ─── Live Management overview ────────────────────────────────────────────────
 
 /** PHP getLiveSessionsData: sessions with contest / participant counts and the overview cards. */
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: price health for Live Management.
+ * The automation fetches start/end prices only within FETCH_WINDOW_MS of the start/end time
+ * (a late price would be unfair). If that window passes without prices, the session is never
+ * scored automatically and nobody is told — this flags it so an admin can act.
+ * Returns null when all is well, else { level: 'danger'|'warning'|'info', code, message }.
+ */
+function priceHealth(session, now = new Date()) {
+  const { FETCH_WINDOW_MS } = require('./contest-automation/session-lifecycle.job');
+  const assets = (session.assets || []).filter((a) => a && a.asset_symbol);
+  const total = assets.length;
+  const started = assets.filter((a) => Number(a.start_price) > 0).length;
+  const ended = assets.filter((a) => Number(a.end_price) > 0).length;
+  const mins = Math.round(FETCH_WINDOW_MS / 60000);
+  const sinceStart = now - new Date(session.start_time);
+  const sinceEnd = now - new Date(session.end_time);
+
+  if (session.status === 'live' && !session.run_all_active) {
+    if (!total) return { level: 'danger', code: 'no_assets', message: 'Live session has no assets — nothing can be scored.' };
+    if (!session.start_prices_captured_at) {
+      if (sinceStart <= FETCH_WINDOW_MS) {
+        return { level: 'info', code: 'start_pending', message: `Fetching start prices (${started}/${total} so far).` };
+      }
+      return {
+        level: 'danger',
+        code: 'start_missing',
+        message: `No start prices were captured (${started}/${total} priced) and the ${mins}-minute fetch window has passed. `
+          + 'This session will not be scored or settled automatically. Cancel it to refund everyone, or Refetch Missing Prices on the session page (uses current prices).',
+      };
+    }
+    if (started < total) {
+      return { level: 'warning', code: 'start_partial', message: `${total - started} of ${total} assets have no start price; they score 0.` };
+    }
+  }
+  if (session.status === 'completed' && session.start_prices_captured_at && !session.end_prices_captured_at && !session.run_all_active) {
+    if (sinceEnd <= FETCH_WINDOW_MS) return { level: 'info', code: 'end_pending', message: `Fetching end prices (${ended}/${total} so far).` };
+    return {
+      level: 'danger',
+      code: 'end_missing',
+      message: `No end prices were captured (${ended}/${total} priced); results won't be declared automatically. Use Refetch Missing Prices on the session page, then pay from Pending Prizes.`,
+    };
+  }
+  return null;
+}
+
+/** Live / awaiting-results sessions whose prices need an admin (danger + warning only). */
+async function priceIssues(now = new Date()) {
+  const candidates = await LeagueSession.find({
+    $or: [
+      { status: 'live' },
+      { status: 'completed', start_prices_captured_at: { $ne: null }, end_prices_captured_at: null },
+    ],
+  }).select('old_id name status start_time end_time run_all_active start_prices_captured_at end_prices_captured_at assets.asset_symbol assets.start_price assets.end_price').lean();
+  return candidates
+    .map((s) => ({ s, issue: priceHealth(s, now) }))
+    .filter(({ issue }) => issue && issue.level !== 'info')
+    .map(({ s, issue }) => ({ id: publicId(s), _id: String(s._id), name: s.name, status: s.status, ...issue }));
+}
+
 async function liveSessionsData(status = 'all') {
   const match = status && status !== 'all' ? { status } : {};
-  const sessions = await LeagueSession.find(match).sort({ start_time: -1 }).select('old_id name market_type status start_time end_time max_stocks active').lean();
+  const sessions = await LeagueSession.find(match).sort({ start_time: -1 })
+    .select('old_id name market_type status start_time end_time max_stocks active run_all_active start_prices_captured_at end_prices_captured_at assets.asset_symbol assets.start_price assets.end_price')
+    .lean();
   const sessionKeys = sessions.flatMap(keysOf);
   const contests = sessionKeys.length
     ? await Contest.find({ league_session_id: { $in: sessionKeys } }).select('old_id league_session_id prize_pool status').lean()
@@ -104,6 +165,7 @@ async function liveSessionsData(status = 'all') {
       contests_count: list.length,
       participants_count: list.reduce((sum, c) => sum + entriesOf(c), 0),
       total_prize_pool: round2(list.reduce((sum, c) => sum + num(c.prize_pool), 0)),
+      price_issue: priceHealth(s), // NEW IMPLEMENTATION — NODE.JS PROJECT
     };
   });
 
@@ -113,6 +175,8 @@ async function liveSessionsData(status = 'all') {
   return {
     success: true,
     sessions: out,
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: sessions needing attention, whatever the status filter
+    price_issues: await priceIssues(),
     live_sessions_count: liveSessions.length,
     live_contests_count: liveContests.length,
     total_participants: await ContestEntry.countDocuments({}),
@@ -408,6 +472,6 @@ async function portfolioDetails(entryId) {
 }
 
 module.exports = {
-  findSession, liveSessionsData, startSession, cancelSession, endAndDistribute, fixOrphanedContests,
+  findSession, liveSessionsData, priceHealth, priceIssues, startSession, cancelSession, endAndDistribute, fixOrphanedContests,
   runStartContests, runUpdateScores, refetchMissingPrices, sessionContests, contestDetails, portfolioDetails,
 };

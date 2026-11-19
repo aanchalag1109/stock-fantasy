@@ -122,6 +122,20 @@
                 </div>
 
                 <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-success text-white"><i class="bi bi-arrow-repeat me-2"></i>Auto-Create</div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-1">
+                            <input class="form-check-input" type="checkbox" name="auto_create_on_full" id="auto_create_on_full" value="1" <%= contest.auto_create_on_full && contest.auto_create_on_full !== 'false' ? 'checked' : '' %>>
+                            <label class="form-check-label fw-semibold" for="auto_create_on_full">Auto-create when full</label>
+                        </div>
+                        <div class="form-text small">When all spots are filled, a new contest with the same settings opens for the same session.</div>
+                        <% if (contest.auto_created_contest_id) { %>
+                            <div class="small text-success mt-2"><i class="bi bi-check-circle me-1"></i>Already filled — follow-up contest created.</div>
+                        <% } %>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm mb-4">
                     <div class="card-header bg-info text-white"><i class="bi bi-robot me-2"></i>Bot Auto-Join</div>
                     <div class="card-body">
                         <label class="form-label small fw-semibold">Number of bots</label>

@@ -366,6 +366,8 @@ function contestPayload(body, fields, pools) {
     pin_order: phpInt(body.pin_order, 0),
     bot_count: phpInt(body.bot_count, 0),
     bot_join_minutes_before: phpInt(body.bot_join_minutes_before, 30),
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: create a fresh copy when this contest fills up
+    auto_create_on_full: isPinned(body.auto_create_on_full),
     prize_distribution: buildPrizeDistribution(body, body.category, pools.totalWinners, pools.prizePool),
     // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats
     multiplier: fields.multiplier,

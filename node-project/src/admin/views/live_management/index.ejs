@@ -10,6 +10,8 @@
 %>
 <div class="container-fluid" id="liveManagementPage">
     <div id="lmAlerts"></div>
+    <%# NEW IMPLEMENTATION — NODE.JS PROJECT: sessions whose start/end prices were not captured %>
+    <div id="priceIssues"></div>
     <div class="card shadow-sm">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
             <h1 class="h4 mb-0"><i class="bi bi-broadcast-pin text-danger me-2"></i>Live Contest Management</h1>
@@ -91,9 +93,24 @@
                 document.getElementById('liveContestsCount').textContent = data.live_contests_count || 0;
                 document.getElementById('totalParticipants').textContent = data.total_participants || 0;
                 document.getElementById('totalPrizePool').textContent = money(data.total_prize_pool);
+                renderPriceIssues(data.price_issues || []);
                 renderSessions(data.sessions || []);
             })
             .catch(function () { showAlert('Failed to load live data', 'error'); });
+    }
+
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: price capture warnings (shown whatever the status filter)
+    function renderPriceIssues(issues) {
+        var box = document.getElementById('priceIssues');
+        if (!issues.length) { box.innerHTML = ''; return; }
+        var danger = issues.some(function (i) { return i.level === 'danger'; });
+        box.innerHTML = '<div class="alert alert-' + (danger ? 'danger' : 'warning') + ' shadow-sm">'
+            + '<div class="fw-bold mb-1"><i class="bi bi-exclamation-octagon-fill me-1"></i>'
+            + issues.length + ' session' + (issues.length === 1 ? ' needs' : 's need') + ' attention: prices were not captured</div>'
+            + '<ul class="mb-0 ps-3">' + issues.map(function (i) {
+                return '<li><a class="alert-link" href="/league_sessions/' + esc(i._id) + '" target="_blank">' + esc(i.name) + '</a> '
+                    + '<span class="badge bg-' + badge(i.status) + '">' + esc(String(i.status).toUpperCase()) + '</span> — ' + esc(i.message) + '</li>';
+            }).join('') + '</ul></div>';
     }
 
     function renderSessions(sessions) {
@@ -113,9 +130,15 @@
             if (CAN_CANCEL && ['upcoming', 'live', 'draft'].indexOf(s.status) !== -1) {
                 actions += '<button class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="' + esc(s._id) + '" data-name="' + esc(s.name) + '"><i class="bi bi-x-octagon"></i> Cancel Session</button>';
             }
-            return '<tr class="' + (s.status === 'live' ? 'table-success' : '') + '">'
+            var issue = s.price_issue;
+            var issueHtml = issue
+                ? '<div class="small mt-1 text-' + (issue.level === 'danger' ? 'danger fw-semibold' : (issue.level === 'warning' ? 'warning-emphasis' : 'muted')) + '">'
+                    + '<i class="bi bi-' + (issue.level === 'info' ? 'hourglass-split' : 'exclamation-triangle-fill') + ' me-1"></i>' + esc(issue.message) + '</div>'
+                : '';
+            var rowClass = issue && issue.level === 'danger' ? 'table-danger' : (s.status === 'live' ? 'table-success' : '');
+            return '<tr class="' + rowClass + '">'
                 + '<td>' + (i + 1) + '</td>'
-                + '<td><strong>' + esc(s.name || 'Unnamed Session') + '</strong></td>'
+                + '<td><strong>' + esc(s.name || 'Unnamed Session') + '</strong>' + issueHtml + '</td>'
                 + '<td><span class="badge bg-' + (s.market_type === 'crypto' ? 'warning text-dark' : 'info') + '">' + esc((s.market_type || 'N/A').toUpperCase()) + '</span></td>'
                 + '<td><span class="badge bg-' + badge(s.status) + '">' + esc((s.status || 'N/A').toUpperCase()) + '</span></td>'
                 + '<td>' + esc(when(s.start_time)) + '</td>'

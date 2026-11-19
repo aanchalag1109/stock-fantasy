@@ -259,3 +259,44 @@ describe('contest join', () => {
     assert.equal(db.ContestEntry.length, 1);
   });
 });
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: auto-create a fresh contest when one fills up
+describe('auto-create on full', () => {
+  const { createNextIfFull } = require('../../src/services/contest-auto-create.service');
+  const copies = () => db.Contest.filter((c) => same(c.auto_created_from, contest._id));
+
+  test('filling a contest with the flag on creates exactly one fresh copy', async () => {
+    reset({ category: 'h2h', participants: 2 });
+    contest.auto_create_on_full = true;
+    contest.bots_joined = true;
+    await join(player(100));
+    assert.equal(copies().length, 0, 'not full yet');
+    await join(player(100));
+    assert.equal(copies().length, 1);
+    const next = copies()[0];
+    assert.equal(next.old_id, undefined, 'new public id');
+    assert.ok(same(next.league_session_id, session._id));
+    assert.deepEqual([next.category, next.participants, next.entry_fee, next.auto_create_on_full], ['h2h', 2, 100, true]);
+    assert.equal(next.bots_joined, false);
+    assert.ok(same(contest.auto_created_contest_id, next._id));
+
+    await createNextIfFull(contest._id);
+    assert.equal(copies().length, 1, 'never a second copy');
+
+    const res = await joinContest({ userRef: String(player(100).user._id), contestRef: String(next._id), basketIds: [String(db.SavedBasket.at(-1)._id)] });
+    assert.equal(res.body.success_count, 1, 'players can join the copy');
+  });
+
+  test('flag off, or the session has started → nothing is created', async () => {
+    reset({ category: 'h2h', participants: 2 });
+    await Promise.all([join(player(100)), join(player(100))]);
+    assert.equal(db.Contest.length, 1);
+
+    reset({ category: 'h2h', participants: 1 });
+    contest.auto_create_on_full = true;
+    db.ContestEntry.push({ _id: new ObjectId(), contest_id: contest._id });
+    session.start_time = new Date(Date.now() - 1000);
+    assert.equal(await createNextIfFull(contest._id), null);
+    assert.equal(db.Contest.length, 1);
+  });
+});

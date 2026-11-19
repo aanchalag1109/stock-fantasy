@@ -32,6 +32,11 @@ const contestSchema = new mongoose.Schema({
   multiplier: { type: Number, default: null },        // multiplier contests only: 2, 3, 4, 5, 8 or 10
   min_participants: { type: Number, default: null },  // null = format default (legacy contests: 10)
   join_lock_at: { type: Date, default: null },        // short lease that serialises joins (no overbooking)
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: when on, filling this contest creates a fresh copy for the same
+  // session (services/contest-auto-create.service.js). auto_created_contest_id claims the copy so it is made once.
+  auto_create_on_full: { type: Boolean, default: false },
+  auto_created_contest_id: { type: mongoose.Schema.Types.ObjectId, default: null },
+  auto_created_from: { type: mongoose.Schema.Types.ObjectId, default: null },
   contest_type: { type: String, enum: ['dynamic', 'fixed'], default: 'dynamic' },
   type: { type: String, default: 'dynamic' },
   status: { 
