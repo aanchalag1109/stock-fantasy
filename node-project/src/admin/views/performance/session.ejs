@@ -157,7 +157,7 @@
 const SESSION_ID = '<%= session._id %>';
 const SESSION_DATA = {
   id:          '<%= session.old_id || session._id %>',
-  name:        <%- JSON.stringify(session.name || '') %>,
+  name:        <%- String(JSON.stringify(session.name || '')).replace(/</g, '\\u003c') %>,
   status:      '<%= session.status || "" %>',
   market_type: '<%= session.market_type || "" %>',
   start_time:  '<%= session.start_time ? new Date(session.start_time).toLocaleString("en-US", {timeZone:"Asia/Kolkata"}) : "" %>',

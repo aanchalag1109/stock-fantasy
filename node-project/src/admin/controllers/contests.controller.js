@@ -14,7 +14,23 @@ const { parseListFilters, withStatus } = require('../helpers/list-filters');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats (H2H, Winner Takes All, 2x–10x)
 const formats = require('../../services/contest-formats');
 const contestSettings = require('../../services/contest-settings.service');
-const { ensureOldId } = require('../../helpers/mobile-compat');
+const { ensureOldId, keysOf, findByPublicId } = require('../../helpers/mobile-compat');
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: admin review (Priority 1) — a contest that is live, scored,
+// paid or cancelled, or whose session has started, cannot be edited at all: refunds and payouts are
+// computed from the contest's current entry fee / prize pool, and its baskets belong to its session.
+async function editLock(contest) {
+  if (['live', 'completed', 'cancelled'].includes(contest.status)) return `This contest is ${contest.status} and can no longer be edited.`;
+  if (contest.prizes_distributed) return 'Prizes for this contest have been paid; it can no longer be edited.';
+  if (contest.is_calculated) return 'Results for this contest have been calculated; it can no longer be edited.';
+  const session = contest.league_session_id != null ? await findByPublicId(LeagueSession, contest.league_session_id) : null;
+  if (session && ['live', 'completing', 'completed', 'cancelled'].includes(session.status)) {
+    return `Its session is ${session.status}; the contest can no longer be edited.`;
+  }
+  return null;
+}
+
+const sameMoney = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) < 0.005;
 
 const CONTEST_STATUSES = ['live', 'upcoming', 'completed', 'cancelled'];
 
@@ -607,6 +623,11 @@ const edit = async (req, res) => {
       req.flash('error', 'Not found');
       return res.redirect('/contests');
     }
+    const locked = await editLock(contest);
+    if (locked) {
+      req.flash('error', locked);
+      return res.redirect('/contests/' + publicId(contest));
+    }
     const sessions = formSessions(await LeagueSession.find().sort({ old_id: 1 }).lean());
     const selected = String(contest.league_session_id || '');
     await render(res, 'contests/edit', {
@@ -634,6 +655,11 @@ const update = async (req, res) => {
       req.flash('error', 'Not found');
       return res.redirect('/contests');
     }
+    const locked = await editLock(contest);
+    if (locked) {
+      req.flash('error', locked);
+      return res.redirect('/contests/' + publicId(contest));
+    }
     const fields = validateFields(req.body, false);
     let session = null;
     if (req.body.league_session_id) {
@@ -648,6 +674,14 @@ const update = async (req, res) => {
       if (req.body.category !== contest.category) fields.errors.push(`The contest type cannot be changed after players have joined (${joined} joined).`);
       else if (contest.category === 'multiplier' && fields.multiplier !== contest.multiplier) fields.errors.push('The multiplier cannot be changed after players have joined.');
       if (Number.isFinite(fields.participants) && fields.participants < joined) fields.errors.push(`Total spots cannot be less than the ${joined} players already joined.`);
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: players paid this fee for this prize structure in this
+      // session, so these are locked too once anyone has joined.
+      if (!sameMoney(fields.entryFee, contest.entry_fee)) fields.errors.push(`The entry fee cannot be changed after players have joined (${joined} joined).`);
+      if (!sameMoney(fields.platformFee, contest.platform_fee)) fields.errors.push('The platform fee cannot be changed after players have joined.');
+      if (!formats.isNewFormat({ category: contest.category }) && !sameMoney(fields.winning, contest.winning_percentage)) fields.errors.push('The winning percentage cannot be changed after players have joined.');
+      if (formats.isFixedPool(contest) && req.body.fixed_prize_pool !== undefined && req.body.fixed_prize_pool !== '' && !sameMoney(req.body.fixed_prize_pool, contest.prize_pool)) fields.errors.push('The fixed prize pool cannot be changed after players have joined.');
+      if (Number.isFinite(fields.maxEntries) && fields.maxEntries < Number(contest.max_entries_per_user || 1)) fields.errors.push('Max entries per user cannot be lowered after players have joined.');
+      if (session && !keysOf(session).map(String).includes(String(contest.league_session_id))) fields.errors.push('The session cannot be changed after players have joined.');
     }
     if (fields.errors.length) {
       const sessions = formSessions(await LeagueSession.find().sort({ old_id: 1 }).lean());
@@ -668,6 +702,12 @@ const update = async (req, res) => {
     const pools = poolFrom(req.body, fields);
     const payload = contestPayload(req.body, fields, pools);
     if (session) payload.league_session_id = session._id;
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: a fixed prize table that players joined for stays as it is.
+    if (joined > 0 && formats.isFixedPool(contest) && Array.isArray(contest.prize_distribution) && contest.prize_distribution.length) {
+      payload.prize_distribution = contest.prize_distribution;
+      payload.prize_pool = contest.prize_pool;
+    }
+    if (joined > 0) payload.league_session_id = contest.league_session_id;
     contest.set(payload);
     await contest.save();
     req.flash('success', 'Contest updated successfully.');

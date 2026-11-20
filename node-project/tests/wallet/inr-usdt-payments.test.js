@@ -48,6 +48,7 @@ function matches(doc, filter = {}) {
         if (op === '$in') return arg.some((a) => same(val, a));
         if (op === '$gte') return Number(val) >= Number(arg);
         if (op === '$type') return typeof val === arg;
+        if (op === '$regex') return new RegExp(arg).test(String(val ?? ''));
         throw new Error(`unsupported ${op}`);
       });
     }

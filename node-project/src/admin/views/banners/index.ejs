@@ -33,11 +33,11 @@
                             </td>
                             <td>
                                 <% if (banner.image) { %>
-                                <img src="/<%= banner.image %>" alt="<%= banner.title %>" class="rounded shadow-sm" style="width: 120px; height: 60px; object-fit: cover;">
+                                <img src="<%= /^https?:\/\//i.test(banner.image) ? banner.image : '/' + banner.image %>" alt="<%= banner.title %>" class="rounded shadow-sm" style="width: 120px; height: 60px; object-fit: cover;">
                                 <% } else { %><span class="text-muted">No image</span><% } %>
                             </td>
                             <td>
-                                <% if (banner.link) { %>
+                                <% if (banner.link && !/^\s*(javascript|data|vbscript|file):/i.test(banner.link)) { %>
                                     <a href="<%= banner.link %>" target="_blank" class="text-decoration-none"><i class="bi bi-box-arrow-up-right me-1"></i><%= String(banner.link).slice(0, 30) %></a>
                                 <% } else { %><span class="text-muted">No link</span><% } %>
                             </td>

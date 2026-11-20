@@ -75,6 +75,13 @@ const bannerUpload = multer({
   },
 }).single('image');
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: admin review — a banner link is shown as <a href> in the admin
+// and opened by the app, so script-running schemes (javascript:, data:, vbscript:, file:) are refused.
+function unsafeLink(value) {
+  const v = String(value || '').replace(/[\x00-\x20\x7f]+/g, '').toLowerCase();
+  return /^(javascript|data|vbscript|file):/.test(v);
+}
+
 const banners = {
   index: async (req, res) => {
     const items = await Banner.find().sort({ created_at: -1 }).lean();
@@ -92,9 +99,13 @@ const banners = {
       else if (title.length > 255) invalid = 'The title must not be greater than 255 characters.';
       else if (!status) invalid = 'The status field is required.';
       else if (!['active', 'inactive'].includes(status)) invalid = 'The selected status is invalid.';
+      const link = String(req.body.link || '').trim() || null;
+      const imageUrl = String(req.body.image_url || '').trim() || null;
+      if (!invalid && unsafeLink(link)) invalid = 'The link must be a web address (http/https), a path or an app link.';
+      if (!invalid && imageUrl && !/^https?:\/\//i.test(imageUrl)) invalid = 'The image URL must start with http:// or https://.';
       if (invalid) { req.flash('error', invalid); return res.redirect('/banners/create'); }
       try {
-        await Banner.create({ title, image: req.file ? 'uploads/banners/' + req.file.filename : req.body.image_url, link: req.body.link, status });
+        await Banner.create({ title, image: req.file ? 'uploads/banners/' + req.file.filename : imageUrl, link, status });
         req.flash('success', 'Banner created successfully.');
         res.redirect('/banners');
       } catch (e) { req.flash('error', e.message); res.redirect('/banners/create'); }
@@ -118,6 +129,10 @@ const banners = {
           return res.redirect(back);
         }
         const status = ['active', 'inactive'].includes(req.body.status) ? req.body.status : banner.status;
+        if (unsafeLink(req.body.link)) {
+          req.flash('error', 'The link must be a web address (http/https), a path or an app link.');
+          return res.redirect(back);
+        }
         const update = {
           title,
           description: String(req.body.description || '').trim() || null,
@@ -202,6 +217,9 @@ const notifications = {
 };
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
+// Keys the App Settings & Pages screen owns (see routes/settings.routes.js).
+const APP_SETTING_KEYS = ['payment_api', 'terms', 'privacy', 'about', 'payment_policy'];
+
 const settings = {
   index: async (req, res) => {
     const items = await Setting.find().lean();
@@ -211,7 +229,11 @@ const settings = {
   },
   update: async (req, res) => {
     try {
-      const pairs = Object.entries(req.body);
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: admin review — only this page's own keys. Before, any
+      // posted field was written, so app_settings.edit could change finance settings (minimum
+      // withdrawal, ProbCoin rate…) that have their own pages, validation and permissions.
+      const pairs = Object.entries(req.body).filter(([key, value]) => APP_SETTING_KEYS.includes(key) && typeof value === 'string');
+      if (!pairs.length) { req.flash('error', 'Nothing to save.'); return res.redirect('/settings'); }
       await Promise.all(pairs.map(([key, value]) => Setting.findOneAndUpdate({ key }, { key, value }, { upsert: true })));
       req.flash('success', 'Settings saved!');
       res.redirect('/settings');
@@ -219,7 +241,7 @@ const settings = {
   },
   saveKey: (key) => async (req, res) => {
     try {
-      const value = req.body[key];
+      const value = typeof req.body[key] === 'string' ? req.body[key] : ''; // no objects/operators
       await Setting.findOneAndUpdate({ key }, { key, value }, { upsert: true });
       req.flash('success', 'Settings saved!');
       res.redirect('/settings');

@@ -37,7 +37,11 @@
                                 <a href="/transactions" class="btn btn-outline-primary" style="border-radius: 12px;">
                                     <i class="bi bi-arrow-left me-1"></i>Back to List
                                 </a>
-                                <% if (canReview) { %>
+                                <% if (canReview && withdrawalRequest) { %>
+                                <a href="/withdrawal_requests/<%= withdrawalRequest._id %>" class="btn btn-warning ms-2" style="border-radius: 12px;">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>Process on Withdrawal Request
+                                </a>
+                                <% } else if (canReview) { %>
                                 <form action="/transactions/<%= displayId %>/approve" method="POST" class="d-inline ms-2">
                                     <button type="submit" class="btn btn-success" style="border-radius: 12px;" onclick="return confirm('Are you sure you want to approve this transaction?')">
                                         <i class="bi bi-check-circle me-1"></i>Approve

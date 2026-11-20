@@ -35,7 +35,7 @@
 
 <script>
 (function () {
-    var CONTEST_ID = <%- JSON.stringify(String(contestId)) %>;
+    var CONTEST_ID = <%- String(JSON.stringify(String(contestId))).replace(/</g, '\\u003c') %>;
     function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
     function money(n) { return '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
     function num(n, d) { return Number(n || 0).toFixed(d == null ? 2 : d); }

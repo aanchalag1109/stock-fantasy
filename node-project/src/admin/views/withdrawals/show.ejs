@@ -184,7 +184,7 @@
           <i class="bi bi-check2-circle me-2"></i>Take Action
         </div>
         <div class="card-body">
-          <form method="POST" action="/withdrawal_requests/<%= request._id %>">
+          <form method="POST" action="/withdrawal_requests/<%= request._id %>?_method=PUT">
             <input type="hidden" name="_method" value="PUT">
             <div class="mb-3">
               <label class="form-label fw-semibold">Payout reference (needed to accept)</label>

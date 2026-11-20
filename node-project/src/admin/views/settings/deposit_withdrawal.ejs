@@ -133,8 +133,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var btn = document.getElementById('dwSaveBtn');
     var alertBox = document.getElementById('dwAlert');
     var btnHtml = btn.innerHTML;
-    var FIELDS = <%- JSON.stringify(fieldKeys) %>;
-    var RATES = { INR: <%- JSON.stringify(rates.inr_to_probcoin_rate) %>, USDT: <%- JSON.stringify(rates.usdt_to_probcoin_rate) %> };
+    var FIELDS = <%- String(JSON.stringify(fieldKeys)).replace(/</g, '\\u003c') %>;
+    var RATES = { INR: <%- String(JSON.stringify(rates.inr_to_probcoin_rate)).replace(/</g, '\\u003c') %>, USDT: <%- String(JSON.stringify(rates.usdt_to_probcoin_rate)).replace(/</g, '\\u003c') %> };
     var submitting = false;
     var el = function (id) { return document.getElementById(id); };
 

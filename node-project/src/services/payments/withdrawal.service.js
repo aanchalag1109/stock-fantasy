@@ -148,7 +148,19 @@ async function processWithdrawal(id, { action, adminMessage, payoutReference, ad
     });
     if (refund.missingUser) logger.error(`[withdrawal] ${before._id} rejected but user ${before.user_id} was not found for the refund`);
   }
-  await Transaction.updateOne({ transaction_id: `WD_${before._id}` }, { $set: { status: status === 'approved' ? 'success' : 'failed' } });
+  const ledgerStatus = status === 'approved' ? 'success' : 'failed';
+  const synced = await Transaction.updateOne({ transaction_id: `WD_${before._id}` }, { $set: { status: ledgerStatus } });
+  if (!(synced && synced.matchedCount)) {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: older endpoints wrote the ledger row without WD_<id>;
+    // find it by its description ("Withdrawal request #<id> …") so it does not stay pending.
+    const refs = [String(before._id), before.old_id != null ? String(before.old_id) : null].filter(Boolean);
+    await Transaction.updateOne({
+      type: 'withdrawal',
+      status: 'pending',
+      user_id: before.user_id,
+      description: { $regex: `^Withdrawal request #(${refs.join('|')}) ` },
+    }, { $set: { status: ledgerStatus, transaction_id: `WD_${before._id}` } });
+  }
   logger.info(`[withdrawal] ${before._id} ${status} by ${admin || 'admin'}${reference ? ` (ref ${reference})` : ''}`);
 
   // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — one per withdrawal and outcome

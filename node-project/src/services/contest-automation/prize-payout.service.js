@@ -77,6 +77,22 @@ async function distributeContest(contestId) {
   if (!participants) return { success: false, message: `Contest #${label}: No participants` };
   if (await legacyPaid(contest)) return { success: false, message: `Contest #${label}: prizes were already paid`, already_paid: true };
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: admin review — the same minimum-players rule as the results
+  // job, so End & Distribute and Pending Prizes cancel + refund an under-filled contest instead of paying it.
+  const minimum = formats.minParticipantsFor(contest);
+  if (participants < minimum) {
+    const { cancelContest } = require('../contest-cancellation.service');
+    const cancel = await cancelContest(contest, { claimFilter: { prizes_distributed: { $ne: true } }, reason: `fewer than ${minimum} entries` });
+    if (cancel.success) await Contest.updateOne({ _id: contest._id }, { $set: { is_calculated: true } });
+    return {
+      success: false,
+      cancelled: !!cancel.success,
+      message: cancel.success
+        ? `Contest #${label}: only ${participants} of the ${minimum} players needed, so it was cancelled and ${cancel.refunded || 0} entry fee(s) refunded`
+        : `Contest #${label}: only ${participants} of the ${minimum} players needed; ${cancel.message}`,
+    };
+  }
+
   const { start, end } = scoring.sessionPriceMaps(session);
   if (!Object.keys(start).length || !Object.keys(end).length) {
     return { success: false, message: `Contest #${label}: Start or end prices missing` };
@@ -166,4 +182,4 @@ async function distributeSession(sessionId) {
   };
 }
 
-module.exports = { distributeContest, distributeSession };
+module.exports = { distributeContest, distributeSession, legacyPaid };

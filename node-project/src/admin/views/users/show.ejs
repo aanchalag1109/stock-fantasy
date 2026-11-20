@@ -56,6 +56,36 @@
                 </div>
             </div>
 
+            <% if (can('users.wallet') && !user.is_admin) { %>
+            <!-- NEW IMPLEMENTATION — NODE.JS PROJECT: manual wallet adjustment with a required reason -->
+            <div class="card shadow-sm border-0 mb-4" id="adjust-wallet">
+                <div class="card-header bg-light"><h6 class="mb-0"><i class="bi bi-wallet2 me-2"></i>Adjust Wallet</h6></div>
+                <div class="card-body">
+                    <form method="POST" action="/users/<%= user._id %>/wallet" onsubmit="return confirm('Apply this wallet adjustment?')">
+                        <div class="mb-2">
+                            <label class="form-label small fw-semibold">Action</label>
+                            <select name="type" class="form-select form-select-sm" required>
+                                <option value="add_deposit">Add to deposit balance</option>
+                                <option value="add_winnings">Add to winnings balance</option>
+                                <option value="deduct_deposit">Deduct from deposit balance</option>
+                                <option value="deduct_winnings">Deduct from winnings balance</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-semibold">Amount</label>
+                            <input type="number" name="amount" class="form-control form-control-sm" min="0.01" step="0.01" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">Reason</label>
+                            <input type="text" name="reason" class="form-control form-control-sm" minlength="3" maxlength="255" required placeholder="e.g. Refund for failed deposit #123">
+                            <div class="form-text">Saved in the player's transaction history.</div>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Apply</button>
+                    </form>
+                </div>
+            </div>
+            <% } %>
+
             <div class="card shadow-sm border-0">
                 <div class="card-header bg-light">
                     <h6 class="mb-0"><i class="bi bi-graph-up text-primary me-2"></i>Quick Stats</h6>

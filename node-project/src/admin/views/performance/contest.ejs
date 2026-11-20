@@ -215,7 +215,7 @@
 const CONTEST_ID = '<%= contest._id %>';
 const SESSION_ID = '<%= contest.session_id %>';
 const TOTAL_WINNERS = <%= stats.actual_winners || 0 %>;
-const FLEXIBLE_DIST = <%- JSON.stringify(flexibleDistribution || []) %>;
+const FLEXIBLE_DIST = <%- String(JSON.stringify(flexibleDistribution || [])).replace(/</g, '\\u003c') %>;
 
 // ── Load Prices ────────────────────────────────────────────────────────────
 function loadPrices() {
@@ -433,8 +433,8 @@ function getPrizeForRank(rank) {
 <script>
 // PHP PARITY — RUN ALL, Calculate Results, Verify/Analyze prices (PHP performance/show.blade.php scripts)
 (function () {
-  var cid = <%- JSON.stringify(String(contest._id)) %>;
-  var sid = <%- JSON.stringify(String(contest.session_id || '')) %>;
+  var cid = <%- String(JSON.stringify(String(contest._id))).replace(/</g, '\\u003c') %>;
+  var sid = <%- String(JSON.stringify(String(contest.session_id || ''))).replace(/</g, '\\u003c') %>;
   var logUrl = '/api/run-all-log/' + cid;
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function postJson(url, body) {

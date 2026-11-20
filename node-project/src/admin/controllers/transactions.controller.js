@@ -3,6 +3,8 @@
 const mongoose = require('mongoose');
 const Transaction = require('../../models/transaction.model');
 const User = require('../../models/user.model');
+const WithdrawalRequest = require('../../models/withdrawal-request.model');
+const { creditOnce } = require('../../services/contest-automation/ledger');
 const { render } = require('../helpers/render');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
 const { notify } = require('../../services/notifications/notification.service');
@@ -181,8 +183,10 @@ const show = async (req, res) => {
     const user = userMap.get(String(lean.user_id)) || null;
     const created = istClock(lean.created_at);
     const updated = istClock(lean.updated_at);
+    const withdrawalRequest = lean.status === 'pending' ? await linkedWithdrawal(lean) : null;
     await render(res, 'transactions/show', {
       title: `Transaction #${publicId(lean)}`,
+      withdrawalRequest,
       transaction: lean,
       displayId: publicId(lean),
       user,
@@ -198,33 +202,79 @@ const show = async (req, res) => {
   }
 };
 
-const approve = async (req, res) => {
+// NEW IMPLEMENTATION — NODE.JS PROJECT: admin review of pending deposits / withdrawals, made safe.
+//   - A withdrawal row that belongs to a Withdrawal Request is processed only on the Withdrawal
+//     Requests page (one refund path, payout reference recorded). Before, rejecting it here
+//     refunded the user while the request stayed pending, so it could be refunded or paid again.
+//   - The pending → success/failed change is an atomic claim, so a double click or two admins at
+//     once cannot credit a deposit or refund a withdrawal twice.
+//   - Balances move with $inc (never a read-modify-write save that could drop a concurrent credit).
+
+/** The Withdrawal Request a pending withdrawal ledger row belongs to, or null. */
+async function linkedWithdrawal(transaction) {
+  if (!transaction || transaction.type !== 'withdrawal') return null;
+  const tid = String(transaction.transaction_id || '');
+  let ref = tid.startsWith('WD_') ? tid.slice(3) : null;
+  if (!ref) {
+    const match = /Withdrawal request #([0-9a-fA-F]{24}|\d+)/.exec(String(transaction.description || ''));
+    if (match) ref = match[1];
+  }
+  if (!ref) return null;
+  const filter = ref.length === 24 && mongoose.isValidObjectId(ref) ? { _id: ref } : /^\d+$/.test(ref) ? { old_id: Number(ref) } : null;
+  return filter ? WithdrawalRequest.findOne(filter).select('_id old_id status').lean() : null;
+}
+
+function userFilter(ref) {
+  const id = String(ref);
+  return id.length === 24 && mongoose.isValidObjectId(id) ? { _id: id } : /^\d+$/.test(id) ? { old_id: Number(id) } : null;
+}
+
+/** Atomically moves a pending transaction to `status`; null when it was no longer pending. */
+const claim = (transaction, status) => Transaction.findOneAndUpdate(
+  { _id: transaction._id, status: 'pending' },
+  { $set: { status, updated_at: new Date() } },
+);
+
+const review = (action) => async (req, res) => {
   const back = '/transactions/' + req.params.id;
   try {
     const transaction = await findTransaction(req.params.id);
-    if (!transaction || transaction.status !== 'pending') {
-      req.flash('error', 'Only pending transactions can be approved.');
+    if (!transaction || transaction.status !== 'pending' || !['deposit', 'withdrawal'].includes(transaction.type)) {
+      req.flash('error', `Only pending deposits and withdrawals can be ${action === 'approve' ? 'approved' : 'rejected'}.`);
       return res.redirect(back);
     }
-    transaction.status = 'success';
-    await transaction.save();
-    if (transaction.type === 'deposit') {
-      const user = await User.findOne(
-        String(transaction.user_id).length === 24 && mongoose.isValidObjectId(String(transaction.user_id))
-          ? { _id: transaction.user_id }
-          : { old_id: Number(transaction.user_id) }
-      );
-      if (user) {
-        user.deposit_balance = Number(user.deposit_balance || 0) + Number(transaction.amount || 0);
-        await user.save();
-      }
+    const request = await linkedWithdrawal(transaction);
+    if (request) {
+      req.flash('error', 'This withdrawal belongs to a withdrawal request. Please accept or reject it on the Withdrawal Requests page.');
+      return res.redirect('/withdrawal_requests/' + request._id);
     }
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — pending deposit/withdrawal confirmed by an admin
-    const approvedEvent = { deposit: 'deposit_success', withdrawal: 'withdrawal_completed' }[transaction.type];
-    if (approvedEvent) {
-      notify(approvedEvent, { user: transaction.user_id, dedupeKey: `${approvedEvent}:txn:${transaction._id}`, params: { amount: transaction.amount }, data: { transaction_id: String(transaction._id) } });
+    const done = await claim(transaction, action === 'approve' ? 'success' : 'failed');
+    if (!done) {
+      req.flash('error', 'This transaction was already processed.');
+      return res.redirect(back);
     }
-    req.flash('success', 'Transaction approved successfully!');
+    const amount = Number(transaction.amount) || 0;
+    const filter = userFilter(transaction.user_id);
+    if (action === 'approve' && transaction.type === 'deposit' && filter && amount > 0) {
+      await User.updateOne(filter, { $inc: { deposit_balance: amount } });
+    }
+    if (action === 'reject' && transaction.type === 'withdrawal' && amount > 0) {
+      // Refund exactly once: the refund row's transaction_id is unique.
+      await creditOnce({
+        userRef: transaction.user_id,
+        balance: 'winnings_balance',
+        amount,
+        transaction: { type: 'deposit', transaction_id: `TXNREFUND_${transaction._id}`, payment_method: 'Withdrawal refund', description: 'Withdrawal rejected - Refund to winnings' },
+      });
+    }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — pending deposit/withdrawal reviewed by an admin
+    const event = (action === 'approve'
+      ? { deposit: 'deposit_success', withdrawal: 'withdrawal_completed' }
+      : { deposit: 'deposit_failed', withdrawal: 'withdrawal_rejected' })[transaction.type];
+    if (event) {
+      notify(event, { user: transaction.user_id, dedupeKey: `${event}:txn:${transaction._id}`, params: { amount: transaction.amount }, data: { transaction_id: String(transaction._id) } });
+    }
+    req.flash('success', `Transaction ${action === 'approve' ? 'approved' : 'rejected'} successfully!`);
     res.redirect('/transactions/' + publicId(transaction));
   } catch (err) {
     req.flash('error', err.message);
@@ -232,45 +282,7 @@ const approve = async (req, res) => {
   }
 };
 
-const reject = async (req, res) => {
-  const back = '/transactions/' + req.params.id;
-  try {
-    const transaction = await findTransaction(req.params.id);
-    if (!transaction || transaction.status !== 'pending') {
-      req.flash('error', 'Only pending transactions can be rejected.');
-      return res.redirect(back);
-    }
-    transaction.status = 'failed';
-    await transaction.save();
-    if (transaction.type === 'withdrawal') {
-      const user = await User.findOne(
-        String(transaction.user_id).length === 24 && mongoose.isValidObjectId(String(transaction.user_id))
-          ? { _id: transaction.user_id }
-          : { old_id: Number(transaction.user_id) }
-      );
-      if (user) {
-        user.winnings_balance = Number(user.winnings_balance || 0) + Number(transaction.amount || 0);
-        await user.save();
-        await Transaction.create({
-          user_id: user._id,
-          type: 'deposit',
-          amount: transaction.amount,
-          status: 'success',
-          description: 'Withdrawal rejected - Refund to winnings',
-        });
-      }
-    }
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — pending deposit/withdrawal rejected by an admin
-    const rejectedEvent = { deposit: 'deposit_failed', withdrawal: 'withdrawal_rejected' }[transaction.type];
-    if (rejectedEvent) {
-      notify(rejectedEvent, { user: transaction.user_id, dedupeKey: `${rejectedEvent}:txn:${transaction._id}`, params: { amount: transaction.amount }, data: { transaction_id: String(transaction._id) } });
-    }
-    req.flash('success', 'Transaction rejected successfully!');
-    res.redirect('/transactions/' + publicId(transaction));
-  } catch (err) {
-    req.flash('error', err.message);
-    res.redirect(back);
-  }
-};
+const approve = review('approve');
+const reject = review('reject');
 
-module.exports = { index, show, approve, reject };
+module.exports = { index, show, approve, reject, linkedWithdrawal };

@@ -228,6 +228,7 @@ const withdrawAmount = async (req, res) => {
       user_id: userId,
       type: 'withdrawal',
       amount,
+      transaction_id: `WD_${withdrawalId}`, // NEW IMPLEMENTATION — NODE.JS PROJECT: links the ledger row to its request
       description: `Withdrawal request #${withdrawalId} (USDT ${pd.usdt_network || 'BEP20'})`,
       status: 'pending',
     }], { session });

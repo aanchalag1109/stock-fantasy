@@ -26,6 +26,9 @@ const { keysOf, publicId, num } = require('../helpers/mobile-compat');
 const { creditOnce } = require('./contest-automation/ledger');
 const { notify } = require('./notifications/notification.service');
 
+// Lazy: prize-payout pulls in scoring; only needed for completed contests.
+const legacyPaid = (contest) => require('./contest-automation/prize-payout.service').legacyPaid(contest);
+
 /**
  * Cancels a contest and refunds every entry fee.
  * @param {object} contest  contest document (lean or hydrated)
@@ -37,6 +40,12 @@ const { notify } = require('./notifications/notification.service');
 async function cancelContest(contest, { claimFilter = {}, reason = 'admin' } = {}) {
   const label = publicId(contest);
   const now = new Date();
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: a scored contest whose winnings were already paid (e.g. by
+  // the PHP system, without prizes_distributed) must not also refund every entry fee.
+  if ((contest.status === 'completed' || contest.is_calculated) && await legacyPaid(contest)) {
+    return { success: false, message: `Contest #${label}: prizes were already paid, so it cannot be cancelled`, already_paid: true };
+  }
 
   // Claim: only one caller moves the contest to cancelled.
   const claimed = await Contest.findOneAndUpdate(
@@ -104,7 +113,17 @@ function isOpen(contest) {
  * @returns {Promise<{ok:boolean, refunded:number, message?:string}>} ok=false → do not delete
  */
 async function refundBeforeDelete(contest, { actor = 'admin' } = {}) {
-  if (!isOpen(contest)) return { ok: true, refunded: 0 };
+  if (!isOpen(contest)) {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: a completed contest whose prizes were never paid holds the
+    // players' winnings; deleting it would lose them, so it must be paid or cancelled first.
+    if (contest.status === 'completed' && contest.prizes_distributed !== true) {
+      const entries = await ContestEntry.countDocuments({ contest_id: { $in: keysOf(contest) } });
+      if (entries > 0 && !(await legacyPaid(contest))) {
+        return { ok: false, refunded: 0, message: `Contest #${publicId(contest)} is completed but its prizes have not been paid. Pay them from Pending Prizes, or cancel it (refunds the entry fees), before deleting.` };
+      }
+    }
+    return { ok: true, refunded: 0 };
+  }
   const result = await cancelContest(contest, {
     claimFilter: { status: { $in: OPEN_STATUSES } },
     reason: `deleted by ${actor}`,

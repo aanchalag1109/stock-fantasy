@@ -82,10 +82,10 @@
         </div>
     </div>
     <script>
-        var CONTEST_ID = <%- JSON.stringify(String(contest._id)) %>;
-        var SESSION_ID = <%- JSON.stringify(String(session._id)) %>;
-        var USER_IDS = <%- JSON.stringify(users.map((u) => String(u._id))) %>;
-        var categories = <%- JSON.stringify(categories) %>;
+        var CONTEST_ID = <%- String(JSON.stringify(String(contest._id))).replace(/</g, '\\u003c') %>;
+        var SESSION_ID = <%- String(JSON.stringify(String(session._id))).replace(/</g, '\\u003c') %>;
+        var USER_IDS = <%- String(JSON.stringify(users.map((u) => String(u._id)))).replace(/</g, '\\u003c') %>;
+        var categories = <%- String(JSON.stringify(categories)).replace(/</g, '\\u003c') %>;
         var maxAssets = <%= Number(maxStocks) || 10 %>;
         var allAssets = [], selectedAssets = [], currentTab = 0, multipliers = {};
 

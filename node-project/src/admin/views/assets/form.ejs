@@ -92,7 +92,7 @@
 </div>
 <script>
 (function () {
-    var hints = <%- JSON.stringify(hints) %>;
+    var hints = <%- String(JSON.stringify(hints)).replace(/</g, '\\u003c') %>;
     var market = document.getElementById('market');
     var symbol = document.getElementById('symbol');
     var checkBtn = document.getElementById('checkBtn');

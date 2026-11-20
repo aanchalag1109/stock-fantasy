@@ -255,6 +255,46 @@ describe('Contests → Cancel (PHP cancelContest)', () => {
     rows.forEach((r) => assert.equal(balance(r), 25));
   });
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: admin review (Priority 1)
+  test('contests paid by the old system (winnings transactions) cannot be cancelled', async () => {
+    const c = addContest(addSession({ status: 'completed' }), { status: 'completed', is_calculated: true });
+    const rows = addEntries(c, 2);
+    db.Transaction.push({ _id: new ObjectId(), user_id: rows[0].user._id, contest_id: c._id, type: 'winnings', status: 'success', amount: 40, transaction_id: 'LEGACY_1' });
+    const admin = await login();
+    const res = await json(admin, 'post', '/contests/' + c._id + '/cancel');
+    assert.notEqual(res.status, 200);
+    assert.equal(get('Contest', c._id).status, 'completed');
+    rows.forEach((r) => assert.equal(balance(r), 0));
+  });
+
+  test('End & Distribute cancels and refunds a contest below its minimum players instead of paying it', async () => {
+    const s = addSession();
+    const c = addContest(s); // mega: minimum 10
+    const rows = addEntries(c, 3);
+    get('LeagueSession', s._id).assets = rows.map((r) => ({ asset_symbol: r.sym, start_price: 100, end_price: null }));
+    rows.forEach((r) => { feedPrices[r.sym] = 100 + r.gain; });
+    const admin = await login();
+    const res = await json(admin, 'post', '/api/manual-complete-session/' + s._id);
+    await notifications.idle();
+    assert.equal(res.status, 200, res.text);
+    assert.match(res.body.message, /only 3 of the 10 players needed/);
+    assert.equal(get('Contest', c._id).status, 'cancelled');
+    assert.notEqual(get('Contest', c._id).prizes_distributed, true);
+    rows.forEach((r) => { assert.equal(balance(r), 25); assert.equal(get('User', r.user._id).winnings_balance, 0); });
+  });
+
+  test('a live contest cannot be edited (fee, prizes, session stay as they are)', async () => {
+    const c = addContest(addSession(), { status: 'live' });
+    addEntries(c, 2);
+    const admin = await login();
+    const res = await admin.post('/contests/' + c._id + '?_method=PUT').type('form').send({ category: 'mega', entry_fee: '500', participants: '100', platform_fee: '10', winning_percentage: '30' });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.location, '/contests/' + c._id);
+    assert.equal(get('Contest', c._id).entry_fee, 25);
+    const page = await admin.get('/contests/' + c._id + '/edit');
+    assert.equal(page.status, 302);
+  });
+
   test('paid contests cannot be cancelled', async () => {
     const c = addContest(addSession(), { prizes_distributed: true });
     addEntries(c, 2);
@@ -696,11 +736,11 @@ describe('Sessions & Contests list filters (client feedback)', () => {
 describe('Delete refunds open contests first (client feedback)', () => {
   beforeEach(reset);
 
-  test('deleting an open contest refunds its joined users; a completed one is just deleted', async () => {
+  test('deleting an open contest refunds its joined users; a paid completed one is just deleted', async () => {
     const s = addSession({ status: 'upcoming' });
     const open = addContest(s, { status: 'active' });
     const rows = addEntries(open, 3);
-    const done = addContest(addSession({ status: 'completed' }), { status: 'completed' });
+    const done = addContest(addSession({ status: 'completed' }), { status: 'completed', prizes_distributed: true });
     const doneRows = addEntries(done, 2);
     const admin = await login();
     await admin.post(`/contests/${open._id}?_method=DELETE`);
@@ -710,6 +750,16 @@ describe('Delete refunds open contests first (client feedback)', () => {
     assert.equal(get('Contest', done._id), undefined);
     doneRows.forEach((r) => assert.equal(balance(r), 0));
     assert.match((await admin.get('/contests')).text, /Contest deleted!/);
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: admin review — unpaid winnings are not deleted away.
+  test('a completed contest whose prizes are not paid cannot be deleted', async () => {
+    const unpaid = addContest(addSession({ status: 'completed' }), { status: 'completed' });
+    addEntries(unpaid, 2);
+    const admin = await login();
+    await admin.post(`/contests/${unpaid._id}?_method=DELETE`);
+    assert.ok(get('Contest', unpaid._id));
+    assert.match((await admin.get('/contests')).text, /prizes have not been paid/);
   });
 
   test('bulk delete refunds open contests and still skips live ones', async () => {

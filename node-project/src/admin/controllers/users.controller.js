@@ -3,6 +3,7 @@
 const User = require('../../models/user.model');
 const Transaction = require('../../models/transaction.model');
 const bcrypt = require('bcryptjs');
+const logger = require('../../config/logger');
 const { render } = require('../helpers/render');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin User Access Control
 const { checkAdminAccountChange } = require('../../services/admin-access.service');
@@ -196,17 +197,12 @@ const update = async (req, res) => {
       req.flash('error', 'The email has already been taken.');
       return res.redirect('/users/' + user._id + '/edit');
     }
-    const deposit = req.body.deposit_balance === undefined || req.body.deposit_balance === '' ? 0 : Number(req.body.deposit_balance);
-    const winnings = req.body.winnings_balance === undefined || req.body.winnings_balance === '' ? 0 : Number(req.body.winnings_balance);
-    if (!Number.isFinite(deposit) || !Number.isFinite(winnings)) {
-      req.flash('error', 'Balance must be a number.');
-      return res.redirect('/users/' + user._id + '/edit');
-    }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: balances are not saved from this form any more. Writing
+    // back the values shown when the form opened undid any prize/refund credited meanwhile and left
+    // no ledger record; balances change only through "Adjust Wallet" (users.wallet permission).
     const updates = {
       name,
       email,
-      deposit_balance: deposit,
-      winnings_balance: winnings,
       // NEW IMPLEMENTATION — NODE.JS PROJECT: only super admins may change admin access
       is_admin: isSuperAdmin(req) ? (req.body.is_admin === '1' || req.body.is_admin === 'on') : !!user.is_admin,
     };
@@ -252,42 +248,64 @@ const destroy = async (req, res) => {
   }
 };
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: safe manual wallet adjustment (admin review, Priority 1).
+//   - positive amounts only, a reason is required (it is the ledger description),
+//   - credits use $inc; debits are an atomic guarded $inc that fails instead of going below zero
+//     (before, a debit was clamped to 0 while the ledger recorded the full amount),
+//   - the ledger row keeps the deposit/withdrawal type the app already shows, marked with
+//     payment_method "Admin adjustment" and a unique ADJ_ transaction id.
+const WALLET_ACTIONS = {
+  add_deposit: { balance: 'deposit_balance', credit: true, label: 'Added to deposit balance' },
+  add_winnings: { balance: 'winnings_balance', credit: true, label: 'Added to winnings balance' },
+  deduct_deposit: { balance: 'deposit_balance', credit: false, label: 'Deducted from deposit balance' },
+  deduct_winnings: { balance: 'winnings_balance', credit: false, label: 'Deducted from winnings balance' },
+};
+const MAX_ADJUSTMENT = 10000000;
+
 const adjustWallet = async (req, res) => {
+  const back = '/users/' + req.params.id;
   try {
-    const { type, amount, reason } = req.body;
-    const amt = parseFloat(amount) || 0;
-    const user = await User.findById(req.params.id);
+    const action = WALLET_ACTIONS[req.body.type];
+    const amount = Math.round(Number(req.body.amount) * 100) / 100;
+    const reason = String(req.body.reason || '').trim().slice(0, 255);
+    const user = await findUser(req.params.id);
     if (!user) { req.flash('error', 'User not found'); return res.redirect('/users'); }
     if (blockAdminTarget(req, res, user)) return; // NEW IMPLEMENTATION — NODE.JS PROJECT
+    if (!action) { req.flash('error', 'Please choose what to do: add to or deduct from the deposit or winnings balance.'); return res.redirect(back); }
+    if (!Number.isFinite(amount) || amount <= 0) { req.flash('error', 'The amount must be greater than 0.'); return res.redirect(back); }
+    if (amount > MAX_ADJUSTMENT) { req.flash('error', `The amount cannot be more than ${MAX_ADJUSTMENT}.`); return res.redirect(back); }
+    if (reason.length < 3) { req.flash('error', 'Please enter a reason for the adjustment.'); return res.redirect(back); }
 
-    if (type === 'add_deposit') user.deposit_balance = (user.deposit_balance || 0) + amt;
-    else if (type === 'add_winnings') user.winnings_balance = (user.winnings_balance || 0) + amt;
-    else if (type === 'deduct_deposit') user.deposit_balance = Math.max(0, (user.deposit_balance || 0) - amt);
-    else if (type === 'deduct_winnings') user.winnings_balance = Math.max(0, (user.winnings_balance || 0) - amt);
-    await user.save();
-
+    const filter = action.credit ? { _id: user._id } : { _id: user._id, [action.balance]: { $gte: amount } };
+    const moved = await User.updateOne(filter, { $inc: { [action.balance]: action.credit ? amount : -amount } });
+    if (!moved || !moved.modifiedCount) {
+      req.flash('error', action.credit ? 'The wallet could not be updated.' : `Not enough balance: ${action.balance.replace('_', ' ')} is ₹${Number(user[action.balance] || 0).toFixed(2)}.`);
+      return res.redirect(back);
+    }
+    const actor = (req.adminAccess && req.adminAccess.email) || 'admin';
     const adjustmentTxn = await Transaction.create({
       user_id: user._id,
-      type: type.startsWith('add') ? 'deposit' : 'withdrawal',
-      amount: amt,
+      type: action.credit ? 'deposit' : 'withdrawal',
+      amount,
       status: 'success',
-      description: reason || `Manual ${type} by admin`,
+      payment_method: 'Admin adjustment',
+      transaction_id: `ADJ_${user._id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      description: `${action.label}: ${reason}`,
     });
+    logger.info(`[wallet-adjust] ${actor} ${req.body.type} ${amount} for user ${user._id} (${reason})`);
     // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — the admin's free-text reason stays internal
-    if (amt > 0) {
-      notify('wallet_adjusted', {
-        user,
-        dedupeKey: `wallet_adjusted:txn:${adjustmentTxn._id}`,
-        params: { amount: amt, credit: type.startsWith('add'), balance: type.endsWith('winnings') ? 'winnings' : 'deposit' },
-        data: { screen: 'wallet', transaction_id: String(adjustmentTxn._id) },
-      });
-    }
+    notify('wallet_adjusted', {
+      user,
+      dedupeKey: `wallet_adjusted:txn:${adjustmentTxn._id}`,
+      params: { amount, credit: action.credit, balance: action.balance === 'winnings_balance' ? 'winnings' : 'deposit' },
+      data: { screen: 'wallet', transaction_id: String(adjustmentTxn._id) },
+    });
 
-    req.flash('success', `Wallet adjusted: ${type} ₹${amt}`);
-    res.redirect('/users/' + req.params.id);
+    req.flash('success', `${action.label}: ₹${amount.toFixed(2)}.`);
+    res.redirect(back);
   } catch (err) {
     req.flash('error', err.message);
-    res.redirect('/users/' + req.params.id);
+    res.redirect(back);
   }
 };
 
