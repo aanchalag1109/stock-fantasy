@@ -118,6 +118,23 @@ async function requestWithdrawal({ user, currency, probcoins, message }) {
 }
 
 /**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: the older endpoints POST /withdraw-amount and /wallet/withdraw
+ * (USDT payout; `amount` = ProbCoins). They used to compare the ProbCoins with the ₹ limits and skip
+ * the conversion; now they are the same request as POST /withdraw/request with currency USDT
+ * (ProbCoins → USDT at the admin rate, USDT limits, payout recorded, guarded debit).
+ * @returns {Promise<{ status:number, body:object, result?:object }>} legacy-shaped error body or the result
+ */
+async function legacyUsdtWithdrawal({ user, amount, message }) {
+  if (!user) return { status: 404, body: { success: false, error: 'User not found', message: 'User not found' } };
+  const result = await requestWithdrawal({ user, currency: 'USDT', probcoins: amount, message });
+  if (!result.ok) {
+    const { ok, status, message: text, ...extra } = result;
+    return { status: status || 400, body: { success: false, error: text, message: text, ...extra } };
+  }
+  return { status: 200, result };
+}
+
+/**
  * Admin decision. action: 'approve' | 'reject'.
  * @returns {Promise<{ type:'success'|'error', message:string }>}
  */
@@ -230,4 +247,4 @@ async function saveInrPayoutDetails(user, body = {}) {
   return { ok: true, details: { upi_id: upi || null, account_holder_name: holder || null, account_number: account || null, ifsc_code: ifsc || null, bank_name: bank || null } };
 }
 
-module.exports = { requestWithdrawal, processWithdrawal, publicWithdrawal, inrDestination, saveInrPayoutDetails, findUser };
+module.exports = { requestWithdrawal, legacyUsdtWithdrawal, processWithdrawal, publicWithdrawal, inrDestination, saveInrPayoutDetails, findUser };

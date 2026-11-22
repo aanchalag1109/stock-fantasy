@@ -141,7 +141,12 @@ function reset() {
   pushes = [];
   fcmResult = { status: 'sent' };
   db = Object.fromEntries(Object.keys(models).map((n) => [n, []]));
-  db.Setting = { min_deposit_amount: 100, max_deposit_amount: 50000, min_withdrawal_amount: 500, max_withdrawal_amount: 20000 };
+  db.Setting = {
+    min_deposit_amount: 100, max_deposit_amount: 50000, min_withdrawal_amount: 500, max_withdrawal_amount: 20000,
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: /withdraw-amount is a USDT withdrawal (1 USDT = 100 ProbCoins)
+    usdt_min_withdrawal_amount: 5, usdt_max_withdrawal_amount: 200,
+    probcoin_conversion: { inr_to_probcoin_rate: 10, usdt_to_probcoin_rate: 100 },
+  };
   const user = (key, extra = {}) => {
     ids[key] = new ObjectId();
     db.User.push({ _id: ids[key], name: key, fcm_token: `token-${key}`, deposit_balance: 1000, winnings_balance: 50000, ...extra });

@@ -16,6 +16,7 @@ const { transactionLabels } = require('../helpers/mobile-compat');
 const { checkTransactionAmount, limitErrorBody } = require('../services/deposit-withdrawal-settings.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
 const { notify } = require('../services/notifications/notification.service');
+const withdrawals = require('../services/payments/withdrawal.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -167,94 +168,34 @@ const depositAmount = async (req, res) => {
  * POST /api/v1/wallet/withdraw
  */
 const withdrawAmount = async (req, res) => {
-  // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce withdrawal limits (replaces the hard-coded 500 minimum).
-  const check = await checkTransactionAmount('withdrawal', req.body.amount);
-  if (!check.ok) return res.status(check.status).json(limitErrorBody(check));
-
-  const session = await mongoose.startSession();
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: same request as POST /withdraw/request (currency USDT): the
+  // ProbCoins are converted at the admin rate and checked against the USDT withdrawal limits (before,
+  // the ProbCoins were compared with the ₹ limits). No MongoDB transaction (fails on the standalone
+  // deployment); the service uses a guarded atomic debit instead.
   try {
-    session.startTransaction();
-
     const userId = req.body.user_id || req.userId;
-    const amount = check.amount;
-    const message = req.body.message || null;
-
-    if (!userId) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, error: 'user_id is required' });
-    }
-
-    const user = await User.findById(userId).session(session);
-    if (!user) {
-      await session.abortTransaction();
-      return res.status(404).json({ success: false, error: 'User not found' });
-    }
-
-    const pd = user.payment_details || {};
-    if (!pd.usdt_wallet_address) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        error: 'Please add your USDT wallet address before withdrawing.',
-        payment_details_required: true,
-      });
-    }
-
-    const winnings = parseFloat(user.winnings_balance || 0);
-    if (winnings < amount) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        error: 'Insufficient winnings balance. Only winnings can be withdrawn.',
-        winnings_balance: winnings,
-      });
-    }
-
-    user.winnings_balance = winnings - amount;
-    await user.save({ session });
-
-    const withdrawal = await WithdrawalRequest.create([{
-      user_id: userId,
-      amount,
-      status: 'pending',
-      message,
-      usdt_wallet_address: pd.usdt_wallet_address,
-      usdt_network: pd.usdt_network || 'BEP20',
-    }], { session });
-
-    const withdrawalId = withdrawal[0]._id;
-
-    await Transaction.create([{
-      user_id: userId,
-      type: 'withdrawal',
-      amount,
-      transaction_id: `WD_${withdrawalId}`, // NEW IMPLEMENTATION — NODE.JS PROJECT: links the ledger row to its request
-      description: `Withdrawal request #${withdrawalId} (USDT ${pd.usdt_network || 'BEP20'})`,
-      status: 'pending',
-    }], { session });
-
-    await session.commitTransaction();
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications (after commit)
-    notify('withdrawal_submitted', { user: user._id, dedupeKey: `withdrawal_submitted:${withdrawalId}`, params: { amount }, data: { screen: 'withdrawals', withdrawal_id: String(withdrawalId) } });
-
-    const unread = await getUnreadCount(user._id);
+    if (!userId) return res.status(400).json({ success: false, error: 'user_id is required' });
+    const user = await withdrawals.findUser(userId);
+    const out = await withdrawals.legacyUsdtWithdrawal({ user, amount: req.body.amount, message: req.body.message || null });
+    if (!out.result) return res.status(out.status).json(out.body);
+    const { withdrawal, quote, user: fresh } = out.result;
+    const deposit = parseFloat(fresh.deposit_balance || 0);
+    const winnings = parseFloat(fresh.winnings_balance || 0);
     return res.json({
       success: true,
-      withdrawal_id: withdrawalId,
+      withdrawal_id: withdrawal._id,
       message: 'Withdrawal request submitted. Admin will process it shortly.',
-      wallet_balance: parseFloat(((user.deposit_balance || 0) + (user.winnings_balance || 0)).toFixed(2)),
-      deposit_balance: parseFloat((user.deposit_balance || 0).toFixed(2)),
-      winnings_balance: parseFloat((user.winnings_balance || 0).toFixed(2)),
-      usdt_address: pd.usdt_wallet_address,
-      usdt_network: pd.usdt_network || 'BEP20',
-      unread_notifications: unread,
+      wallet_balance: parseFloat((deposit + winnings).toFixed(2)),
+      deposit_balance: parseFloat(deposit.toFixed(2)),
+      winnings_balance: parseFloat(winnings.toFixed(2)),
+      usdt_address: withdrawal.usdt_wallet_address,
+      usdt_network: withdrawal.usdt_network || quote.network,
+      payout_amount: quote.payout_amount,
+      unread_notifications: await getUnreadCount(fresh._id),
     });
   } catch (err) {
-    await session.abortTransaction();
     logger.error('withdrawAmount error:', err.message);
-    res.status(500).json({ success: false, error: 'Failed to create withdrawal request: ' + err.message });
-  } finally {
-    session.endSession();
+    return res.status(500).json({ success: false, error: 'Failed to create withdrawal request: ' + err.message });
   }
 };
 

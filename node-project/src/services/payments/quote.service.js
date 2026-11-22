@@ -54,6 +54,33 @@ const depositFallback = (currency) => (currency === 'USDT'
   ? { min: config.PAYRAM.minDepositUsdt, max: config.PAYRAM.maxDepositUsdt }
   : undefined);
 
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: a money limit expressed in ProbCoins, rounded so it is exactly
+ * what the quotes accept: min → fewest ProbCoins whose value reaches the minimum (rounded up),
+ * max → most ProbCoins whose value stays within the maximum (rounded down). Same for deposits
+ * (ProbCoins = amount × rate) and withdrawals (payout = ProbCoins ÷ rate).
+ * @returns {{ min:number|null, max:number|null }}
+ */
+function probcoinRange(limits, rate) {
+  if (!limits || !(rate > 0)) return { min: null, max: null };
+  const R = toMicro(rate);
+  const min = toCents(Number(limits.min).toFixed(2));
+  const max = toCents(Number(limits.max).toFixed(2));
+  return {
+    min: min === null ? null : fromCents(ceilDiv(min * R, 1000000n)),
+    max: max === null ? null : fromCents((max * R) / 1000000n),
+  };
+}
+
+/** Adds min_probcoins / max_probcoins to a failed limit check (message unchanged unless given). */
+function withProbcoinLimits(result, limits, rate, message) {
+  const coins = probcoinRange(limits, rate);
+  return { ...result, ...(message ? { message } : {}), min_probcoins: coins.min, max_probcoins: coins.max };
+}
+
+const coinText = (n) => `${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })} ProbCoins`;
+const moneyText = (n, currency) => (currency === 'INR' ? `₹${n}` : `${n} ${currency}`);
+
 async function rateFor(currency) {
   const rates = await probcoin.getRates();
   const rate = rates[RATE_KEY[currency]];
@@ -88,8 +115,11 @@ async function depositQuote({ currency: rawCurrency, amount, probcoins } = {}) {
 
   const fallback = depositFallback(currency);
   const limit = await settings.checkTransactionAmount('deposit', fromCents(base).toFixed(2), currency, { fallback });
-  if (!limit.ok) return limit;
+  if (!limit.ok) {
+    return limit.min_amount !== undefined ? withProbcoinLimits(limit, { min: limit.min_amount, max: limit.max_amount }, rate) : limit;
+  }
   const limits = await settings.limitsFor('deposit', currency, { fallback });
+  const coinLimits = probcoinRange(limits, rate);
 
   const charge = await settings.getCharges(currency);
   const charges = ceilDiv(base * toCents(charge.percent.toFixed(2)), 10000n) + toCents(charge.fixed.toFixed(2));
@@ -109,6 +139,8 @@ async function depositQuote({ currency: rawCurrency, amount, probcoins } = {}) {
     total_payable: fromCents(total),
     min_amount: limits ? limits.min : null,
     max_amount: limits ? limits.max : null,
+    min_probcoins: coinLimits.min, // NEW IMPLEMENTATION — NODE.JS PROJECT: limits in ProbCoins
+    max_probcoins: coinLimits.max,
   };
 }
 
@@ -127,8 +159,19 @@ async function withdrawalQuote({ currency: rawCurrency, probcoins } = {}) {
   if (payout <= 0n) return fail(400, 'This amount is too small to withdraw.');
 
   const limit = await settings.checkTransactionAmount('withdrawal', fromCents(payout).toFixed(2), currency);
-  if (!limit.ok) return limit;
+  if (!limit.ok) {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the player enters ProbCoins, so say the limit in ProbCoins too
+    if (limit.min_amount === undefined) return limit;
+    const bounds = { min: limit.min_amount, max: limit.max_amount };
+    const coinLimits = probcoinRange(bounds, rate);
+    const below = fromCents(payout) < bounds.min;
+    const message = below
+      ? `Minimum withdrawal is ${coinText(coinLimits.min)} (${moneyText(bounds.min, currency)}).`
+      : `Maximum withdrawal is ${coinText(coinLimits.max)} (${moneyText(bounds.max, currency)}).`;
+    return withProbcoinLimits(limit, bounds, rate, message);
+  }
   const limits = await settings.limitsFor('withdrawal', currency);
+  const coinLimits = probcoinRange(limits, rate);
   return {
     ok: true,
     currency,
@@ -137,6 +180,8 @@ async function withdrawalQuote({ currency: rawCurrency, probcoins } = {}) {
     payout_amount: fromCents(payout),
     min_amount: limits ? limits.min : null,
     max_amount: limits ? limits.max : null,
+    min_probcoins: coinLimits.min, // NEW IMPLEMENTATION — NODE.JS PROJECT: limits in ProbCoins
+    max_probcoins: coinLimits.max,
     network: currency === 'USDT' ? await settings.getWithdrawalNetwork() : null,
   };
 }
@@ -153,6 +198,9 @@ async function paymentOptions() {
       settings.getCharges(currency),
     ]);
     const gatewayReady = currency === 'USDT' ? require('../payram/payram.client').isConfigured() : true;
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the same limits in ProbCoins, ready to show in the app
+    const depositCoins = probcoinRange(deposit, rate);
+    const withdrawalCoins = probcoinRange(withdrawal, rate);
     return {
       currency,
       gateway: GATEWAY[currency],
@@ -163,6 +211,10 @@ async function paymentOptions() {
       max_deposit: deposit ? deposit.max : null,
       min_withdrawal: withdrawal ? withdrawal.min : null,
       max_withdrawal: withdrawal ? withdrawal.max : null,
+      min_deposit_probcoins: depositCoins.min,
+      max_deposit_probcoins: depositCoins.max,
+      min_withdrawal_probcoins: withdrawalCoins.min,
+      max_withdrawal_probcoins: withdrawalCoins.max,
       charge_percent: charge.percent,
       charge_fixed: charge.fixed,
       charges_bearer: charge.bearer,
@@ -171,4 +223,4 @@ async function paymentOptions() {
   }));
 }
 
-module.exports = { depositQuote, withdrawalQuote, paymentOptions, normalizeCurrency, GATEWAY };
+module.exports = { depositQuote, withdrawalQuote, paymentOptions, normalizeCurrency, GATEWAY, probcoinRange };

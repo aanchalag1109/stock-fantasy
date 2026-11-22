@@ -33,6 +33,7 @@ const { dynamicPrizeRows } = require('../services/contest-automation/contest-sco
 const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION — NODE.JS PROJECT: market types
 // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits for the player's basket (client feedback)
 const sessionAssets = require('../services/session-assets.service');
+const withdrawals = require('../services/payments/withdrawal.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 
 /** 422 with the basket-limit errors (message = first one, errors = all), or null when the basket is fine. */
 function basketLimitError(res, session, assets) {
@@ -1384,58 +1385,24 @@ const depositAmount = async (req, res) => {
 
 const withdrawAmount = async (req, res) => {
   try {
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: enforce withdrawal limits (replaces the hard-coded 500 minimum).
-    const check = await checkTransactionAmount('withdrawal', req.body.amount);
-    if (!check.ok) return res.status(check.status).json(limitErrorBody(check));
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: same request as POST /withdraw/request (currency USDT): the
+    // ProbCoins are converted at the admin rate and checked against the USDT withdrawal limits (before,
+    // the ProbCoins were compared with the ₹ limits), and the payout is recorded for the admin.
     const user = await findByPublicId(User, req.body.user_id);
-    const amount = check.amount;
-    if (!user) return res.status(500).json({ success: false, error: 'Failed to create withdrawal request: The given data was invalid.' });
-    const address = user.payment_details && user.payment_details.usdt_wallet_address;
-    if (!address) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please add your USDT wallet address before withdrawing.',
-        payment_details_required: true,
-      });
-    }
-    if (num(user.winnings_balance) < amount) {
-      return res.status(400).json({
-        success: false,
-        error: 'Insufficient winnings balance. Only winnings can be withdrawn.',
-        winnings_balance: num(user.winnings_balance),
-      });
-    }
-    user.winnings_balance = num(user.winnings_balance) - amount;
-    await user.save();
-    const withdrawal = await WithdrawalRequest.create({
-      user_id: user._id,
-      amount,
-      status: 'pending',
-      message: req.body.message || null,
-      usdt_wallet_address: address,
-      usdt_network: (user.payment_details && user.payment_details.usdt_network) || 'TRC20',
-    });
-    await ensureOldId(WithdrawalRequest, withdrawal);
-    await Transaction.create({
-      user_id: user._id,
-      type: 'withdrawal',
-      amount,
-      status: 'pending',
-      transaction_id: `WD_${withdrawal._id}`, // NEW IMPLEMENTATION — NODE.JS PROJECT: links the ledger row to its request
-      description: `Withdrawal request #${publicId(withdrawal)} (USDT ${withdrawal.usdt_network || 'TRC20'})`,
-    });
-    // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
-    notify('withdrawal_submitted', { user, dedupeKey: `withdrawal_submitted:${withdrawal._id}`, params: { amount }, data: { screen: 'withdrawals', withdrawal_id: publicId(withdrawal) } });
+    const out = await withdrawals.legacyUsdtWithdrawal({ user, amount: req.body.amount, message: req.body.message || null });
+    if (!out.result) return res.status(out.status).json(out.body);
+    const { withdrawal, quote, user: fresh } = out.result;
     return res.json({
       success: true,
       withdrawal_id: publicId(withdrawal),
       message: 'Withdrawal request submitted. Admin will process it shortly.',
-      wallet_balance: walletOf(user),
-      deposit_balance: num(user.deposit_balance),
-      winnings_balance: num(user.winnings_balance),
-      usdt_address: address,
-      usdt_network: withdrawal.usdt_network || 'TRC20',
-      unread_notifications: await unreadCount(user),
+      wallet_balance: walletOf(fresh),
+      deposit_balance: num(fresh.deposit_balance),
+      winnings_balance: num(fresh.winnings_balance),
+      usdt_address: withdrawal.usdt_wallet_address,
+      usdt_network: withdrawal.usdt_network || quote.network,
+      payout_amount: quote.payout_amount, // NEW IMPLEMENTATION — NODE.JS PROJECT: USDT to be paid
+      unread_notifications: await unreadCount(fresh),
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: 'Failed to create withdrawal request: ' + err.message });

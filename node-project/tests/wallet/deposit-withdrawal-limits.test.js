@@ -37,6 +37,12 @@ const DEFAULT_SETTINGS = {
   max_deposit_amount: 50000,
   min_withdrawal_amount: 500,
   max_withdrawal_amount: 20000,
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: the older withdraw endpoints are USDT withdrawals (USDT limits,
+  // ProbCoins converted at 1 USDT = 100): 5–200 USDT = 500–20,000 ProbCoins.
+  usdt_min_withdrawal_amount: 5,
+  usdt_max_withdrawal_amount: 200,
+  usdt_min_deposit_amount: 1, // the admin form saves the USDT limits together
+  usdt_max_deposit_amount: 1000,
 };
 
 const state = {};
@@ -80,7 +86,14 @@ Setting.findOne = (filter) => query(filter.key === 'probcoin_conversion'
 
 User.findById = () => query(state.user);
 User.findOne = () => query(state.user);
-User.updateOne = async (filter, update) => { state.writes.push(['User.updateOne', update]); return {}; };
+User.updateOne = async (filter, update) => {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: the withdrawal debit is guarded (winnings_balance $gte amount)
+  const guard = filter && filter.winnings_balance && filter.winnings_balance.$gte;
+  if (guard !== undefined && !(Number(state.user.winnings_balance) >= guard)) return { matchedCount: 0, modifiedCount: 0 };
+  state.writes.push(['User.updateOne', update]);
+  Object.entries((update && update.$inc) || {}).forEach(([k, v]) => { state.user[k] = Math.round((Number(state.user[k] || 0) + v) * 100) / 100; });
+  return { matchedCount: 1, modifiedCount: 1 };
+};
 
 Transaction.create = async (doc) => { state.writes.push(['Transaction.create', doc]); return doc; };
 Payment.create = async (doc) => {
@@ -179,9 +192,14 @@ function errorText(res) {
   return res.body && typeof res.body === 'object' && Object.keys(res.body).length ? res.body.error : res.text;
 }
 
-function runEndpointSuite(kind, endpoints, limits) {
+function runEndpointSuite(kind, endpoints, limits, opts = {}) {
   const label = kind === 'deposit' ? 'Deposit' : 'Withdrawal';
   const { min, max } = limits;
+  const step = opts.step || 0.01;
+  const belowMessage = opts.belowMessage || `${label} amount must be at least ${min}.`;
+  const aboveMessage = opts.aboveMessage || `${label} amount cannot exceed ${max}.`;
+  const minKey = opts.minKey || `min_${kind}_amount`;
+  const maxKey = opts.maxKey || `max_${kind}_amount`;
 
   for (const ep of endpoints) {
     describe(`${ep.name} — ${kind} limits`, () => {
@@ -189,9 +207,9 @@ function runEndpointSuite(kind, endpoints, limits) {
 
       test('rejects an amount below the minimum without writing anything', async () => {
         const before = snapshotBalances();
-        const res = await ep.send((min - 0.01).toFixed(2));
+        const res = await ep.send((min - step).toFixed(2));
         assert.equal(res.status, 400);
-        assert.equal(errorText(res), `${label} amount must be at least ${min}.`);
+        assert.equal(errorText(res), belowMessage);
         assertNothingWritten(res, before);
       });
 
@@ -205,9 +223,9 @@ function runEndpointSuite(kind, endpoints, limits) {
 
       test('rejects an amount above the maximum without writing anything', async () => {
         const before = snapshotBalances();
-        const res = await ep.send((max + 0.01).toFixed(2));
+        const res = await ep.send((max + step).toFixed(2));
         assert.equal(res.status, 400);
-        assert.equal(errorText(res), `${label} amount cannot exceed ${max}.`);
+        assert.equal(errorText(res), aboveMessage);
         assertNothingWritten(res, before);
       });
 
@@ -222,7 +240,7 @@ function runEndpointSuite(kind, endpoints, limits) {
       });
 
       test('fails closed (503) when the limits are not configured', async () => {
-        delete state.settings[`max_${kind}_amount`];
+        delete state.settings[maxKey];
         const before = snapshotBalances();
         const res = await ep.send(min);
         assert.equal(res.status, 503);
@@ -240,8 +258,8 @@ function runEndpointSuite(kind, endpoints, limits) {
       test('fails closed (503) when stored limits are invalid (min > max, non-numeric)', async () => {
         for (const bad of [{ min: max + 1, max }, { min: 'abc', max }, { min: 0, max }, { min, max: -1 }]) {
           resetState();
-          state.settings[`min_${kind}_amount`] = bad.min;
-          state.settings[`max_${kind}_amount`] = bad.max;
+          state.settings[minKey] = opts.toSetting ? opts.toSetting(bad.min) : bad.min;
+          state.settings[maxKey] = opts.toSetting ? opts.toSetting(bad.max) : bad.max;
           const before = snapshotBalances();
           const res = await ep.send(min);
           assert.equal(res.status, 503, `settings ${JSON.stringify(bad)}`);
@@ -253,7 +271,16 @@ function runEndpointSuite(kind, endpoints, limits) {
 }
 
 runEndpointSuite('deposit', DEPOSIT_ENDPOINTS, { min: DEFAULT_SETTINGS.min_deposit_amount, max: DEFAULT_SETTINGS.max_deposit_amount });
-runEndpointSuite('withdrawal', WITHDRAWAL_ENDPOINTS, { min: DEFAULT_SETTINGS.min_withdrawal_amount, max: DEFAULT_SETTINGS.max_withdrawal_amount });
+// NEW IMPLEMENTATION — NODE.JS PROJECT: amounts are ProbCoins; limits are the USDT ones × the USDT rate (100).
+// Payouts round down, so 1 ProbCoin (0.01 USDT) is the smallest step that crosses a limit.
+runEndpointSuite('withdrawal', WITHDRAWAL_ENDPOINTS, { min: 500, max: 20000 }, {
+  step: 1,
+  minKey: 'usdt_min_withdrawal_amount',
+  maxKey: 'usdt_max_withdrawal_amount',
+  toSetting: (coins) => (typeof coins === 'number' ? coins / 100 : coins),
+  belowMessage: 'Minimum withdrawal is 500 ProbCoins (5 USDT).',
+  aboveMessage: 'Maximum withdrawal is 20,000 ProbCoins (200 USDT).',
+});
 
 // ─── Other business rules still apply ───────────────────────────────────────
 
@@ -301,14 +328,27 @@ describe('admin limit updates apply to the next request', () => {
     let res = await request(app).post('/api/v1/withdraw-amount').send({ user_id: '7', amount: 600 });
     assert.equal(res.status, 200);
 
-    const saved = await adminSave({ ...DEFAULT_SETTINGS, min_withdrawal_amount: '1000' });
+    const saved = await adminSave({ ...DEFAULT_SETTINGS, usdt_min_withdrawal_amount: '10' });
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
 
     resetState();
-    state.settings.min_withdrawal_amount = 1000; // resetState restores defaults; re-apply the saved value
+    state.settings.usdt_min_withdrawal_amount = 10; // resetState restores defaults; re-apply the saved value
     res = await request(app).post('/api/v1/withdraw-amount').send({ user_id: '7', amount: 600 });
     assert.equal(res.status, 400);
-    assert.equal(res.body.error, 'Withdrawal amount must be at least 1000.');
+    assert.equal(res.body.error, 'Minimum withdrawal is 1,000 ProbCoins (10 USDT).');
+    assert.equal(res.body.min_probcoins, 1000);
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: the older endpoints used to compare ProbCoins with the ₹ limits
+  test('the older withdraw endpoints convert ProbCoins and record the USDT payout', async () => {
+    const res = await request(app).post('/api/v1/withdraw-amount').send({ user_id: '7', amount: '2500' });
+    assert.equal(res.status, 200, res.text);
+    assert.equal(res.body.payout_amount, 25);
+    const created = state.writes.find(([name]) => name === 'WithdrawalRequest.create')[1];
+    assert.deepEqual([created.amount, created.currency, created.rate, created.payout_amount], [2500, 'USDT', 100, 25]);
+    // 200 ProbCoins = 2 USDT: below the 5 USDT minimum even though it is above "200" of anything
+    resetState();
+    assert.equal((await request(app).post('/api/v1/wallet/withdraw').send({ user_id: String(state.user._id), amount: 200 })).status, 400);
   });
 
   test('lowering the deposit maximum is enforced immediately on every deposit route', async () => {

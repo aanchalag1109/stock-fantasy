@@ -252,7 +252,30 @@ describe('Withdrawals in INR or USDT', () => {
     const usdt = (await request(app).post('/api/v1/withdraw/quote').send({ currency: 'USDT', probcoins: '5000' })).body.quote;
     assert.deepEqual({ payout: usdt.payout_amount, net: usdt.network }, { payout: 50, net: 'TRC20' });
     const tooSmall = await request(app).post('/api/v1/withdraw/quote').send({ currency: 'USDT', probcoins: '100' });
-    assert.match(tooSmall.body.message, /at least 5 USDT/);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the limit is told in ProbCoins (what the player enters) too
+    assert.equal(tooSmall.body.message, 'Minimum withdrawal is 500 ProbCoins (5 USDT).');
+    assert.deepEqual([tooSmall.body.min_amount, tooSmall.body.min_probcoins], [5, 500]);
+    assert.deepEqual([usdt.min_probcoins, usdt.max_probcoins, inr.min_probcoins, inr.max_probcoins], [500, 100000, 1000, 200000]);
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: limits in ProbCoins for the app (admin-set, never hard-coded)
+  test('payment options give every limit in ProbCoins too, and follow admin changes', async () => {
+    const opts = async () => Object.fromEntries((await request(app).get('/api/v1/payments/options')).body.currencies.map((c) => [c.currency, c]));
+    let o = await opts();
+    assert.equal(o.USDT.min_withdrawal_probcoins, o.USDT.min_withdrawal * o.USDT.rate);
+    assert.equal(o.INR.min_withdrawal_probcoins, o.INR.min_withdrawal * o.INR.rate);
+    assert.equal(o.INR.max_withdrawal_probcoins, o.INR.max_withdrawal * o.INR.rate);
+    assert.equal(o.INR.min_deposit_probcoins, o.INR.min_deposit * o.INR.rate);
+    db.settings.min_withdrawal_amount = '300';
+    o = await opts();
+    assert.equal(o.INR.min_withdrawal_probcoins, 300 * o.INR.rate, 'admin change shows up at once');
+  });
+
+  test('ProbCoin limits round to what the quote accepts (fractional rates)', () => {
+    const { probcoinRange } = require('../../src/services/payments/quote.service');
+    // 1 USDT = 83.333333 ProbCoins: min 5 USDT needs 416.67 coins (416.66 pays out only 4.99)
+    assert.deepEqual(probcoinRange({ min: 5, max: 10 }, 83.333333), { min: 416.67, max: 833.33 });
+    assert.deepEqual(probcoinRange(null, 10), { min: null, max: null });
   });
 
   test('INR withdrawal needs UPI or bank details; then deducts winnings and records the payout', async () => {
