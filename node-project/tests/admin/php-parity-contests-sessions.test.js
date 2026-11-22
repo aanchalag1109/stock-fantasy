@@ -567,7 +567,7 @@ describe('Session edit (PHP edit rules) and Refetch Missing Prices', () => {
     // Below the minimum: rejected, nothing changes.
     await admin.post(`/league_sessions/${s._id}?_method=PUT`).type('form').send(`${base}&asset_selection%5B%5D=7%3AAAA`);
     assert.equal(get('LeagueSession', s._id).status, 'draft');
-    assert.match((await admin.get(`/league_sessions/${s._id}/edit`)).text, /Large Cap Indian requires a minimum of 2 assets\. Currently selected: 1\./);
+    assert.match((await admin.get(`/league_sessions/${s._id}/edit`)).text, /Large Cap Indian: players must pick at least 2, so add at least 2 assets\. Currently added: 1\./);
     // Exactly what the picker posts (asset_selection[]=<categoryId>:<symbol>).
     await admin.post(`/league_sessions/${s._id}?_method=PUT`).type('form').send(`${base}&asset_selection%5B%5D=7%3AAAA&asset_selection%5B%5D=7%3ACCC`);
     const saved = get('LeagueSession', s._id);
@@ -618,7 +618,7 @@ describe('Session edit (PHP edit rules) and Refetch Missing Prices', () => {
       .field('session_categories[]', '22').field('session_categories[]', '23')
       .field('asset_selection[]', '22:RELIANCE').field('asset_selection[]', '22:AAPL');
     assert.equal(res.status, 422);
-    assert.match(res.text, /Large Cap Indian requires a minimum of 10 assets\. Currently selected: 1\./);
+    assert.match(res.text, /Large Cap Indian: players must pick at least 10, so add at least 10 assets\. Currently added: 1\./);
     assert.match(res.text, /Large Cap US is not a Indian Stock category\./, 'categories must match the market');
     assert.match(res.text, /AAPL is not an active Indian Stock asset\./, 'assets must match the market');
     assert.match(res.text, /value="Too Few"/, 'the form keeps the input');

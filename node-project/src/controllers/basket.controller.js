@@ -3,6 +3,9 @@
 const SavedBasket = require('../models/saved-basket.model');
 const LeagueSession = require('../models/league-session.model');
 const logger = require('../config/logger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits (client feedback)
+const { findByPublicId } = require('../helpers/mobile-compat');
+const sessionAssets = require('../services/session-assets.service');
 
 /**
  * POST /api/v1/baskets/save
@@ -26,6 +29,11 @@ const saveBasket = async (req, res) => {
         selectedMultipliers = multipliers;
       }
     }
+
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the basket must respect the session's per-category pick limits
+    const session = await findByPublicId(LeagueSession, session_id).catch(() => null);
+    const limitErrors = session ? sessionAssets.checkBasket(session, assets) : [];
+    if (limitErrors.length) return res.status(422).json({ success: false, message: limitErrors[0], errors: limitErrors });
 
     // Update existing basket
     if (basket_id) {

@@ -752,11 +752,12 @@ async function categoryInput(body, existing = null) {
   if (values.description.length > 500) errors.push('The description must not be longer than 500 characters.');
   const min = Number(values.min_assets);
   const minOk = /^\d+$/.test(values.min_assets) && min >= 1 && min <= MAX_MIN_ASSETS;
-  if (!minOk) errors.push(`Minimum number of assets must be a whole number from 1 to ${MAX_MIN_ASSETS}.`);
-  // NEW IMPLEMENTATION — NODE.JS PROJECT: maximum assets (client feedback)
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): min / max are how many stocks a player picks
+  // from this category in a basket (not a limit on the admin when creating a session).
+  if (!minOk) errors.push(`Minimum stocks a player must pick must be a whole number from 1 to ${MAX_MIN_ASSETS}.`);
   const max = Number(values.max_assets);
-  if (!/^\d+$/.test(values.max_assets) || max < 1 || max > MAX_MIN_ASSETS) errors.push(`Maximum number of assets must be a whole number from 1 to ${MAX_MIN_ASSETS}.`);
-  else if (minOk && max < min) errors.push('Maximum number of assets cannot be less than the minimum.');
+  if (!/^\d+$/.test(values.max_assets) || max < 1 || max > MAX_MIN_ASSETS) errors.push(`Maximum stocks a player can pick must be a whole number from 1 to ${MAX_MIN_ASSETS}.`);
+  else if (minOk && max < min) errors.push('Maximum stocks a player can pick cannot be less than the minimum.');
   if (!['active', 'inactive'].includes(values.status)) errors.push('The selected status is invalid.');
   if (!errors.length) {
     const duplicate = await MarketTypeCategory.findOne({

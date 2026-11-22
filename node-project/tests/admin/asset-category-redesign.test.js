@@ -155,11 +155,11 @@ describe('Market Categories: dynamic categories per market type', () => {
       [{ market: '', name: 'X', min_assets: '1', max_assets: '5' }, 'Choose a market type'],
       [{ market: 'uk', name: 'X', min_assets: '1', max_assets: '5' }, 'Choose a market type'],
       [{ market: 'us_stock', name: '', min_assets: '1', max_assets: '5' }, 'The category name is required.'],
-      [{ market: 'us_stock', name: 'X', min_assets: '0', max_assets: '5' }, 'Minimum number of assets must be a whole number from 1 to 500.'],
-      [{ market: 'us_stock', name: 'X', min_assets: '2.5', max_assets: '5' }, 'Minimum number of assets must be a whole number'],
-      [{ market: 'us_stock', name: 'X', min_assets: '1' }, 'Maximum number of assets must be a whole number from 1 to 500.'],
-      [{ market: 'us_stock', name: 'X', min_assets: '1', max_assets: '501' }, 'Maximum number of assets must be a whole number from 1 to 500.'],
-      [{ market: 'us_stock', name: 'X', min_assets: '6', max_assets: '5' }, 'Maximum number of assets cannot be less than the minimum.'],
+      [{ market: 'us_stock', name: 'X', min_assets: '0', max_assets: '5' }, 'Minimum stocks a player must pick must be a whole number from 1 to 500.'],
+      [{ market: 'us_stock', name: 'X', min_assets: '2.5', max_assets: '5' }, 'Minimum stocks a player must pick must be a whole number'],
+      [{ market: 'us_stock', name: 'X', min_assets: '1' }, 'Maximum stocks a player can pick must be a whole number from 1 to 500.'],
+      [{ market: 'us_stock', name: 'X', min_assets: '1', max_assets: '501' }, 'Maximum stocks a player can pick must be a whole number from 1 to 500.'],
+      [{ market: 'us_stock', name: 'X', min_assets: '6', max_assets: '5' }, 'Maximum stocks a player can pick cannot be less than the minimum.'],
       [{ market: 'indian_stock', name: 'large cap indian', min_assets: '3', max_assets: '5' }, 'A Indian Stock category named &#34;large cap indian&#34; already exists.'],
     ];
     for (const [body, message] of cases) {
@@ -205,24 +205,22 @@ describe('Session assignment rules', () => {
     assert.deepEqual(r.categories, [{ category_id: 22, category_name: 'Large Cap Indian', min_assets: 1, max_assets: null }]);
   });
 
-  // NEW IMPLEMENTATION — NODE.JS PROJECT: maximum assets per category
-  test('a category with a maximum rejects more assets; no maximum means no limit', async () => {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the maximum is how many stocks a PLAYER may
+  // pick — the admin may add more assets than that; the limits are kept on the session for the app.
+  test('the maximum does not limit the admin; it is kept on the session as the player limit', async () => {
     const cat = db.MarketTypeCategory[0];
     cat.min_assets = 1;
     cat.max_assets = 1;
     db.Asset.push({ _id: new ObjectId(), symbol: 'TCS', name: 'TCS', market: 'indian_stock', status: 'active' });
-    let r = await run({ 22: ['RELIANCE', 'TCS'] });
-    assert.ok(r.errors.includes('Large Cap Indian allows a maximum of 1 assets. Currently selected: 2.'), JSON.stringify(r.errors));
-    r = await run({ 22: ['RELIANCE'] });
+    const r = await run({ 22: ['RELIANCE', 'TCS'] });
     assert.deepEqual(r.errors, []);
+    assert.equal(r.rows.length, 2);
     assert.deepEqual(r.categories, [{ category_id: 22, category_name: 'Large Cap Indian', min_assets: 1, max_assets: 1 }]);
-    cat.max_assets = null;
-    assert.ok(!(await run({ 22: ['RELIANCE', 'TCS'] })).errors.some((e) => /maximum/.test(e)), 'no limit when unset');
   });
 
   test('the client example message, and a chosen category with no assets fails its minimum', async () => {
     const r = await run({}, ['22']);
-    assert.deepEqual(r.errors, ['Large Cap Indian requires a minimum of 10 assets. Currently selected: 0.']);
+    assert.deepEqual(r.errors, ['Large Cap Indian: players must pick at least 10, so add at least 10 assets. Currently added: 0.']);
     assert.deepEqual((await run({}, [])).errors, ['Select at least one market category for this session.']);
     assert.deepEqual((await run({ 22: ['RELIANCE'] }, null, 'stock')).errors, ['Choose a market type: Indian Stock, US Stock or Crypto.']);
   });

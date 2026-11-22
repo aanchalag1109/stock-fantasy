@@ -31,6 +31,15 @@ const contestJoin = require('../services/contest-join.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: live prize rows use the payout's own calculation
 const { dynamicPrizeRows } = require('../services/contest-automation/contest-scoring');
 const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION — NODE.JS PROJECT: market types
+// NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits for the player's basket (client feedback)
+const sessionAssets = require('../services/session-assets.service');
+
+/** 422 with the basket-limit errors (message = first one, errors = all), or null when the basket is fine. */
+function basketLimitError(res, session, assets) {
+  const errors = session ? sessionAssets.checkBasket(session, assets) : [];
+  if (!errors.length) return null;
+  return res.status(422).json({ success: false, message: errors[0], error: errors[0], errors });
+}
 
 function authUser(user) {
   return {
@@ -268,7 +277,18 @@ function sessionRow(session, extra = {}) {
     // NEW IMPLEMENTATION — NODE.JS PROJECT: market (indian_stock | us_stock | crypto) + chosen categories
     market: sessionMarkets.marketOfSession(session),
     market_label: sessionMarkets.labelOf(sessionMarkets.marketOfSession(session)),
-    categories: (session.categories || []).map((c) => ({ id: c.category_id, name: c.category_name, min_assets: c.min_assets, max_assets: c.max_assets ?? null })),
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): min/max are how many stocks the player picks
+    // from the category (min_select / max_select; min_assets / max_assets kept for older app builds);
+    // pool_count = stocks available in it.
+    categories: sessionAssets.basketLimits(session).map((c) => ({
+      id: c.category_id,
+      name: c.category_name,
+      min_assets: c.min_select,
+      max_assets: c.max_select,
+      min_select: c.min_select,
+      max_select: c.max_select,
+      pool_count: c.pool_count,
+    })),
     max_stocks: session.max_stocks,
     user_joining_start_time: sqlDate(session.user_joining_start_time),
     active: session.active == null ? true : !!session.active,
@@ -939,6 +959,8 @@ const saveBasket = async (req, res) => {
     if (!user || !session) return res.status(400).json({ success: false, message: 'User ID and Session ID required' });
     const multipliers = selectedMultipliers(req.body.multipliers || []);
     const assets = basketAssets(req.body.assets);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits (client feedback)
+    if (basketLimitError(res, session, assets)) return undefined;
     if (req.body.basket_id) {
       const basket = await findByPublicId(SavedBasket, req.body.basket_id);
       if (!basket || !keysOf(user).map(String).includes(String(basket.user_id))) {
@@ -976,6 +998,8 @@ const storeStandalone = async (req, res) => {
     if (!user || !Array.isArray(req.body.assets) || !req.body.assets.length) {
       return res.status(500).json({ success: false, error: 'Failed to save standalone basket' });
     }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits (client feedback)
+    if (basketLimitError(res, session, basketAssets(req.body.assets))) return undefined;
     const serial = session ? await nextSerial(user, session) : 'B1';
     const basket = await SavedBasket.create({
       user_id: user._id,
@@ -1100,7 +1124,10 @@ const editBasket = async (req, res) => {
     if (!user || !basket || !keysOf(user).map(String).includes(String(basket.user_id))) {
       return res.status(404).json({ success: false, message: 'Basket not found or unauthorized' });
     }
-    basket.assets = basketAssets(req.body.assets);
+    const assets = basketAssets(req.body.assets);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits of the basket's session (client feedback)
+    if (basketLimitError(res, await findByPublicId(LeagueSession, basket.session_id), assets)) return undefined;
+    basket.assets = assets;
     basket.multipliers = selectedMultipliers(req.body.multipliers || []);
     await basket.save();
     return res.json({ success: true, message: 'Basket updated successfully' });

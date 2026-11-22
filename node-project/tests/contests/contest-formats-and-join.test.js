@@ -221,6 +221,22 @@ describe('contest join', () => {
     assert.deepEqual([db.ContestEntry[0].fee_from_winnings, db.ContestEntry[0].fee_from_deposit], [0, 100]);
   });
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits (client feedback)
+  test('a basket outside the session\'s pick limits cannot join and is not charged', async () => {
+    session.assets = [{ category_id: 1, category_name: 'Large Cap', asset_symbol: 'TCS' }, { category_id: 1, category_name: 'Large Cap', asset_symbol: 'INFY' }];
+    session.categories = [{ category_id: 1, category_name: 'Large Cap', min_assets: 1, max_assets: 1 }];
+    const p = player(500);
+    p.basket.serial_no = 'B1';
+    p.basket.assets = [{ symbol: 'TCS', name: 'TCS' }, { symbol: 'INFY', name: 'INFY' }];
+    const res = await join(p);
+    assert.equal(res.body.success_count || 0, 0);
+    assert.match(JSON.stringify(res.body), /Basket B1: Large Cap: pick at most 1 stock \(you picked 2\)\./);
+    assert.equal(userOf(p).deposit_balance, 500);
+    assert.equal(db.ContestEntry.length, 0);
+    p.basket.assets = [{ symbol: 'TCS', name: 'TCS' }];
+    assert.equal((await join(p)).body.success_count, 1);
+  });
+
   test("the app's entry_fee cannot lower the price", async () => {
     const p = player(500);
     const res = await join(p, { clientEntryFee: 0 });

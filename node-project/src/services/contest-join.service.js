@@ -33,6 +33,7 @@ const Transaction = require('../models/transaction.model');
 const User = require('../models/user.model');
 const logger = require('../config/logger');
 const { createNextIfFull } = require('./contest-auto-create.service');
+const sessionAssets = require('./session-assets.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT: basket pick limits
 const {
   keysOf, publicId, num, round2, walletOf, findByPublicId, ensureOldId, unreadCount,
 } = require('../helpers/mobile-compat');
@@ -162,6 +163,13 @@ async function joinContest({ userRef, contestRef, basketIds, clientEntryFee }) {
       }
       if (keysOf(basket).some((key) => joinedBaskets.has(String(key)))) {
         errors.push(`Basket ${basketId}: Already joined`);
+        continue;
+      }
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits (client feedback) — a basket saved
+      // before the limits, or by an older app, can't join until it is edited to fit them. Nothing charged.
+      const limitErrors = sessionAssets.checkBasket(session, basket.assets || []);
+      if (limitErrors.length) {
+        errors.push(`Basket ${basket.serial_no || basketId}: ${limitErrors.join(' ')}`);
         continue;
       }
       const charge = await debit(user._id, fee);

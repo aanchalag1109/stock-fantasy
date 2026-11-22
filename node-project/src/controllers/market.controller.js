@@ -27,11 +27,15 @@ const getAssets = async (req, res) => {
 
 /**
  * GET /api/v1/market/categories?market=… — each with market, min_assets, max_assets (null = no limit) and description.
+ * min_select / max_select: how many stocks a player picks from the category (same values).
  */
 const getCategories = async (req, res) => {
   try {
     const filter = req.query.market ? { market: { $in: markets.marketsFor(req.query.market) } } : {};
-    const categories = await MarketTypeCategory.find(filter).sort({ name: 1 }).lean();
+    const rows = await MarketTypeCategory.find(filter).sort({ name: 1 }).lean();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): min/max = stocks a player picks from the category
+    const sessionAssets = require('../services/session-assets.service');
+    const categories = rows.map((c) => ({ ...c, min_select: sessionAssets.minOf(c), max_select: sessionAssets.maxOf(c) }));
     return res.json({ success: true, categories });
   } catch (err) {
     logger.error('getCategories error:', err.message);

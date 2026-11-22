@@ -121,7 +121,7 @@ describe('Saved Templates → Edit', () => {
   test('the same rules as a session: minimum, market, one category per asset; nothing saved on error', async () => {
     const admin = await login();
     const cases = [
-      ['&asset_selection%5B%5D=22%3ARELIANCE', /Large Cap Indian requires a minimum of 2 assets\. Currently selected: 1\./],
+      ['&asset_selection%5B%5D=22%3ARELIANCE', /Large Cap Indian: players must pick at least 2, so add at least 2 assets\. Currently added: 1\./],
       ['&asset_selection%5B%5D=23%3AAAPL', /Large Cap US is not a Indian Stock category\./],
       ['&asset_selection%5B%5D=22%3ARELIANCE&asset_selection%5B%5D=22%3ATCS&asset_selection%5B%5D=19%3ARELIANCE', /RELIANCE is assigned to both Large Cap Indian and Mid Cap Indian/],
       ['', /Select at least one market category/],

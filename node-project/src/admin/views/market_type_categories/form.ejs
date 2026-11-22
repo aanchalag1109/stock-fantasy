@@ -1,7 +1,7 @@
 <%#
   Market category create / edit.
   NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): dynamic categories — Market Type
-  (Indian Stock / US Stock / Crypto), Category Name, Description, Minimum Number of Assets, Status.
+  (Indian Stock / US Stock / Crypto), Category Name, Description, Min / Max stocks a player picks, Status.
   Assets are not attached here; they're assigned to categories when a session is created.
 %>
 <%
@@ -74,14 +74,15 @@
                                 <input type="text" name="name" id="name" class="form-control form-control-lg" value="<%= values.name %>" maxlength="100" placeholder="e.g., Large Cap Indian, Top Cryptocurrencies" required>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="min_assets" class="form-label fw-semibold">Minimum Assets <span class="text-danger">*</span></label>
+                                <%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): limits apply to the player's basket %>
+                                <label for="min_assets" class="form-label fw-semibold">Min Stocks a Player Must Pick <span class="text-danger">*</span></label>
                                 <input type="number" name="min_assets" id="min_assets" class="form-control form-control-lg" value="<%= values.min_assets %>" min="1" max="500" step="1" required>
-                                <div class="form-text">Fewest assets a session must assign to this category.</div>
+                                <div class="form-text">Fewest stocks a player must pick from this category in a basket. A session using this category needs at least this many assets in it.</div>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="max_assets" class="form-label fw-semibold">Maximum Assets <span class="text-danger">*</span></label>
+                                <label for="max_assets" class="form-label fw-semibold">Max Stocks a Player Can Pick <span class="text-danger">*</span></label>
                                 <input type="number" name="max_assets" id="max_assets" class="form-control form-control-lg" value="<%= values.max_assets %>" min="1" max="500" step="1" required>
-                                <div class="form-text">Most assets a session may assign to this category (at least the minimum).</div>
+                                <div class="form-text">Most stocks a player can pick from this category (at least the minimum). The app disables the rest once this is reached.</div>
                             </div>
                             <div class="col-12 mb-4">
                                 <label for="description" class="form-label fw-semibold">Description</label>

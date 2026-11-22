@@ -166,8 +166,8 @@
                 <h6 class="text-primary mb-3">
                     <i class="bi bi-tag me-1"></i><%= group.name %>
                     <span class="badge bg-primary ms-2"><%= group.assets.length %> assets</span>
-                    <% if (group.min_assets) { %><span class="badge bg-light text-dark border ms-1">Min <%= group.min_assets %></span><% } %>
-                    <% if (group.max_assets) { %><span class="badge bg-light text-dark border ms-1">Max <%= group.max_assets %></span><% } %>
+                    <%# NEW IMPLEMENTATION — NODE.JS PROJECT: limits are how many stocks a player picks (client feedback) %>
+                    <% if (group.min_assets) { %><span class="badge bg-light text-dark border ms-1" title="Stocks a player picks from this category">Players pick <%= group.max_assets && group.max_assets !== group.min_assets ? group.min_assets + '–' + group.max_assets : (group.max_assets ? group.min_assets : group.min_assets + '+') %></span><% } %>
                 </h6>
                 <div class="row">
                     <% group.assets.forEach(asset => { %>

@@ -11,8 +11,14 @@
  *            - every asset is an active asset of that market;
  *            - an asset sits in only one category of the session (it can be in a
  *              different category in another session);
- *            - each category gets at least its configured minimum number of assets, and no
- *              more than its maximum (when one is set).
+ *            - each category gets at least its minimum number of assets, so players can pick
+ *              that many from it.
+ *
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): a category's min_assets / max_assets are
+ * how many stocks a PLAYER must / may pick from it in a basket — not a limit on the admin. The admin
+ * may add any number of assets to a category (at least the minimum); the session keeps a snapshot of
+ * the limits in `categories`, and checkBasket() enforces them when a basket is saved, edited or
+ * joined to a contest.
  * Origin: Newly implemented in node-project; not directly converted
  *          from the original PHP implementation.
  *
@@ -154,11 +160,71 @@ async function buildAssignment({ market, selection, categoryIds }) {
     });
     const min = minOf(category);
     const max = maxOf(category);
-    if (count < min) errors.push(`${category.name} requires a minimum of ${min} assets. Currently selected: ${count}.`);
-    if (max != null && count > max) errors.push(`${category.name} allows a maximum of ${max} assets. Currently selected: ${count}.`);
+    // Players must pick at least `min` from this category, so the session needs at least that many.
+    // There is no upper limit for the admin: max is how many a player may pick.
+    if (count < min) errors.push(`${category.name}: players must pick at least ${min}, so add at least ${min} assets. Currently added: ${count}.`);
     snapshot.push({ category_id: categoryRef(category), category_name: category.name, min_assets: min, max_assets: max });
   });
   return { errors: [...new Set(errors)], rows, categories: snapshot };
+}
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits of a session, for the app.
+ * [{ category_id, category_name, min_select, max_select (null = no limit), pool_count }]
+ * Empty for sessions created before categories had limits (no `categories` snapshot).
+ */
+function basketLimits(session) {
+  const doc = session && typeof session.toObject === 'function' ? session.toObject() : session;
+  const pool = new Map();
+  ((doc && doc.assets) || []).forEach((a) => {
+    if (a && a.category_id != null && a.asset_symbol) pool.set(String(a.category_id), (pool.get(String(a.category_id)) || 0) + 1);
+  });
+  return ((doc && doc.categories) || []).map((c) => {
+    const min = Math.max(1, parseInt(c.min_assets, 10) || 1);
+    const max = parseInt(c.max_assets, 10);
+    return {
+      category_id: c.category_id,
+      category_name: c.category_name,
+      min_select: min,
+      max_select: Number.isFinite(max) && max >= 1 ? Math.max(max, min) : null,
+      pool_count: pool.get(String(c.category_id)) || 0,
+    };
+  });
+}
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: checks a player's basket against the session's per-category
+ * limits. `assets` are the basket assets ({ symbol | asset_symbol | name }). Every picked stock must be
+ * one of the session's assets; each category needs between min_select and max_select picks.
+ * Sessions without limits (created before this) are not checked.
+ * @returns {string[]} player-facing errors (empty = OK)
+ */
+function checkBasket(session, assets) {
+  const limits = basketLimits(session);
+  if (!limits.length) return [];
+  const doc = typeof session.toObject === 'function' ? session.toObject() : session;
+  const categoryOf = new Map();
+  (doc.assets || []).forEach((a) => {
+    if (a && a.asset_symbol) categoryOf.set(String(a.asset_symbol).trim().toUpperCase(), String(a.category_id));
+  });
+  const errors = [];
+  const counts = new Map();
+  const seen = new Set();
+  (Array.isArray(assets) ? assets : []).forEach((asset) => {
+    const raw = asset && (asset.asset_symbol || asset.symbol || asset.name);
+    const key = String(raw || '').trim().toUpperCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    const category = categoryOf.get(key);
+    if (category == null) { errors.push(`${raw} is not part of this session.`); return; }
+    counts.set(category, (counts.get(category) || 0) + 1);
+  });
+  limits.forEach((l) => {
+    const n = counts.get(String(l.category_id)) || 0;
+    if (n < l.min_select) errors.push(`${l.category_name}: pick at least ${l.min_select} stock${l.min_select === 1 ? '' : 's'} (you picked ${n}).`);
+    else if (l.max_select != null && n > l.max_select) errors.push(`${l.category_name}: pick at most ${l.max_select} stock${l.max_select === 1 ? '' : 's'} (you picked ${n}).`);
+  });
+  return errors;
 }
 
 /** Template assets_data ({ "<category name>": [{ asset_symbol, asset_name, category_name, category_id }] }). */
@@ -185,4 +251,5 @@ function selectionOf(doc) {
 
 module.exports = {
   activeCategories, activeAssets, parseSelection, buildAssignment, templateAssetsData, selectionOf, categoryRef, minOf, maxOf,
+  basketLimits, checkBasket,
 };

@@ -7,6 +7,9 @@
  *          the admin ticks the categories the session uses and assigns assets to each.
  *          Shows the count against each category's minimum and blocks saving until every
  *          chosen category has its minimum. An asset can be in only one category per session.
+ *          NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): a category's min / max are how many
+ *          stocks a PLAYER picks from it; the admin may add any number of assets (at least the minimum,
+ *          so players can reach it). The max is shown for information only.
  * Origin: Newly implemented in node-project; not directly converted from the PHP implementation.
  *
  * Posts (via hidden inputs it keeps in sync):
@@ -78,8 +81,7 @@
         var id = String(c.id);
         if (!state.chosen.has(id)) return;
         var n = countOf(id);
-        if (n < c.min_assets) errors.push(c.name + ' requires a minimum of ' + c.min_assets + ' assets. Currently selected: ' + n + '.');
-        if (c.max_assets != null && n > c.max_assets) errors.push(c.name + ' allows a maximum of ' + c.max_assets + ' assets. Currently selected: ' + n + '.');
+        if (n < c.min_assets) errors.push(c.name + ': players must pick at least ' + c.min_assets + ', so add at least ' + c.min_assets + ' assets. Currently added: ' + n + '.');
       });
       return errors;
     }
@@ -103,14 +105,11 @@
       });
       if (!state.assets.length) return '<div class="text-muted small py-2">No active assets for this market. Add them in Assets first.</div>';
       if (!rows.length) return '<div class="text-muted small py-2">No assets match “' + esc(state.search[id]) + '”.</div>';
-      // NEW IMPLEMENTATION — NODE.JS PROJECT: at the maximum, the rest can't be ticked
-      var full = cat.max_assets != null && countOf(id) >= cat.max_assets;
-      return (full ? '<div class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i>Maximum of ' + cat.max_assets + ' reached — untick one to choose another.</div>' : '')
-        + '<div class="row g-1">' + rows.map(function (a) {
+      return '<div class="row g-1">' + rows.map(function (a) {
         var key = a.symbol.toUpperCase();
         var owner = state.assignment.get(key);
         var mine = owner === id;
-        var taken = (owner && !mine) || (!owner && full);
+        var taken = owner && !mine;
         var boxId = 'sap_' + id + '_' + key.replace(/[^A-Z0-9]/g, '_');
         return '<div class="col-md-4 col-sm-6"><div class="form-check border rounded px-4 py-1 ' + (mine ? 'border-success bg-success bg-opacity-10' : '') + (taken ? ' opacity-50' : '') + '">'
           + '<input class="form-check-input" type="checkbox" id="' + esc(boxId) + '" data-sap-asset="' + esc(key) + '" data-sap-cat="' + esc(id) + '"'
@@ -146,21 +145,20 @@
         var id = String(c.id);
         var on = state.chosen.has(id);
         var n = countOf(id);
-        var over = c.max_assets != null && n > c.max_assets;
-        var ok = n >= c.min_assets && !over;
+        var ok = n >= c.min_assets;
         var open = on && state.open.has(id);
         html += '<div class="card mb-2 ' + (on ? (ok ? 'border-success' : 'border-danger') : '') + '">'
           + '<div class="card-body py-2">'
           + '<div class="d-flex flex-wrap align-items-center gap-2">'
           + '<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" id="sapc_' + esc(id) + '" data-sap-use="' + esc(id) + '"' + (on ? ' checked' : '') + (readOnly ? ' disabled' : '') + '>'
           + '<label class="form-check-label fw-semibold" for="sapc_' + esc(id) + '">' + esc(c.name) + '</label></div>'
-          + '<span class="badge bg-light text-dark border">Min ' + c.min_assets + '</span>'
-          + (c.max_assets != null ? '<span class="badge bg-light text-dark border">Max ' + c.max_assets + '</span>' : '')
+          + '<span class="badge bg-light text-dark border" title="How many stocks a player picks from this category">Players pick '
+          + (c.max_assets != null ? (c.max_assets === c.min_assets ? c.min_assets : c.min_assets + '–' + c.max_assets) : c.min_assets + '+') + '</span>'
           + (on ? '<span class="badge ' + (ok ? 'bg-success' : 'bg-danger') + '" data-sap-count="' + esc(id) + '">' + n + ' selected</span>' : '')
           + (on ? '<button type="button" class="btn btn-sm btn-outline-primary ms-auto" data-sap-toggle="' + esc(id) + '">' + (open ? 'Hide assets' : 'Assign assets') + '</button>' : '')
           + '</div>'
           + (c.description ? '<div class="small text-muted mt-1">' + esc(c.description) + '</div>' : '')
-          + (on && !ok ? '<div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>' + esc(c.name) + (over ? ' allows a maximum of ' + c.max_assets : ' requires a minimum of ' + c.min_assets) + ' assets. Currently selected: ' + n + '.</div>' : '')
+          + (on && !ok ? '<div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Players must pick at least ' + c.min_assets + ' from ' + esc(c.name) + ' — add at least ' + c.min_assets + ' assets. Currently added: ' + n + '.</div>' : '')
           + (open ? '<div class="mt-2"><input type="search" class="form-control form-control-sm mb-2" placeholder="Search symbol or name…" data-sap-search="' + esc(id) + '" value="' + esc(state.search[id] || '') + '">'
             + '<div style="max-height:320px;overflow-y:auto" data-sap-list="' + esc(id) + '">' + assetRows(c) + '</div></div>' : '')
           + '</div></div>';
@@ -173,7 +171,7 @@
     function summary(errors) {
       var total = 0;
       state.assignment.forEach(function (catId) { if (state.chosen.has(catId)) total += 1; });
-      if (!errors.length) return '<div class="alert alert-success py-2 mb-0"><i class="bi bi-check-circle me-1"></i>' + state.chosen.size + ' categor' + (state.chosen.size === 1 ? 'y' : 'ies') + ', ' + total + ' assets — all limits met.</div>';
+      if (!errors.length) return '<div class="alert alert-success py-2 mb-0"><i class="bi bi-check-circle me-1"></i>' + state.chosen.size + ' categor' + (state.chosen.size === 1 ? 'y' : 'ies') + ', ' + total + ' assets — every category has enough assets for players to pick from.</div>';
       return '<div class="alert alert-danger py-2 mb-0"><ul class="mb-0 ps-3">' + errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>';
     }
 
