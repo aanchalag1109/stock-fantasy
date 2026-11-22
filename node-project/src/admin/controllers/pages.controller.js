@@ -21,6 +21,7 @@ const formats = require('../../services/contest-formats'); // NEW IMPLEMENTATION
 const markets = require('../../services/markets');
 const sessionAssets = require('../../services/session-assets.service');
 const { ensureOldId } = require('../../helpers/mobile-compat');
+const { imageChange } = require('../helpers/session-image-upload'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 // PHP PARITY: Payment Orders actions
 const paymentOrders = require('../../services/payment-orders.service');
 // PHP PARITY: Performance "How It Works" diagnostics
@@ -64,6 +65,8 @@ const templates = {
       market,
       market_type: markets.typeOf(market),
       max_stocks: parseInt(req.body.max_stocks, 10) || 5,
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: replace or remove the template image (client feedback)
+      ...imageChange(req),
     };
     // Only replace the assets once the picker has loaded (assets_loaded=1), so a page error can
     // never wipe them.

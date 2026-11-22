@@ -11,7 +11,8 @@ const {
 
 router.get('/templates', requireAdmin, requirePermission('templates.view'), templates.index);
 router.get('/templates/:id/edit', requireAdmin, requirePermission('templates.edit'), templates.edit);
-router.put('/templates/:id', requireAdmin, requirePermission('templates.edit'), templates.update);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: the template edit form can change or remove the image
+router.put('/templates/:id', requireAdmin, requirePermission('templates.edit'), require('../helpers/session-image-upload').withSessionImage((req) => `/templates/${req.params.id}/edit`), templates.update);
 router.delete('/templates/:id', requireAdmin, requirePermission('templates.delete'), templates.destroy);
 
 router.get('/performance', requireAdmin, requirePermission('performance.view'), performance.index);

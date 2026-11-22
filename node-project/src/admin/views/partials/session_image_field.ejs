@@ -1,0 +1,51 @@
+<%#
+  NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): change or remove the image on Edit Session /
+  Edit Template. Posts session_image (file) and remove_image=1. Needs enctype="multipart/form-data".
+  Locals: imageUrl (current image path or URL, may be empty)
+%>
+<%
+  const current = typeof imageUrl !== 'undefined' && imageUrl ? String(imageUrl) : '';
+  const src = /^https?:\/\//i.test(current) ? current : (current ? '/' + current.replace(/^\/+/, '') : '');
+%>
+<div class="mb-3">
+    <label for="session_image" class="form-label fw-semibold">Session Image</label>
+    <div class="d-flex flex-wrap align-items-start gap-3">
+        <div id="session-image-preview" class="border rounded bg-white d-flex align-items-center justify-content-center" style="width:140px;height:100px;overflow:hidden">
+            <% if (src) { %>
+            <img src="<%= src %>" alt="Current session image" style="max-width:100%;max-height:100%;object-fit:contain">
+            <% } else { %>
+            <span class="text-muted small">No image</span>
+            <% } %>
+        </div>
+        <div class="flex-grow-1" style="min-width:220px">
+            <input type="file" name="session_image" id="session_image" class="form-control" accept=".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif">
+            <div class="form-text">Choose a new image to replace the current one (jpeg, png, jpg or gif, max 2 MB). Leave empty to keep it.</div>
+            <% if (src) { %>
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="remove_image" id="remove_image" value="1">
+                <label class="form-check-label small" for="remove_image">Remove the current image</label>
+            </div>
+            <% } %>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var input = document.getElementById('session_image');
+    var preview = document.getElementById('session-image-preview');
+    var remove = document.getElementById('remove_image');
+    if (!input || !preview) return;
+    input.addEventListener('change', function () {
+        var file = input.files && input.files[0];
+        if (!file) return;
+        if (file.size > 2048 * 1024) { alert('The session image must not be greater than 2048 kilobytes.'); input.value = ''; return; }
+        var img = document.createElement('img');
+        img.alt = 'New session image';
+        img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain';
+        img.src = URL.createObjectURL(file);
+        preview.innerHTML = '';
+        preview.appendChild(img);
+        if (remove) remove.checked = false;
+    });
+})();
+</script>

@@ -540,6 +540,24 @@ describe('Session edit (PHP edit rules) and Refetch Missing Prices', () => {
     assert.equal(get('LeagueSession', s._id).name, 'Morning League', 'name is locked for upcoming sessions (PHP)');
   });
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the image can be changed or removed when editing
+  test('the session image can be replaced or removed from Edit Session, even when live', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const { UPLOAD_DIR } = require('../../src/admin/helpers/session-image-upload');
+    const s = addSession({ image_url: 'uploads/sessions/old.png' });
+    const admin = await login();
+    assert.match((await admin.get(`/league_sessions/${s._id}/edit`)).text, /<img src="\/uploads\/sessions\/old\.png"/);
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+    await admin.post(`/league_sessions/${s._id}?_method=PUT`).field('name', 'Morning League').field('active', '1')
+      .attach('session_image', png, { filename: 'logo.png', contentType: 'image/png' });
+    const saved = get('LeagueSession', s._id).image_url;
+    assert.match(saved, /^uploads\/sessions\/\d+_logo\.png$/);
+    fs.rmSync(path.join(UPLOAD_DIR, path.basename(saved)), { force: true });
+    await admin.post(`/league_sessions/${s._id}?_method=PUT`).field('name', 'Morning League').field('active', '1').field('remove_image', '1');
+    assert.equal(get('LeagueSession', s._id).image_url, null);
+  });
+
   test('upcoming: end must be after start; live: times locked, rename allowed', async () => {
     const up = addSession({ status: 'upcoming' });
     const admin = await login();

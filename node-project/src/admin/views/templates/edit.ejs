@@ -8,7 +8,7 @@
     <h1 class="h3 mb-4">Edit Template</h1>
     <div class="card shadow-sm">
         <div class="card-body">
-            <form method="POST" action="/templates/<%= template._id %>?_method=PUT" id="templateForm">
+            <form method="POST" action="/templates/<%= template._id %>?_method=PUT" id="templateForm" enctype="multipart/form-data">
                 <input type="hidden" name="assets_loaded" id="assets_loaded" value="0">
                 <div class="row g-3">
                     <div class="col-md-6">
@@ -30,6 +30,9 @@
                     <div class="col-md-6">
                         <label class="form-label" for="max_stocks">Max Assets</label>
                         <input class="form-control" type="number" id="max_stocks" name="max_stocks" value="<%= template.max_stocks || 5 %>">
+                    </div>
+                    <div class="col-12">
+                        <%- include('../partials/session_image_field', { imageUrl: template.image_url }) %>
                     </div>
                 </div>
 

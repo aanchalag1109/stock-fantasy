@@ -14,6 +14,7 @@ const { keysOf, ensureOldId } = require('../../helpers/mobile-compat');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: market types + session-level category ↔ asset assignment
 const markets = require('../../services/markets');
 const sessionAssets = require('../../services/session-assets.service');
+const { imageChange } = require('../helpers/session-image-upload'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 
 const LIST_STATUSES = ['live', 'upcoming', 'completed', 'draft', 'cancelled'];
 
@@ -446,6 +447,9 @@ const update = async (req, res) => {
       set.market = market;
       set.market_type = markets.typeOf(market);
     }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the image can be replaced or removed in any editable status
+    // (it is only shown in the app; it never affects contests).
+    Object.assign(set, imageChange(req));
     const wantsActive = allowed.has('active') && body.active !== undefined ? isTrue(body.active) : null;
     const deactivatingLive = session.status === 'live' && wantsActive === false && session.active !== false;
     if (wantsActive !== null && !deactivatingLive) set.active = wantsActive;

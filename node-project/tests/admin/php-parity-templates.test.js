@@ -154,3 +154,70 @@ describe('Saved Templates → Edit', () => {
     assert.deepEqual(byCategory.body.map((a) => a.symbol).sort(), ['RELIANCE', 'TCS', 'ZOMATO'], 'old per-category URL returns the category market\'s assets');
   });
 });
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): change or remove the image on Edit Template /
+// Edit Session (shared upload helper, admin/helpers/session-image-upload.js).
+describe('Edit Template / Edit Session → image', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { UPLOAD_DIR } = require('../../src/admin/helpers/session-image-upload');
+  const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex');
+  const created = [];
+  const cleanup = () => created.splice(0).forEach((f) => fs.rmSync(path.join(UPLOAD_DIR, path.basename(f)), { force: true }));
+  beforeEach(() => { reset(); cleanup(); });
+
+  const multipart = (agent, fields, file) => {
+    let req = agent.post(`/templates/${ids.template}?_method=PUT`);
+    Object.entries(fields).forEach(([k, v]) => { req = req.field(k, v); });
+    return file ? req.attach('session_image', file.buffer, { filename: file.name, contentType: file.type }) : req;
+  };
+  const base = { template_name: 'Morning', name: 'Nifty 50', market: 'indian_stock', max_stocks: '5' };
+
+  test('the edit page shows the current image with replace and remove options', async () => {
+    tpl().image_url = 'uploads/sessions/old.png';
+    const page = await (await login()).get(`/templates/${ids.template}/edit`);
+    assert.match(page.text, /enctype="multipart\/form-data"/);
+    assert.match(page.text, /<img src="\/uploads\/sessions\/old\.png"/);
+    assert.match(page.text, /name="session_image"/);
+    assert.match(page.text, /name="remove_image"/);
+  });
+
+  test('uploading a new image replaces it; the assets are kept', async () => {
+    tpl().image_url = 'uploads/sessions/old.png';
+    const res = await multipart(await login(), base, { buffer: PNG, name: 'nifty.png', type: 'image/png' });
+    assert.equal(res.headers.location, '/templates');
+    assert.match(tpl().image_url, /^uploads\/sessions\/\d+_nifty\.png$/);
+    created.push(tpl().image_url);
+    assert.ok(fs.existsSync(path.join(UPLOAD_DIR, path.basename(tpl().image_url))));
+    assert.equal(tpl().assets_data['Large Cap Indian'].length, 1, 'assets untouched');
+    cleanup();
+  });
+
+  test('remove clears the image; saving without a file keeps it', async () => {
+    tpl().image_url = 'uploads/sessions/old.png';
+    const admin = await login();
+    await multipart(admin, base);
+    assert.equal(tpl().image_url, 'uploads/sessions/old.png');
+    await multipart(admin, { ...base, remove_image: '1' });
+    assert.equal(tpl().image_url, null);
+  });
+
+  test('a file that is not an image is refused and nothing changes', async () => {
+    tpl().image_url = 'uploads/sessions/old.png';
+    const admin = await login();
+    const res = await multipart(admin, { ...base, template_name: 'Changed' }, { buffer: Buffer.from('x'), name: 'evil.php', type: 'application/x-php' });
+    assert.equal(res.headers.location, `/templates/${ids.template}/edit`);
+    assert.match((await admin.get(`/templates/${ids.template}/edit`)).text, /The session image must be a file of type: jpeg, png, jpg, gif\./);
+    assert.equal(tpl().image_url, 'uploads/sessions/old.png');
+    assert.equal(tpl().template_name, 'Morning');
+  });
+
+  test('Edit Session uses the same upload (route is guarded and goes back to the edit page)', () => {
+    const router = require('../../src/admin/routes/sessions.routes');
+    const layer = router.stack.find((l) => l.route && l.route.path === '/:id' && l.route.methods.put);
+    assert.equal(layer.route.stack.length, 4, 'requireAdmin, permission, image upload, update');
+    const view = fs.readFileSync(path.join(__dirname, '../../src/admin/views/sessions/edit.ejs'), 'utf8');
+    assert.match(view, /enctype="multipart\/form-data"/);
+    assert.match(view, /include\('\.\.\/partials\/session_image_field', \{ imageUrl: session\.image_url \}\)/);
+  });
+});
