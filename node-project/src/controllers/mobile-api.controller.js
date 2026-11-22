@@ -433,10 +433,20 @@ async function sessionAssetRows(sessionId) {
   const session = await findByPublicId(LeagueSession, sessionId);
   if (!session) return null;
   const symbols = [...new Set((session.assets || []).map((asset) => asset.asset_symbol).filter(Boolean))];
-  const assets = symbols.length ? await Asset.find({ symbol: { $in: symbols } }).select('symbol name type').lean() : [];
-  const bySymbol = new Map(assets.map((asset) => [asset.symbol, asset]));
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: image_url (client feedback). A symbol listed in two markets
+  // resolves to the asset of the session's own market.
+  const assets = symbols.length ? await Asset.find({ symbol: { $in: symbols } }).select('symbol name type image_url market').lean() : [];
+  const market = sessionMarkets.marketOfSession(session);
+  const bySymbol = new Map();
+  assets.forEach((asset) => {
+    const current = bySymbol.get(asset.symbol);
+    if (!current || (current.market !== market && asset.market === market)) bySymbol.set(asset.symbol, asset);
+  });
   return { session, bySymbol };
 }
+
+/** NEW IMPLEMENTATION — NODE.JS PROJECT: absolute image URL of a session asset, or null. */
+const assetImage = (info) => (info && info.image_url ? absoluteUrl(info.image_url) : null);
 
 const getSessionAssets = async (req, res) => {
   try {
@@ -450,6 +460,8 @@ const getSessionAssets = async (req, res) => {
           name: info.name || asset.asset_name || asset.asset_symbol,
           type: info.type || null,
           category_name: asset.category_name || null,
+          category_id: asset.category_id != null ? asset.category_id : null, // NEW IMPLEMENTATION — NODE.JS PROJECT
+          image_url: assetImage(info), // NEW IMPLEMENTATION — NODE.JS PROJECT: asset logo (null when none)
         };
       }),
     });
@@ -460,14 +472,16 @@ const getSessionAssets = async (req, res) => {
 
 const getSessionAssetsGrouped = async (req, res) => {
   try {
-    const session = await findByPublicId(LeagueSession, req.params.sessionId);
-    if (!session) return res.json({ assets: [] });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: same asset lookup as above, for image_url
+    const loaded = await sessionAssetRows(req.params.sessionId);
+    if (!loaded) return res.json({ assets: [] });
     return res.json({
-      assets: (session.assets || []).map((asset) => ({
+      assets: (loaded.session.assets || []).map((asset) => ({
         symbol: asset.asset_symbol,
         name: asset.asset_symbol,
         category_name: asset.category_name,
         category_id: asset.category_id,
+        image_url: assetImage(loaded.bySymbol.get(asset.asset_symbol)),
       })),
     });
   } catch (err) {
