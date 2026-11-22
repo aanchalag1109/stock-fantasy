@@ -18,9 +18,10 @@
  *   - joining closes when the session starts (status upcoming and start_time in the future);
  *   - joins to one contest are serialised with a short lease on the contest
  *     (join_lock_at), so spots can never be overbooked — an H2H never gets 3 players;
- *   - the wallet is debited with one atomic, conditional update (deposit first, then
- *     winnings), so two requests can never spend the same balance; a failed entry is
- *     refunded exactly as it was charged.
+ *   - the wallet is debited with one atomic, conditional update (winnings first, then
+ *     deposit — client feedback; it was deposit first), so two requests can never spend the
+ *     same balance; a failed entry is refunded exactly as it was charged, and the split is
+ *     saved on the entry and its transaction so a cancellation refunds each wallet its part.
  * MongoDB here is not a replica set, so multi-document transactions are not used.
  */
 
@@ -62,25 +63,27 @@ const releaseLock = (contestId, token) => Contest.updateOne({ _id: contestId, jo
 const ifNull0 = (field) => ({ $ifNull: [field, 0] });
 
 /**
- * Atomically takes `fee` from the user's deposit balance first, then winnings.
+ * Atomically takes `fee` from the user's winnings balance first, then deposit.
+ * (NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — was deposit first, then winnings.)
  * Returns { fromDeposit, fromWinnings } or null when the balance is too low.
  */
 async function debit(userId, fee) {
   if (!(fee > 0)) return { fromDeposit: 0, fromWinnings: 0 };
-  const deposit = { $max: [0, ifNull0('$deposit_balance')] };
+  const winnings = { $max: [0, ifNull0('$winnings_balance')] };
   const before = await User.findOneAndUpdate(
-    { _id: userId, $expr: { $gte: [{ $add: [deposit, ifNull0('$winnings_balance')] }, fee] } },
+    { _id: userId, $expr: { $gte: [{ $add: [winnings, ifNull0('$deposit_balance')] }, fee] } },
     [{
       $set: {
-        deposit_balance: { $max: [0, { $subtract: [deposit, fee] }] },
-        winnings_balance: { $subtract: [ifNull0('$winnings_balance'), { $max: [0, { $subtract: [fee, deposit] }] }] },
+        // take only what is there: a negative winnings balance stays as it is (never reset to 0)
+        winnings_balance: { $subtract: [ifNull0('$winnings_balance'), { $min: [winnings, fee] }] },
+        deposit_balance: { $subtract: [ifNull0('$deposit_balance'), { $max: [0, { $subtract: [fee, winnings] }] }] },
       },
     }],
     { new: false, updatePipeline: true },
   ).lean();
   if (!before) return null;
-  const fromDeposit = Math.min(Math.max(0, num(before.deposit_balance)), fee);
-  return { fromDeposit: round2(fromDeposit), fromWinnings: round2(fee - fromDeposit) };
+  const fromWinnings = Math.min(Math.max(0, num(before.winnings_balance)), fee);
+  return { fromWinnings: round2(fromWinnings), fromDeposit: round2(fee - fromWinnings) };
 }
 
 const refund = (userId, charge) => (charge.fromDeposit || charge.fromWinnings
@@ -174,6 +177,9 @@ async function joinContest({ userRef, contestRef, basketIds, clientEntryFee }) {
           basket_id: basket._id,
           session_id: plain.league_session_id,
           total_score: 0,
+          // NEW IMPLEMENTATION — NODE.JS PROJECT: refunds go back to the wallet each part came from
+          fee_from_winnings: charge.fromWinnings,
+          fee_from_deposit: charge.fromDeposit,
         });
       } catch (err) {
         await refund(user._id, charge);
@@ -190,6 +196,8 @@ async function joinContest({ userRef, contestRef, basketIds, clientEntryFee }) {
         status: 'success',
         transaction_id: `ENTRY_${publicId(plain)}_${publicId(entry)}_${Math.floor(Date.now() / 1000)}_${Math.floor(1000 + Math.random() * 9000)}`,
         description: `Entry fee for Contest #${publicId(plain)}, entry ${publicId(entry)}`,
+        from_winnings: charge.fromWinnings,
+        from_deposit: charge.fromDeposit,
       });
       keysOf(basket).forEach((key) => joinedBaskets.add(String(key)));
       successCount += 1;

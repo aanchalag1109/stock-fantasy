@@ -44,6 +44,12 @@ Banner.create = async (doc) => { db.banners.push(doc); return doc; };
 let lastCronQuery;
 CronLog.find = () => { lastCronQuery = q(db.cron); return lastCronQuery; };
 CronLog.countDocuments = async () => db.cron.length;
+// The full-profile sections (contests, ledger, deposits…) are covered in admin-user-profile.test.js.
+require('../../src/services/admin-user-profile.service').loadProfile = async () => ({
+  contests: { rows: [], stats: { played: 0, won: 0, prize_total: 0, best_rank: null } },
+  finance: null, transactions: null, inrOrders: null, usdtDeposits: null, withdrawals: null, kyc: null, tickets: null,
+  masked: { aadhar: null, pan: null },
+});
 
 const HASH = bcrypt.hashSync('secret123', 4);
 const ids = {};

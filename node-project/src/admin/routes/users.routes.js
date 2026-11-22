@@ -5,6 +5,8 @@ const { requireAdmin } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permission');
 const ctrl = require('../controllers/users.controller');
 router.get('/', requireAdmin, requirePermission('users.view'), ctrl.index);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: CSV export of the filtered players (before /:id)
+router.get('/export', requireAdmin, requirePermission('users.export'), ctrl.exportCsv);
 router.get('/create', requireAdmin, requirePermission('users.create'), ctrl.create);
 router.post('/', requireAdmin, requirePermission('users.create'), ctrl.store);
 router.post('/bulk-delete', requireAdmin, requirePermission('users.delete'), ctrl.bulkDelete);

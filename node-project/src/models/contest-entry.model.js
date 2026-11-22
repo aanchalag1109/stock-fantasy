@@ -11,6 +11,10 @@ const contestEntrySchema = new mongoose.Schema({
   starting_prices: { type: mongoose.Schema.Types.Mixed, default: null },
   ending_prices: { type: mongoose.Schema.Types.Mixed, default: null },
   prize_amount: { type: Number, default: 0 },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: which wallet paid the entry fee, so a cancellation refunds
+  // each part to the wallet it came from. null on entries made before this was recorded.
+  fee_from_winnings: { type: Number, default: null },
+  fee_from_deposit: { type: Number, default: null },
   results_calculated_at: { type: Date, default: null },
   contest_started_at: { type: Date, default: null },
   contest_ended_at: { type: Date, default: null }

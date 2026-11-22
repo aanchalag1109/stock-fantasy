@@ -10,6 +10,28 @@
     const get = (kind) => (parts.find((part) => part.type === kind) || {}).value || '';
     return get('month') + ' ' + get('day') + ', ' + get('year');
   }
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: full player profile (client feedback)
+  function when(date) {
+    if (!date) return '—';
+    return new Date(date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+  function badge(status) {
+    const colors = {
+      success: 'success', approved: 'success', credited: 'success', closed: 'secondary', completed: 'success',
+      pending: 'warning', open: 'info', review: 'warning', processing: 'warning', partially_paid: 'warning',
+      failed: 'danger', rejected: 'danger', cancelled: 'secondary',
+    };
+    const label = status === 'approved' ? 'accepted' : status;
+    return '<span class="badge bg-' + (colors[status] || 'secondary') + '">' + String(label || '—').replace(/_/g, ' ') + '</span>';
+  }
+  const ORDER_STATUS = { 0: 'pending', 1: 'success', 3: 'review', 4: 'processing', '-1': 'failed' };
+  const p = profile || {};
+  const cs = (p.contests && p.contests.stats) || {};
+  const f = p.finance;
+  const pd = user.payment_details || {};
+  const userQuery = user.old_id != null ? 'user_id=' + user.old_id : 'search=' + encodeURIComponent(user.mobile || user.email || '');
+  const avatar = user.profile_image ? (/^https?:\/\//.test(user.profile_image) ? user.profile_image : '/' + String(user.profile_image).replace(/^\/+/, '')) : null;
+  const kycColor = { approved: 'success', rejected: 'danger', pending: 'warning' }[user.kyc_status] || 'secondary';
 %>
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -32,27 +54,38 @@
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header text-white text-center" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">
                     <div class="py-3">
-                        <div class="bg-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                        <div class="bg-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3 overflow-hidden" style="width: 80px; height: 80px;">
+                            <% if (avatar) { %>
+                            <img src="<%= avatar %>" alt="" style="width:80px;height:80px;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('i'),{className:'bi bi-person-fill text-info',style:'font-size:2.5rem'}))">
+                            <% } else { %>
                             <i class="bi bi-<%= user.is_admin ? 'shield-fill text-warning' : 'person-fill text-info' %>" style="font-size: 2.5rem;"></i>
+                            <% } %>
                         </div>
                         <h5 class="mb-1"><%= user.name %></h5>
                         <p class="mb-0 opacity-75"><%= user.email || '' %></p>
-                        <% if (user.is_admin) { %><span class="badge bg-warning text-dark mt-2">Administrator</span><% } %>
+                        <div class="mt-2 d-flex justify-content-center gap-1 flex-wrap">
+                            <% if (user.is_admin) { %><span class="badge bg-warning text-dark">Administrator</span><% } %>
+                            <% if (user.is_test_user) { %><span class="badge bg-dark">Bot / Test user</span><% } %>
+                            <span class="badge bg-<%= kycColor %>">KYC: <%= user.kyc_status || 'pending' %></span>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
                     <div class="row text-center">
-                        <div class="col-6">
-                            <div class="border-end">
-                                <div class="h4 text-success mb-0">₹<%= money(user.deposit_balance) %></div>
-                                <small class="text-muted">Wallet Balance</small>
-                            </div>
+                        <div class="col-4">
+                            <div class="h5 text-success mb-0"><%= money(user.deposit_balance) %></div>
+                            <small class="text-muted">Deposit</small>
                         </div>
-                        <div class="col-6">
-                            <div class="h4 text-info mb-0">₹<%= money(user.winnings_balance) %></div>
-                            <small class="text-muted">Total Winnings</small>
+                        <div class="col-4 border-start border-end">
+                            <div class="h5 text-info mb-0"><%= money(user.winnings_balance) %></div>
+                            <small class="text-muted">Winnings</small>
+                        </div>
+                        <div class="col-4">
+                            <div class="h5 text-primary mb-0"><%= money(Number(user.deposit_balance || 0) + Number(user.winnings_balance || 0)) %></div>
+                            <small class="text-muted">Total</small>
                         </div>
                     </div>
+                    <div class="text-center small text-muted mt-2">Balances in ProbCoins</div>
                 </div>
             </div>
 
@@ -86,87 +119,333 @@
             </div>
             <% } %>
 
-            <div class="card shadow-sm border-0">
+            <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header bg-light">
                     <h6 class="mb-0"><i class="bi bi-graph-up text-primary me-2"></i>Quick Stats</h6>
                 </div>
                 <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-muted">User ID</span>
-                        <span class="fw-bold">#<%= user.old_id || user._id %></span>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-muted">Member Since</span>
-                        <span class="fw-bold"><%= day(user.created_at) %></span>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="text-muted">Last Active</span>
-                        <span class="fw-bold"><%= day(user.updated_at) %></span>
-                    </div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">User ID</span><span class="fw-bold">#<%= user.old_id || user._id %></span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Member Since</span><span class="fw-bold"><%= day(user.created_at) %></span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Last Updated</span><span class="fw-bold"><%= day(user.updated_at) %></span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Contests Played</span><span class="fw-bold"><%= cs.played || 0 %></span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Prizes Won</span><span class="fw-bold"><%= cs.won || 0 %> (<%= money(cs.prize_total) %>)</span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Best Rank</span><span class="fw-bold"><%= cs.best_rank ? '#' + cs.best_rank : '—' %></span></div>
+                    <div class="d-flex justify-content-between"><span class="text-muted">Portfolio Score</span><span class="fw-bold"><%= Number(user.portfolio_score || 0).toFixed(2) %></span></div>
                 </div>
             </div>
+
+            <% if (f) { %>
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-cash-stack text-success me-2"></i>Lifetime Money Flow</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Total Deposited</span><span class="fw-bold text-success"><%= money(f.deposited.total) %> <small class="text-muted">(<%= f.deposited.count %>)</small></span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Contest Entry Fees</span><span class="fw-bold"><%= money(f.entryFees.total) %> <small class="text-muted">(<%= f.entryFees.count %>)</small></span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Winnings Credited</span><span class="fw-bold text-info"><%= money(f.winnings.total) %></span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Referral Bonus</span><span class="fw-bold"><%= money(f.referrals.total) %></span></div>
+                    <div class="d-flex justify-content-between mb-2"><span class="text-muted">Withdrawn (accepted)</span><span class="fw-bold text-danger"><%= money(f.withdrawn.total) %> <small class="text-muted">(<%= f.withdrawn.count %>)</small></span></div>
+                    <div class="d-flex justify-content-between"><span class="text-muted">Pending Withdrawals</span><span class="fw-bold text-warning"><%= money(f.pendingWd.total) %> <small class="text-muted">(<%= f.pendingWd.count %>)</small></span></div>
+                </div>
+            </div>
+            <% } %>
         </div>
 
         <div class="col-lg-8">
-            <div class="card shadow-sm border-0 mb-4">
-                <div class="card-header text-white" style="background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);">
-                    <h5 class="mb-0"><i class="bi bi-person-gear me-2"></i>Account Information</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted">Full Name</label>
-                                <div class="form-control-plaintext fw-bold"><%= user.name %></div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted">Email Address</label>
-                                <div class="form-control-plaintext"><%= user.email || '' %></div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted">Phone Number</label>
-                                <div class="form-control-plaintext"><%= user.mobile || 'Not provided' %></div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted">Date of Birth</label>
-                                <%# PHP PARITY: real profile values instead of fixed placeholders %>
-                                <div class="form-control-plaintext"><%= user.date_of_birth && !isNaN(new Date(user.date_of_birth)) ? new Date(user.date_of_birth).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric', timeZone: 'UTC' }) : 'Not provided' %></div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted">Gender</label>
-                                <div class="form-control-plaintext"><%= user.gender ? String(user.gender).charAt(0).toUpperCase() + String(user.gender).slice(1) : 'Not specified' %></div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted">Address</label>
-                                <div class="form-control-plaintext"><%= user.address || 'Not provided' %></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <ul class="nav nav-tabs mb-3" role="tablist">
+                <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-profile" type="button">Profile</button></li>
+                <% if (p.transactions) { %><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-transactions" type="button">Transactions</button></li><% } %>
+                <% if (p.inrOrders || p.usdtDeposits) { %><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-deposits" type="button">Deposits</button></li><% } %>
+                <% if (p.withdrawals) { %><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-withdrawals" type="button">Withdrawals</button></li><% } %>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-contests" type="button">Contests</button></li>
+                <% if (p.kyc) { %><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-kyc" type="button">KYC</button></li><% } %>
+                <% if (p.tickets) { %><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tickets" type="button">Tickets</button></li><% } %>
+            </ul>
 
-            <div class="card shadow-sm border-0 mb-4">
-                <div class="card-header text-white" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
-                    <h5 class="mb-0"><i class="bi bi-wallet2 me-2"></i>Financial Information</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="text-center p-3 bg-light rounded">
-                                <div class="h4 text-success mb-1">₹<%= money(user.deposit_balance) %></div>
-                                <small class="text-muted">Current Balance</small>
-                            </div>
+            <div class="tab-content">
+                <!-- Profile -->
+                <div class="tab-pane fade show active" id="tab-profile">
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header text-white" style="background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);">
+                            <h5 class="mb-0"><i class="bi bi-person-gear me-2"></i>Account Information</h5>
                         </div>
-                        <div class="col-md-6">
-                            <div class="text-center p-3 bg-light rounded">
-                                <div class="h4 text-info mb-1">₹<%= money(user.winnings_balance) %></div>
-                                <small class="text-muted">Total Winnings</small>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-muted">Full Name</label>
+                                        <div class="form-control-plaintext fw-bold"><%= user.name %></div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-muted">Email Address</label>
+                                        <div class="form-control-plaintext"><%= user.email || 'Not provided' %>
+                                            <% if (user.email) { %><span class="badge bg-<%= user.email_verified_at ? 'success' : 'secondary' %> ms-1"><%= user.email_verified_at ? 'verified' : 'not verified' %></span><% } %>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-muted">Phone Number</label>
+                                        <div class="form-control-plaintext"><%= user.mobile || 'Not provided' %></div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-muted">Account Type</label>
+                                        <div class="form-control-plaintext"><%= user.is_admin ? 'Administrator' : (user.is_test_user ? 'Bot / Test user' : 'Player') %></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-muted">Date of Birth</label>
+                                        <%# PHP PARITY: real profile values instead of fixed placeholders %>
+                                        <div class="form-control-plaintext"><%= user.date_of_birth && !isNaN(new Date(user.date_of_birth)) ? new Date(user.date_of_birth).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric', timeZone: 'UTC' }) : 'Not provided' %></div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-muted">Age</label>
+                                        <div class="form-control-plaintext"><%= user.age || 'Not provided' %></div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-muted">Gender</label>
+                                        <div class="form-control-plaintext"><%= user.gender ? String(user.gender).charAt(0).toUpperCase() + String(user.gender).slice(1) : 'Not specified' %></div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-muted">Address</label>
+                                        <div class="form-control-plaintext"><%= user.address || 'Not provided' %></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row border-top pt-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold text-muted">App Notifications</label>
+                                    <div class="form-control-plaintext"><%= user.fcm_token ? 'Device registered' : 'No device registered' %></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold text-muted">Notification Preferences</label>
+                                    <div class="form-control-plaintext">
+                                        <% const prefs = user.notification_preferences || {}; ['session_reminders', 'winnings', 'transactions', 'account'].forEach((k) => { %>
+                                        <span class="badge bg-<%= prefs[k] === false ? 'secondary' : 'success' %> me-1"><%= k.replace('_', ' ') %>: <%= prefs[k] === false ? 'off' : 'on' %></span>
+                                        <% }) %>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    <% if (can('withdrawals.view')) { %>
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header text-white" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+                            <h5 class="mb-0"><i class="bi bi-bank me-2"></i>Payout Details</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-muted">INR</h6>
+                                    <div class="mb-1"><span class="text-muted small">UPI ID:</span> <%= pd.upi_id || '—' %></div>
+                                    <div class="mb-1"><span class="text-muted small">Account holder:</span> <%= pd.account_holder_name || '—' %></div>
+                                    <div class="mb-1"><span class="text-muted small">Account no.:</span> <span class="font-monospace"><%= pd.account_number || '—' %></span></div>
+                                    <div class="mb-1"><span class="text-muted small">IFSC:</span> <span class="font-monospace"><%= pd.ifsc_code || '—' %></span></div>
+                                    <div class="mb-1"><span class="text-muted small">Bank:</span> <%= pd.bank_name || '—' %></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-muted">USDT</h6>
+                                    <div class="mb-1"><span class="text-muted small">Network:</span> <%= pd.usdt_wallet_address ? (pd.usdt_network || 'BEP20') : '—' %></div>
+                                    <div class="mb-1 text-break"><span class="text-muted small">Wallet:</span> <span class="font-monospace small"><%= pd.usdt_wallet_address || '—' %></span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
                 </div>
+
+                <!-- Transactions -->
+                <% if (p.transactions) { %>
+                <div class="tab-pane fade" id="tab-transactions">
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">Latest <%= p.transactions.length %> transactions</h6>
+                            <a href="/transactions?<%= userQuery %>" class="btn btn-sm btn-outline-primary">View all</a>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light"><tr><th>Date</th><th>Type</th><th class="text-end">ProbCoins</th><th>Status</th><th>Details</th></tr></thead>
+                                <tbody>
+                                    <% if (!p.transactions.length) { %><tr><td colspan="5" class="text-center text-muted py-3">No transactions.</td></tr><% } %>
+                                    <% p.transactions.forEach((t) => { %>
+                                    <tr>
+                                        <td class="small text-nowrap"><a href="/transactions/<%= t._id %>"><%= when(t.created_at) %></a></td>
+                                        <td><span class="badge bg-light text-dark"><%= String(t.type || '').replace(/_/g, ' ') %></span></td>
+                                        <td class="text-end fw-semibold <%= ['withdrawal', 'contest_entry'].includes(t.type) ? 'text-danger' : 'text-success' %>"><%= ['withdrawal', 'contest_entry'].includes(t.type) ? '-' : '+' %><%= money(t.amount) %></td>
+                                        <td><%- badge(t.status) %></td>
+                                        <td class="small text-muted"><%= t.description || t.payment_method || '' %><% if (t.currency_amount != null && t.currency) { %> · <%= t.currency === 'INR' ? '₹' + money(t.currency_amount) : money(t.currency_amount) + ' ' + t.currency %><% } %></td>
+                                    </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <% } %>
+
+                <!-- Deposits -->
+                <% if (p.inrOrders || p.usdtDeposits) { %>
+                <div class="tab-pane fade" id="tab-deposits">
+                    <% if (p.inrOrders) { %>
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">INR deposit orders (LG Pay)</h6>
+                            <a href="/payments?search=<%= encodeURIComponent(user.mobile || user.email || '') %>" class="btn btn-sm btn-outline-primary">Open in Deposit Orders</a>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light"><tr><th>Date</th><th>Order</th><th class="text-end">₹ Paid</th><th class="text-end">ProbCoins</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    <% if (!p.inrOrders.length) { %><tr><td colspan="5" class="text-center text-muted py-3">No INR orders.</td></tr><% } %>
+                                    <% p.inrOrders.forEach((o) => { %>
+                                    <tr>
+                                        <td class="small text-nowrap"><%= when(o.created_at) %></td>
+                                        <td class="font-monospace small"><a href="/payments?search=<%= encodeURIComponent(o.order_id) %>"><%= o.order_id %></a></td>
+                                        <td class="text-end">₹<%= money(o.amount) %></td>
+                                        <td class="text-end"><%= money(o.probcoins != null ? o.probcoins : o.amount) %></td>
+                                        <td><%- badge(ORDER_STATUS[o.payment_status] || 'pending') %><% if (o.review_reason) { %><div class="small text-muted"><%= o.review_reason %></div><% } %></td>
+                                    </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <% } %>
+                    <% if (p.usdtDeposits) { %>
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header bg-light"><h6 class="mb-0">USDT deposits (PayRam)</h6></div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light"><tr><th>Date</th><th>Deposit</th><th class="text-end">USDT</th><th class="text-end">ProbCoins</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    <% if (!p.usdtDeposits.length) { %><tr><td colspan="5" class="text-center text-muted py-3">No USDT deposits.</td></tr><% } %>
+                                    <% p.usdtDeposits.forEach((d) => { %>
+                                    <tr>
+                                        <td class="small text-nowrap"><%= when(d.created_at) %></td>
+                                        <td class="font-monospace small"><a href="/usdt-deposits/<%= d.deposit_id %>"><%= d.deposit_id %></a></td>
+                                        <td class="text-end"><%= money(d.amount) %></td>
+                                        <td class="text-end"><%= money(d.probcoins) %></td>
+                                        <td><%- badge(d.status) %></td>
+                                    </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <% } %>
+                </div>
+                <% } %>
+
+                <!-- Withdrawals -->
+                <% if (p.withdrawals) { %>
+                <div class="tab-pane fade" id="tab-withdrawals">
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header bg-light"><h6 class="mb-0">Withdrawal requests</h6></div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light"><tr><th>Date</th><th class="text-end">ProbCoins</th><th>Payout</th><th>Status</th><th>Reference / note</th></tr></thead>
+                                <tbody>
+                                    <% if (!p.withdrawals.length) { %><tr><td colspan="5" class="text-center text-muted py-3">No withdrawals.</td></tr><% } %>
+                                    <% p.withdrawals.forEach((w) => { const cur = w.currency || 'USDT'; %>
+                                    <tr>
+                                        <td class="small text-nowrap"><a href="/withdrawal_requests/<%= w._id %>"><%= when(w.created_at) %></a></td>
+                                        <td class="text-end fw-semibold"><%= money(w.amount) %></td>
+                                        <td><%= w.payout_amount != null ? (cur === 'INR' ? '₹' + money(w.payout_amount) : money(w.payout_amount) + ' USDT') : cur %></td>
+                                        <td><%- badge(w.status) %></td>
+                                        <td class="small text-muted"><span class="font-monospace"><%= w.payout_reference || '' %></span><%= w.admin_message ? ' ' + w.admin_message : '' %></td>
+                                    </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <% } %>
+
+                <!-- Contests -->
+                <div class="tab-pane fade" id="tab-contests">
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header bg-light"><h6 class="mb-0">Latest <%= (p.contests && p.contests.rows.length) || 0 %> of <%= cs.played || 0 %> contest entries</h6></div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light"><tr><th>Joined</th><th>Contest</th><th>Session</th><th class="text-end">Entry fee</th><th class="text-end">Score</th><th class="text-end">Rank</th><th class="text-end">Prize</th></tr></thead>
+                                <tbody>
+                                    <% const entries = (p.contests && p.contests.rows) || []; %>
+                                    <% if (!entries.length) { %><tr><td colspan="7" class="text-center text-muted py-3">No contests joined.</td></tr><% } %>
+                                    <% entries.forEach((e) => { %>
+                                    <tr>
+                                        <td class="small text-nowrap"><%= when(e.created_at) %></td>
+                                        <td><% if (e.contest && can('contests.view')) { %><a href="/contests/<%= e.contest._id %>"><%= e.contest.name || 'Contest' %></a><% } else { %><%= (e.contest && e.contest.name) || 'Contest #' + e.contest_id %><% } %>
+                                            <% if (e.contest && e.contest.status) { %><span class="badge bg-light text-dark ms-1"><%= e.contest.status %></span><% } %></td>
+                                        <td class="small"><%= (e.session && e.session.name) || '—' %></td>
+                                        <td class="text-end"><%= e.contest ? money(e.contest.entry_fee) : '—' %></td>
+                                        <td class="text-end"><%= Number(e.total_score || 0).toFixed(2) %></td>
+                                        <td class="text-end"><%= e.rank ? '#' + e.rank : '—' %></td>
+                                        <td class="text-end <%= e.prize_amount > 0 ? 'text-success fw-semibold' : '' %>"><%= e.prize_amount > 0 ? money(e.prize_amount) : '—' %></td>
+                                    </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- KYC -->
+                <% if (p.kyc) { %>
+                <div class="tab-pane fade" id="tab-kyc">
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">KYC — status: <span class="badge bg-<%= kycColor %>"><%= user.kyc_status || 'pending' %></span></h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-md-6"><span class="text-muted small">Aadhaar on profile:</span> <span class="font-monospace"><%= p.masked.aadhar || '—' %></span></div>
+                                <div class="col-md-6"><span class="text-muted small">PAN on profile:</span> <span class="font-monospace"><%= p.masked.pan || '—' %></span></div>
+                            </div>
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light"><tr><th>Submitted</th><th>Aadhaar</th><th>PAN</th><th>Status</th><th></th></tr></thead>
+                                <tbody>
+                                    <% if (!p.kyc.rows.length) { %><tr><td colspan="5" class="text-center text-muted py-3">No KYC submitted.</td></tr><% } %>
+                                    <% p.kyc.rows.forEach((k) => { %>
+                                    <tr>
+                                        <td class="small text-nowrap"><%= when(k.created_at) %></td>
+                                        <td class="font-monospace"><%= k.aadhar_masked || '—' %></td>
+                                        <td class="font-monospace"><%= k.pan_masked || '—' %></td>
+                                        <td><%- badge(k.status) %><% if (k.rejection_reason) { %><div class="small text-muted"><%= k.rejection_reason %></div><% } %></td>
+                                        <td><a href="/kyc/<%= k._id %>" class="btn btn-sm btn-outline-primary">Open</a></td>
+                                    </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <% } %>
+
+                <!-- Tickets -->
+                <% if (p.tickets) { %>
+                <div class="tab-pane fade" id="tab-tickets">
+                    <div class="card shadow-sm border-0 mb-4">
+                        <div class="card-header bg-light"><h6 class="mb-0">Support tickets</h6></div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light"><tr><th>Date</th><th>Subject</th><th>Category</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    <% if (!p.tickets.length) { %><tr><td colspan="4" class="text-center text-muted py-3">No tickets.</td></tr><% } %>
+                                    <% p.tickets.forEach((t) => { %>
+                                    <tr>
+                                        <td class="small text-nowrap"><%= when(t.created_at) %></td>
+                                        <td><a href="/tickets/<%= t._id %>"><%= t.subject %></a></td>
+                                        <td class="small"><%= t.category || '—' %></td>
+                                        <td><%- badge(t.status) %></td>
+                                    </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <% } %>
             </div>
         </div>
     </div>
@@ -174,4 +453,5 @@
 <style>
 .card { border-radius: 15px; }
 .btn { border-radius: 8px; font-weight: 500; }
+.nav-tabs .nav-link { font-weight: 500; }
 </style>

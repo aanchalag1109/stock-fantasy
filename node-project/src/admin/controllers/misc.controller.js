@@ -11,6 +11,8 @@ const { render } = require('../helpers/render');
 // PHP PARITY: announcements create (notifications + push)
 const announcementService = require('../../services/announcement.service');
 const logger = require('../../config/logger');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Social links managed from the admin panel
+const socialLinks = require('../../services/social-links.service');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -220,12 +222,35 @@ const notifications = {
 // Keys the App Settings & Pages screen owns (see routes/settings.routes.js).
 const APP_SETTING_KEYS = ['payment_api', 'terms', 'privacy', 'about', 'payment_policy'];
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Social links managed from the admin panel
+async function renderSettings(req, res, { social, socialErrors = {} } = {}) {
+  const items = await Setting.find().lean();
+  const settingsMap = {};
+  items.forEach(s => { settingsMap[s.key] = s.value; });
+  render(res, 'settings/index', {
+    title: 'Settings',
+    settingsMap,
+    social: social || (await socialLinks.getSettings()),
+    socialPlatforms: socialLinks.PLATFORMS,
+    socialErrors,
+    admin: req.session.admin,
+  });
+}
+
 const settings = {
-  index: async (req, res) => {
-    const items = await Setting.find().lean();
-    const settingsMap = {};
-    items.forEach(s => { settingsMap[s.key] = s.value; });
-    render(res, 'settings/index', { title: 'Settings', settingsMap, admin: req.session.admin });
+  index: (req, res) => renderSettings(req, res),
+  saveSocialLinks: async (req, res, next) => {
+    try {
+      const { values, errors } = socialLinks.validate(req.body);
+      if (Object.keys(errors).length) {
+        res.status(422);
+        return renderSettings(req, res, { social: values, socialErrors: errors });
+      }
+      await socialLinks.saveSettings(values);
+      logger.info(`[social-links] ${req.adminAccess ? req.adminAccess.email : 'admin'} updated social links`);
+      req.flash('success', 'Social links saved.');
+      return res.redirect('/settings#social-links');
+    } catch (err) { return next(err); }
   },
   update: async (req, res) => {
     try {

@@ -16,7 +16,9 @@
   const fromItem = total ? ((page - 1) * pageSize) + 1 : 0;
   const toItem = Math.min(page * pageSize, total);
   const adminOnPage = users.filter(u => u.is_admin).length;
-  const q = (search ? 'search=' + encodeURIComponent(search) + '&' : '') + (is_admin !== undefined && is_admin !== '' ? 'is_admin=' + encodeURIComponent(is_admin) : '');
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: pages keep every filter (KYC, joined from / to too)
+  const pageFilters = Object.assign({ search, is_admin }, (typeof filters !== 'undefined' && filters) || {});
+  const q = Object.entries(pageFilters).filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
 %>
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -74,7 +76,7 @@
         </div>
         <div class="card-body">
             <form action="/users" method="GET" class="row g-3" id="userFilterForm">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label for="search" class="form-label fw-semibold">Search Users</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0">
@@ -84,7 +86,7 @@
                                placeholder="Search by name or email..." value="<%= search || '' %>">
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="is_admin" class="form-label fw-semibold">User Type</label>
                     <select class="form-select" id="is_admin" name="is_admin">
                         <option value="">All Users</option>
@@ -92,10 +94,38 @@
                         <option value="0" <%= String(is_admin) === '0' ? 'selected' : '' %>>👤 Regular Users</option>
                     </select>
                 </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="bi bi-search me-1"></i>Search
+                <%# NEW IMPLEMENTATION — NODE.JS PROJECT: KYC + joined date filters and CSV export of the filtered players %>
+                <% const fl = (typeof filters !== 'undefined' && filters) || {}; %>
+                <div class="col-md-2">
+                    <label for="kyc_status" class="form-label fw-semibold">KYC Status</label>
+                    <select class="form-select" id="kyc_status" name="kyc_status">
+                        <option value="">All</option>
+                        <option value="pending" <%= fl.kyc_status === 'pending' ? 'selected' : '' %>>Pending</option>
+                        <option value="verified" <%= fl.kyc_status === 'verified' ? 'selected' : '' %>>Verified</option>
+                        <option value="rejected" <%= fl.kyc_status === 'rejected' ? 'selected' : '' %>>Rejected</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="from" class="form-label fw-semibold">Joined From</label>
+                    <input type="date" class="form-control" id="from" name="from" value="<%= fl.from %>">
+                </div>
+                <div class="col-md-2">
+                    <label for="to" class="form-label fw-semibold">Joined To</label>
+                    <input type="date" class="form-control" id="to" name="to" value="<%= fl.to %>">
+                </div>
+                <div class="col-md-1 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100" title="Search">
+                        <i class="bi bi-search"></i>
                     </button>
+                </div>
+                <div class="col-12 d-flex gap-2 align-items-center">
+                    <a href="/users" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Clear filters</a>
+                    <% if (can('users.export')) { %>
+                    <button type="submit" formaction="/users/export" class="btn btn-sm btn-success">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV (<%= total %> player<%= total === 1 ? '' : 's' %>)
+                    </button>
+                    <small class="text-muted">Downloads every player matching these filters (opens in Excel / Google Sheets). Dates are India time.</small>
+                    <% } %>
                 </div>
             </form>
         </div>

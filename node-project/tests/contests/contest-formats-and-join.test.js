@@ -102,6 +102,7 @@ function evalExpr(expr, doc) {
   switch (op) {
     case '$ifNull': return v[0] == null ? v[1] : v[0];
     case '$max': return Math.max(...v);
+    case '$min': return Math.min(...v);
     case '$add': return v.reduce((s, x) => s + x, 0);
     case '$subtract': return v[0] - v[1];
     case '$gte': return v[0] >= v[1];
@@ -190,16 +191,34 @@ const userOf = (p) => db.User.find((u) => same(u._id, p.user._id));
 describe('contest join', () => {
   beforeEach(() => reset());
 
-  test('charges the contest fee, deposit first then winnings, and records the entry', async () => {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — winnings first, then deposit
+  test('charges the contest fee from winnings first and records the entry', async () => {
     const p = player(30, 100);
     const res = await join(p);
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.success_count, 1);
-    assert.deepEqual([userOf(p).deposit_balance, userOf(p).winnings_balance], [0, 30]);
+    assert.deepEqual([userOf(p).deposit_balance, userOf(p).winnings_balance], [30, 0]);
     assert.equal(res.body.wallet_balance, 30);
     assert.equal(db.ContestEntry.length, 1);
+    assert.deepEqual([db.ContestEntry[0].fee_from_winnings, db.ContestEntry[0].fee_from_deposit], [100, 0]);
     assert.equal(db.Transaction[0].amount, 100);
+    assert.deepEqual([db.Transaction[0].from_winnings, db.Transaction[0].from_deposit], [100, 0]);
     assert.equal(contest.join_lock_at, null, 'lock released');
+  });
+
+  test('when winnings run out the rest comes from deposit, and the split is recorded', async () => {
+    const p = player(80, 30);
+    assert.equal((await join(p)).status, 200);
+    assert.deepEqual([userOf(p).deposit_balance, userOf(p).winnings_balance], [10, 0]);
+    assert.deepEqual([db.ContestEntry[0].fee_from_winnings, db.ContestEntry[0].fee_from_deposit], [30, 70]);
+    assert.deepEqual([db.Transaction[0].from_winnings, db.Transaction[0].from_deposit], [30, 70]);
+  });
+
+  test('deposit only, and a negative winnings balance is never charged further', async () => {
+    const p = player(150, -5);
+    assert.equal((await join(p)).status, 200);
+    assert.deepEqual([userOf(p).deposit_balance, userOf(p).winnings_balance], [50, -5]);
+    assert.deepEqual([db.ContestEntry[0].fee_from_winnings, db.ContestEntry[0].fee_from_deposit], [0, 100]);
   });
 
   test("the app's entry_fee cannot lower the price", async () => {

@@ -231,6 +231,22 @@ describe('Contests → Cancel (PHP cancelContest)', () => {
     rows.forEach((r) => assert.equal(balance(r), 25));
   });
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: client feedback — refund to the wallet the fee came from
+  test('refunds each part of the fee to the wallet it was paid from; older entries go to deposit', async () => {
+    const c = addContest(addSession(), { status: 'upcoming' });
+    const [winOnly, mixed, legacy] = addEntries(c, 3);
+    Object.assign(get('ContestEntry', winOnly.entry._id), { fee_from_winnings: 25, fee_from_deposit: 0 });
+    Object.assign(get('ContestEntry', mixed.entry._id), { fee_from_winnings: 10, fee_from_deposit: 15 });
+    const admin = await login();
+    assert.equal((await json(admin, 'post', `/contests/${c._id}/cancel`)).status, 200);
+    const wallets = (r) => [get('User', r.user._id).winnings_balance, get('User', r.user._id).deposit_balance];
+    assert.deepEqual(wallets(winOnly), [25, 0]);
+    assert.deepEqual(wallets(mixed), [10, 15]);
+    assert.deepEqual(wallets(legacy), [0, 25]);
+    const refundOf = (r) => db.Transaction.find((t) => same(t.user_id, r.user._id));
+    assert.deepEqual([refundOf(mixed).amount, refundOf(mixed).from_winnings, refundOf(mixed).from_deposit], [25, 10, 15]);
+  });
+
   test('double clicks refund only once', async () => {
     const c = addContest(addSession());
     const rows = addEntries(c, 4);

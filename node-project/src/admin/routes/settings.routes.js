@@ -11,5 +11,7 @@ router.post('/terms', requireAdmin, requirePermission('app_settings.edit'), sett
 router.post('/privacy', requireAdmin, requirePermission('app_settings.edit'), settings.saveKey('privacy'));
 router.post('/about', requireAdmin, requirePermission('app_settings.edit'), settings.saveKey('about'));
 router.post('/payment-policy', requireAdmin, requirePermission('app_settings.edit'), settings.saveKey('payment_policy'));
+// NEW IMPLEMENTATION — NODE.JS PROJECT: Social links managed from the admin panel
+router.post('/social-links', requireAdmin, requirePermission('app_settings.edit'), settings.saveSocialLinks);
 router.put('/password', requireAdmin, require('../controllers/pages.controller').profile.password);
 module.exports = router;

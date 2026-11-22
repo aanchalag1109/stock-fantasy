@@ -99,7 +99,11 @@ const TEMPLATES = {
   refund_credited: (p) => ({
     type: 'transaction',
     title: 'Entry fee refunded',
-    description: `Contest #${p.contestLabel} was cancelled. ${money(p.amount)} has been refunded to your deposit balance.`,
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: refunds go back to the wallet(s) the entry fee came from
+    description: `Contest #${p.contestLabel} was cancelled. ${money(p.amount)} has been refunded to your ${
+      p.toWinnings > 0 && p.toDeposit > 0
+        ? `wallet (${money(p.toWinnings)} to winnings, ${money(p.toDeposit)} to deposit)`
+        : p.toWinnings > 0 ? 'winnings balance' : 'deposit balance'}.`,
   }),
   wallet_adjusted: (p) => ({
     type: 'transaction',

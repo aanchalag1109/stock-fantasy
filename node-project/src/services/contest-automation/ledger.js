@@ -30,7 +30,7 @@ async function resolveUser(userRef) {
 /**
  * @returns {Promise<{credited: boolean, duplicate?: boolean, user?: object, transaction?: object}>}
  */
-async function creditOnce({ userRef, balance, amount, transaction }) {
+async function creditOnce({ userRef, balance, amount, transaction, split = null }) {
   const user = await resolveUser(userRef);
   if (!user) return { credited: false, missingUser: true };
   let created;
@@ -40,7 +40,9 @@ async function creditOnce({ userRef, balance, amount, transaction }) {
     if (err && err.code === 11000) return { credited: false, duplicate: true, user };
     throw err;
   }
-  await User.updateOne({ _id: user._id }, { $inc: { [balance]: amount } });
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: `split` ({ winnings_balance: x, deposit_balance: y }) credits
+  // several wallets under the one transaction (contest refunds back to where the fee came from).
+  await User.updateOne({ _id: user._id }, { $inc: split || { [balance]: amount } });
   return { credited: true, user, transaction: created };
 }
 

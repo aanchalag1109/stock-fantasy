@@ -55,6 +55,8 @@
     { title: 'App & System', items: [
       { show: can('app_update_settings.view'), href: '/android-app-update', icon: 'bi-phone', label: 'Android App Update', active: on('/android-app-update') },
       { show: can('app_update_settings.view'), href: '/ios-app-update', icon: 'bi-apple', label: 'iOS App Update', active: on('/ios-app-update') },
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: Social links managed from the admin panel (section of Settings)
+      { show: can('app_settings.view'), href: '/settings#social-links', icon: 'bi-share', label: 'Social Links', active: false },
       { show: can('cron.view'), href: '/cron-logs', icon: 'bi-clock-history', label: 'Cron Check', active: on('/cron-logs') || on('/cron') },
     ] },
   ];

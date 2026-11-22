@@ -22,6 +22,38 @@
                                 </div>
                             </div>
                         </div>
+                        <%# NEW IMPLEMENTATION — NODE.JS PROJECT: Social links managed from the admin panel %>
+                        <div class="col-md-12" id="social-links">
+                            <div class="card h-100 border-0 bg-light">
+                                <div class="card-body">
+                                    <h5 class="card-title"><i class="bi bi-share me-2"></i>Social Links</h5>
+                                    <p class="text-muted small mb-3">Shown in the app and on the website. Only links that are switched on are shown, in this order.
+                                        <% if (social.updated_at) { %>Last saved <%= new Date(social.updated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) %>.<% } else { %>Not saved yet — showing the website's current links.<% } %></p>
+                                    <% if (Object.keys(socialErrors).length) { %>
+                                    <div class="alert alert-danger py-2"><% Object.values(socialErrors).forEach((msg) => { %><div><%= msg %></div><% }) %></div>
+                                    <% } %>
+                                    <form action="/settings/social-links" method="POST">
+                                        <% socialPlatforms.forEach((p) => { const row = social.links[p.key] || {}; %>
+                                        <div class="row g-2 align-items-center mb-2">
+                                            <div class="col-sm-3">
+                                                <label class="form-label mb-0 fw-semibold" for="social_<%= p.key %>"><i class="bi bi-<%= p.icon %> me-1"></i><%= p.label %></label>
+                                            </div>
+                                            <div class="col-sm-7">
+                                                <input type="url" maxlength="500" class="form-control form-control-sm <%= socialErrors[p.key] ? 'is-invalid' : '' %>" id="social_<%= p.key %>" name="links[<%= p.key %>][url]" value="<%= row.url || '' %>" placeholder="<%= p.placeholder %>">
+                                            </div>
+                                            <div class="col-sm-2">
+                                                <div class="form-check form-switch mb-0">
+                                                    <input class="form-check-input" type="checkbox" role="switch" id="social_<%= p.key %>_on" name="links[<%= p.key %>][enabled]" value="1" <%= row.enabled ? 'checked' : '' %>>
+                                                    <label class="form-check-label small" for="social_<%= p.key %>_on">Show</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <% }) %>
+                                        <button type="submit" class="btn btn-primary mt-2">Save Social Links</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
                         <% const blocks = [
                             { key: 'terms', title: 'Terms & Conditions', icon: 'file-earmark-text', action: '/settings/terms', label: 'Update Terms' },
                             { key: 'privacy', title: 'Privacy Policy', icon: 'shield-lock', action: '/settings/privacy', label: 'Update Privacy Policy' },

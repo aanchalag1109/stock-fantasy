@@ -86,6 +86,16 @@ router.post('/notifications/mark-all-read', api.markAllAsRead);
 router.get('/notification-preferences', api.getNotificationPreferences);
 router.post('/notification-preferences', api.updateNotificationPreferences);
 router.get('/settings', api.getSettings);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: social links managed from admin → Settings (enabled links only, in order)
+router.get('/social-links', async (req, res) => {
+  try {
+    const socialLinks = require('../services/social-links.service');
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.json({ success: true, social_links: await socialLinks.publicLinks() });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch social links' });
+  }
+});
 router.post('/update-profile', (req, res, next) => {
   profileUpload(req, res, (err) => (err ? res.status(500).json({ success: false, message: 'Profile update failed: ' + err.message, errors: null }) : next()));
 }, api.updateProfile);

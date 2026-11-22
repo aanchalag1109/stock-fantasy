@@ -20,7 +20,11 @@ const transactionSchema = new mongoose.Schema({
   // record the real-money side (e.g. 5000 ProbCoins for ₹500).
   currency: { type: String, default: null },
   currency_amount: { type: Number, default: null },
-  rate: { type: Number, default: null }
+  rate: { type: Number, default: null },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: contest entry fees and their refunds — the part taken from /
+  // returned to each wallet (amount = from_winnings + from_deposit).
+  from_winnings: { type: Number, default: null },
+  from_deposit: { type: Number, default: null }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

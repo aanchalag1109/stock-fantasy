@@ -2,8 +2,7 @@
 
 /**
  * PHP PARITY — restored behaviour of Admin\ContestController::cancelContest
- * ("Contest cancelled - Entry fee refunded": every entry's fee back to deposit_balance,
- * contest status → cancelled), shared by:
+ * ("Contest cancelled - Entry fee refunded", contest status → cancelled), shared by:
  *   - Contests → Cancel (admin)
  *   - Session cancel (Live Management / session page / deactivating a live session)
  *   - the automated "< 10 entries" cancellation (contest-automation/results.job.js)
@@ -17,6 +16,9 @@
  *     remaining refunds without paying anyone twice.
  *   - No full-document save(): migrated documents that don't fit the current schema can
  *     still be cancelled.
+ *   - Each entry's fee goes back to the wallet(s) it was paid from (fee_from_winnings /
+ *     fee_from_deposit on the entry); entries from before that was recorded → deposit_balance,
+ *     as in PHP.
  */
 
 const Contest = require('../models/contest.model');
@@ -69,21 +71,42 @@ async function cancelContest(contest, { claimFilter = {}, reason = 'admin' } = {
   return { success: true, message: 'Contest cancelled and users refunded', refunded };
 }
 
+const round2 = (n) => Math.round(n * 100) / 100;
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: what to refund for one entry. Entries that recorded how their
+ * fee was paid get each part back in the wallet it came from (and exactly what was charged);
+ * older entries get the contest fee back in deposit_balance, as before.
+ */
+function refundFor(entry, fee) {
+  if (entry.fee_from_winnings != null || entry.fee_from_deposit != null) {
+    const toWinnings = round2(Math.max(0, num(entry.fee_from_winnings)));
+    const toDeposit = round2(Math.max(0, num(entry.fee_from_deposit)));
+    return { amount: round2(toWinnings + toDeposit), toWinnings, toDeposit };
+  }
+  return { amount: fee, toWinnings: 0, toDeposit: fee };
+}
+
 async function refundEntries(contest, label) {
   const fee = num(contest.entry_fee);
-  if (fee <= 0) return 0;
-  const entries = await ContestEntry.find({ contest_id: { $in: keysOf(contest) } }).select('_id old_id user_id').lean();
+  const entries = await ContestEntry.find({ contest_id: { $in: keysOf(contest) } })
+    .select('_id old_id user_id fee_from_winnings fee_from_deposit').lean();
   let refunded = 0;
   for (const entry of entries) {
+    const { amount, toWinnings, toDeposit } = refundFor(entry, fee);
+    if (!(amount > 0)) continue;
     const result = await creditOnce({
       userRef: entry.user_id,
       balance: 'deposit_balance',
-      amount: fee,
+      amount,
+      split: { winnings_balance: toWinnings, deposit_balance: toDeposit },
       transaction: {
         type: 'deposit',
         contest_id: label,
         transaction_id: `REFUND_${label}_E${entry.old_id != null ? entry.old_id : entry._id}`,
         description: `Contest #${label} cancelled - Entry fee refunded`,
+        from_winnings: toWinnings,
+        from_deposit: toDeposit,
       },
     });
     if (!result.credited) continue;
@@ -91,7 +114,7 @@ async function refundEntries(contest, label) {
     notify('refund_credited', {
       user: result.user,
       dedupeKey: `refund:txn:${result.transaction._id}`,
-      params: { amount: fee, contestLabel: label },
+      params: { amount, contestLabel: label, toWinnings, toDeposit },
       data: { screen: 'wallet', contest_id: label },
     });
   }

@@ -9,6 +9,10 @@ const { render } = require('../helpers/render');
 const { checkAdminAccountChange } = require('../../services/admin-access.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications
 const { notify } = require('../../services/notifications/notification.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: full player profile on the admin User Profile page
+const userProfile = require('../../services/admin-user-profile.service');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: CSV export of the filtered players
+const userExport = require('../../services/admin-user-export.service');
 
 /**
  * NEW IMPLEMENTATION — NODE.JS PROJECT
@@ -125,8 +129,35 @@ function playerMatch(query) {
   if (query.kyc_status && ['pending', 'verified', 'rejected'].includes(query.kyc_status)) {
     match.kyc_status = query.kyc_status === 'verified' ? 'approved' : query.kyc_status;
   }
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: the User Type select was shown but never applied; joined
+  // date range (India time) added for the list and the CSV export.
+  if (String(query.is_admin) === '1') match.is_admin = true;
+  else if (String(query.is_admin) === '0') match.is_admin = { $ne: true };
+  const created = userExport.dateRange(query);
+  if (created) match.created_at = created;
   return match;
 }
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: export the filtered players as CSV (opens in Excel)
+const exportCsv = async (req, res) => {
+  const match = playerMatch(req.query);
+  const from = userExport.istDay(req.query.from) ? req.query.from : null;
+  const to = userExport.istDay(req.query.to) ? req.query.to : null;
+  const stamp = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  const name = `players${from ? '_from-' + from : ''}${to ? '_to-' + to : ''}_${stamp}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const result = await userExport.exportPlayers(match, (chunk) => res.write(chunk));
+    logger.info(`[users-export] ${req.adminAccess ? req.adminAccess.email : 'admin'} exported ${result.rows} players`, { filters: req.query, truncated: result.truncated });
+    res.end();
+  } catch (err) {
+    logger.error(`[users-export] failed: ${err.message}`);
+    if (!res.headersSent) { req.flash('error', 'Export failed: ' + err.message); return res.redirect('/users'); }
+    res.end(`\r\nExport failed: ${err.message}\r\n`);
+  }
+};
 
 const index = async (req, res) => {
   try {
@@ -153,6 +184,8 @@ const index = async (req, res) => {
       page,
       search,
       is_admin,
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: filters kept on the page and passed to Export CSV
+      filters: { kyc_status: req.query.kyc_status || '', from: req.query.from || '', to: req.query.to || '' },
       admin: req.session.admin,
     });
   } catch (err) {
@@ -164,7 +197,10 @@ const show = async (req, res) => {
   try {
     const user = await findUser(req.params.id);
     if (!user) { req.flash('error', 'User not found'); return res.redirect('/users'); }
-    await render(res, 'users/show', { title: 'User Profile', user, admin: req.session.admin });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: full player profile (stats, ledger, deposits, withdrawals,
+    // contests, KYC, tickets), each section gated by that section's own admin permission.
+    const profile = await userProfile.loadProfile(user, res.locals.can);
+    await render(res, 'users/show', { title: 'User Profile', user, profile, admin: req.session.admin });
   } catch (err) { res.status(500).send(err.message); }
 };
 
@@ -309,4 +345,4 @@ const adjustWallet = async (req, res) => {
   }
 };
 
-module.exports = { index, create, store, show, edit, update, destroy, adjustWallet, bulkDelete };
+module.exports = { index, create, store, show, edit, update, destroy, adjustWallet, bulkDelete, exportCsv };
