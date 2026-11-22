@@ -57,6 +57,10 @@ const payramController = require('./controllers/payram.controller');
   app.post(webhookPath, express.raw({ type: '*/*', limit: '1mb' }), payramController.testnetWebhook);
 });
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: remembers the address each request came in on, so image /
+// return links use the server's public address when APP_URL is still the localhost default.
+app.use(require('./helpers/public-url').requestContext);
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

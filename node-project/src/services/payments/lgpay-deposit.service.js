@@ -103,7 +103,8 @@ async function createInrDeposit({ user, amount, probcoins, ip }) {
     order_sn: orderId,
     money: Math.round(quote.total_payable * 100),
     notify_url: LGPAY.notifyUrl,
-    return_url: `${config.APP_URL}/api/v1/payment/return?order_id=${orderId}`,
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the server's public address even if APP_URL is still localhost
+    return_url: `${require('../../helpers/public-url').publicBaseUrl()}/api/v1/payment/return?order_id=${orderId}`,
     ip: ip || '127.0.0.1',
   };
   params.sign = generateSignature(params);

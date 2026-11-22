@@ -47,7 +47,8 @@ function sqlDate(value) {
 function absoluteUrl(filePath) {
   if (!filePath) return null;
   if (/^https?:\/\//i.test(filePath)) return filePath;
-  return `${String(config.APP_URL || '').replace(/\/$/, '')}/${String(filePath).replace(/^\//, '')}`;
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: never a localhost link when APP_URL was left at its default
+  return `${require('./public-url').publicBaseUrl()}/${String(filePath).replace(/^\//, '')}`;
 }
 
 function num(value) {
