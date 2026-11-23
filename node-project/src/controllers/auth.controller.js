@@ -258,8 +258,20 @@ const updateProfile = async (req, res) => {
       if (mobileExists) return res.status(409).json({ success: false, message: 'Mobile already in use' });
       user.mobile = mobile.trim();
     }
-    if (password && password.length >= 6) {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: password login — change only with the current password;
+    // accounts without one set it with an OTP (POST /api/v1/set-password).
+    if (password) {
+      const passwordAuth = require('../services/password-auth.service');
+      if (!passwordAuth.hasPassword(user)) {
+        return res.status(403).json({ success: false, password_not_set: true, message: 'Set your password with OTP (Forgot / Set password).' });
+      }
+      if (!(await passwordAuth.matches(req.body.current_password, user.password))) {
+        return res.status(403).json({ success: false, message: 'Current password is incorrect.' });
+      }
+      const problem = passwordAuth.validatePassword(password, req.body.password_confirmation);
+      if (problem) return res.status(422).json({ success: false, message: problem });
       user.password = await bcrypt.hash(password, 10);
+      user.password_set_at = new Date();
     }
     if (age !== undefined) user.age = parseInt(age);
     if (gender !== undefined) user.gender = gender;

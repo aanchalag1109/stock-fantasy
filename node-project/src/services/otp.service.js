@@ -22,7 +22,8 @@ const config = require('../config/env');
 const logger = require('../config/logger');
 const smsService = require('./sms.service');
 
-const PURPOSES = ['login', 'signup'];
+// NEW IMPLEMENTATION — NODE.JS PROJECT: 'password' = set / reset the password (login with OTP or password)
+const PURPOSES = ['login', 'signup', 'password'];
 const OTP_EXPIRY_SECONDS = 300;
 const RESEND_COOLDOWN_SECONDS = 30;
 const MAX_VERIFY_ATTEMPTS = 5;
@@ -30,6 +31,7 @@ const MAX_VERIFY_ATTEMPTS = 5;
 function normalizePurpose(purpose) {
   const value = String(purpose || '').trim().toLowerCase();
   if (value === 'register') return 'signup';
+  if (value === 'reset_password' || value === 'forgot_password' || value === 'set_password') return 'password';
   return PURPOSES.includes(value) ? value : null;
 }
 

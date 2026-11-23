@@ -34,6 +34,7 @@ const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION —
 // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits for the player's basket (client feedback)
 const sessionAssets = require('../services/session-assets.service');
 const withdrawals = require('../services/payments/withdrawal.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
+const passwordAuth = require('../services/password-auth.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT: OTP or password login
 
 /** 422 with the basket-limit errors (message = first one, errors = all), or null when the basket is fine. */
 function basketLimitError(res, session, assets) {
@@ -101,6 +102,13 @@ const register = async (req, res) => {
     // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
     // The PHP password rule is removed; signup is confirmed by the OTP instead.
     if (!/^\d{6}$/.test(String(req.body.otp || '').trim())) errors.otp = ['The otp field must be a 6-digit code.'];
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: login with OTP or password — signup still verifies the mobile
+    // with the OTP; the user may also choose a password now (optional).
+    const wantsPassword = req.body.password !== undefined && req.body.password !== null && req.body.password !== '';
+    if (wantsPassword) {
+      const problem = passwordAuth.validatePassword(req.body.password, req.body.password_confirmation);
+      if (problem) errors.password = [problem];
+    }
     if (Object.keys(errors).length) {
       return res.status(400).json({ success: false, message: 'Registration failed: The given data was invalid.', errors });
     }
@@ -124,7 +132,8 @@ const register = async (req, res) => {
       name,
       email,
       mobile,
-      password: null,
+      password: wantsPassword ? await passwordAuth.hashPassword(req.body.password) : null,
+      password_set_at: wantsPassword ? new Date() : null,
       deposit_balance: 0,
       winnings_balance: 0,
     });
@@ -142,13 +151,64 @@ const register = async (req, res) => {
   }
 };
 
-// NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
-// The PHP password login has been retired: the app now logs in with OTP only.
-// The route stays so older app builds get a clear message instead of a 404.
-const passwordLogin = async (req, res) => res.status(410).json({
-  success: false,
-  message: 'Password login is no longer supported. Please login with OTP.',
-});
+/** NEW IMPLEMENTATION — NODE.JS PROJECT: the same success response for OTP and password login. */
+async function loginSuccess(res, user, fcmTokenRaw, extra = {}) {
+  const fcmToken = deviceTokens.parseToken(fcmTokenRaw);
+  if (fcmToken) await deviceTokens.assignToken(user, fcmToken);
+  await ensureOldId(User, user);
+  return res.json({
+    success: true,
+    message: 'Login successful',
+    user: authUser(user),
+    unread_notifications: await unreadCount(user),
+    ...extra,
+  });
+}
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): login with OTP or password, the user's choice.
+// POST /password-login { mobile, password, fcm_token? } — same success response as POST /login.
+// Accounts without a password get 409 password_not_set (login with OTP, or set one via /set-password);
+// 5 wrong passwords lock password login for 15 minutes (OTP login keeps working).
+const passwordLogin = async (req, res) => {
+  try {
+    const mobile = String(req.body.mobile || req.body.username || '').trim();
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    if (mobile.length < 10 || mobile.length > 15) return res.status(400).json({ success: false, message: 'Please enter a valid mobile number.' });
+    if (!password) return res.status(400).json({ success: false, message: 'Please enter your password.' });
+    const user = await findUserByMobile(mobile);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found. Please register first.' });
+    const check = await passwordAuth.checkLogin(user, password);
+    if (!check.ok) {
+      const { ok, status, ...body } = check;
+      return res.status(status).json({ success: false, ...body });
+    }
+    return loginSuccess(res, user, req.body.fcm_token);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Login failed' });
+  }
+};
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): set or reset the password with an OTP.
+// Step 1: POST /send-otp { mobile, purpose: 'password' }.
+// Step 2: POST /set-password { mobile, otp, password, password_confirmation, fcm_token? } → logged in.
+// Used for "Forgot password" and by OTP users who want to add a password.
+const setPassword = async (req, res) => {
+  try {
+    const mobile = String(req.body.mobile || '').trim();
+    if (mobile.length < 10 || mobile.length > 15) return res.status(400).json({ success: false, message: 'Please enter a valid mobile number.' });
+    const problem = passwordAuth.validatePassword(req.body.password, req.body.password_confirmation);
+    if (problem) return res.status(422).json({ success: false, message: problem, errors: { password: [problem] } });
+    const user = await User.findOne({ mobile }); // same exact match as send-otp, which issued the OTP
+    if (!user) return res.status(404).json({ success: false, message: 'User not found. Please register first.' });
+    // Checked after the password rules so a rejected password does not use up the OTP.
+    const otpResult = await otpService.verifyOtp(mobile, 'password', req.body.otp);
+    if (!otpResult.ok) return otpService.sendVerifyError(res, otpResult);
+    await passwordAuth.setPassword(user._id, req.body.password);
+    return loginSuccess(res, user, req.body.fcm_token, { message: 'Password saved. You can now login with your password.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Could not save the password. Please try again.' });
+  }
+};
 
 const checkUser = async (req, res) => {
   try {
@@ -159,10 +219,14 @@ const checkUser = async (req, res) => {
     const user = await findUserByMobile(mobile);
     if (user) {
       await ensureOldId(User, user);
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: which login methods this account can use
+      const withPassword = passwordAuth.hasPassword(user);
       return res.json({
         exists: true,
         message: 'User found. Please verify OTP.',
         user: { id: publicId(user), name: user.name, email: user.email, mobile: user.mobile },
+        has_password: withPassword,
+        login_methods: withPassword ? ['otp', 'password'] : ['otp'],
       });
     }
     return res.status(404).json({ exists: false, message: 'User not found. Please register first.' });
@@ -210,10 +274,28 @@ const updateProfile = async (req, res) => {
     if (!req.body.name || !req.body.email || !req.body.mobile) {
       return res.status(500).json({ success: false, message: 'Profile update failed: The given data was invalid.', errors: null });
     }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: with password login, a password can be changed here only with
+    // the current password; accounts without one set it with an OTP (POST /set-password). Before, any
+    // request with a user_id could set a new password.
+    let newPasswordHash = null;
+    if (req.body.password) {
+      if (!passwordAuth.hasPassword(user)) {
+        return res.status(403).json({ success: false, password_not_set: true, message: 'Set your password with OTP (Forgot / Set password).' });
+      }
+      if (!(await passwordAuth.matches(req.body.current_password, user.password))) {
+        return res.status(403).json({ success: false, message: 'Current password is incorrect.' });
+      }
+      const problem = passwordAuth.validatePassword(req.body.password, req.body.password_confirmation);
+      if (problem) return res.status(422).json({ success: false, message: problem, errors: { password: [problem] } });
+      newPasswordHash = await passwordAuth.hashPassword(req.body.password);
+    }
     user.name = req.body.name;
     user.email = String(req.body.email).toLowerCase();
     user.mobile = req.body.mobile;
-    if (req.body.password) user.password = await bcrypt.hash(req.body.password, 10);
+    if (newPasswordHash) {
+      user.password = newPasswordHash;
+      user.password_set_at = new Date();
+    }
     if (req.file) user.profile_image = `uploads/profiles/${req.file.filename}`;
     await user.save();
     return res.json({
@@ -1559,7 +1641,7 @@ const { getLivePrices, getStockLivePrice, getCryptoLivePrice } = require('./live
 const { lgpayCallback } = require('./payment.controller');
 
 module.exports = {
-  login, register, passwordLogin, checkUser, getSettings, getUserProfile, updateProfile,
+  login, register, passwordLogin, setPassword, checkUser, getSettings, getUserProfile, updateProfile,
   getPaymentDetails, updatePaymentDetails, banners, upcomingSessions, getSession,
   getUserSessions, getActiveSession, getSessionAssets, getSessionAssetsGrouped, getUserJoinedSessions,
   contestsBySession, myContestsBySession, getContest, getUserContests, bulkJoinContest,

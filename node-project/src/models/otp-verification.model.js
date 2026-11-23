@@ -14,7 +14,8 @@ const mongoose = require('mongoose');
 
 const otpVerificationSchema = new mongoose.Schema({
   mobile: { type: String, required: true, trim: true },
-  purpose: { type: String, enum: ['login', 'signup'], required: true },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: 'password' = set / reset password (login with OTP or password)
+  purpose: { type: String, enum: ['login', 'signup', 'password'], required: true },
   otp_hash: { type: String, required: true },
   expires_at: { type: Date, required: true },
   attempts: { type: Number, default: 0 },

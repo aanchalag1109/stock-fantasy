@@ -19,7 +19,9 @@ const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } });
 // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
 router.post('/send-otp', require('../controllers/otp.controller').sendOtp);
 router.post('/login', ctrl.login);
-router.post('/login/password', ctrl.passwordLogin);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: same password login / set-password as /api/v1/password-login
+router.post('/login/password', require('../controllers/mobile-api.controller').passwordLogin);
+router.post('/set-password', require('../controllers/mobile-api.controller').setPassword);
 router.post('/register', ctrl.register);
 router.get('/check-user', ctrl.checkUser);
 router.get('/settings', ctrl.getSettings);

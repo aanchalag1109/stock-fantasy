@@ -39,7 +39,9 @@ router.post('/send-otp', require('../controllers/otp.controller').sendOtp);
 
 router.post('/login', api.login);
 router.post('/register', api.register);
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): login with OTP or password
 router.post('/password-login', api.passwordLogin);
+router.post('/set-password', api.setPassword); // set / reset the password with an OTP (purpose: password)
 router.get('/check-user', api.checkUser);
 router.post('/check-user', api.checkUser);
 

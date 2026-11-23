@@ -17,6 +17,11 @@ const userSchema = new mongoose.Schema({
   email: { type: String, trim: true, lowercase: true, index: { unique: true, sparse: true } },
   mobile: { type: String, trim: true, index: { unique: true, sparse: true } },
   password: { type: String, default: null },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: login with OTP or password — when the password was last set,
+  // and the wrong-password lockout (services/password-auth.service.js)
+  password_set_at: { type: Date, default: null },
+  password_failed_attempts: { type: Number, default: 0 },
+  password_locked_until: { type: Date, default: null },
   profile_image: { type: String, default: null },
   email_verified_at: { type: Date, default: null },
   deposit_balance: { type: Number, default: 0 },
