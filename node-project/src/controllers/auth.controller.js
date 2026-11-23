@@ -11,7 +11,7 @@ const logger = require('../config/logger');
 const otpService = require('../services/otp.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — FCM device tokens
 const deviceTokens = require('../services/notifications/device-token.service');
-const { findByPublicId } = require('../helpers/mobile-compat');
+const { findByPublicId, absoluteUrl } = require('../helpers/mobile-compat');
 
 // ─── Helper ───────────────────────────────────────────────────────────────
 function generateToken(userId) {
@@ -29,7 +29,7 @@ function buildUserResponse(user, token = null) {
     name: user.name || 'User',
     email: user.email || '',
     mobile: user.mobile || '',
-    profile_image: user.profile_image || null,
+    profile_image: absoluteUrl(user.profile_image), // NEW IMPLEMENTATION — NODE.JS PROJECT: full URL (was a relative path)
     wallet_balance: parseFloat(((user.deposit_balance || 0) + (user.winnings_balance || 0)).toFixed(2)),
     deposit_balance: parseFloat((user.deposit_balance || 0).toFixed(2)),
     winnings_balance: parseFloat((user.winnings_balance || 0).toFixed(2)),
@@ -224,7 +224,7 @@ const getUserProfile = async (req, res) => {
       success: true,
       user: {
         ...buildUserResponse(user),
-        profile_image: user.profile_image ? `${baseUrl}/${user.profile_image}` : null,
+        profile_image: absoluteUrl(user.profile_image),
       },
       unread_notifications: unread,
     });
@@ -294,7 +294,7 @@ const updateProfile = async (req, res) => {
       message: 'Profile updated successfully',
       user: {
         ...buildUserResponse(user),
-        profile_image: user.profile_image ? `${baseUrl}/${user.profile_image}` : null,
+        profile_image: absoluteUrl(user.profile_image),
       },
     });
   } catch (err) {

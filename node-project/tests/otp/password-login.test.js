@@ -304,3 +304,20 @@ describe('changing mobile or email needs OTP', () => {
     assert.equal((await api('/change-email', { user_id: user().old_id, new_email: 'other@x.com', otp: OTP })).status, 409);
   });
 });
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the profile photo comes with the user everywhere
+describe('profile photo in auth responses', () => {
+  beforeEach(reset);
+  test('login, password login and check-user return the full profile_image URL', async () => {
+    config.APP_URL = 'http://206.189.133.192:8000';
+    await signup({ password: 'secret123' });
+    user().profile_image = 'uploads/profiles/profile_5_1.jpg';
+    const url = 'http://206.189.133.192:8000/uploads/profiles/profile_5_1.jpg';
+    assert.equal((await api('/password-login', { mobile: MOBILE, password: 'secret123' })).body.user.profile_image, url);
+    await otp('login');
+    assert.equal((await api('/login', { mobile: MOBILE, otp: OTP })).body.user.profile_image, url);
+    assert.equal((await request(app).get(`/api/v1/check-user?mobile=${MOBILE}`)).body.user.profile_image, url);
+    user().profile_image = null;
+    assert.equal((await api('/password-login', { mobile: MOBILE, password: 'secret123' })).body.user.profile_image, null);
+  });
+});

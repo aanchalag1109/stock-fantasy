@@ -50,6 +50,8 @@ function authUser(user) {
     email: user.email,
     mobile: user.mobile,
     wallet_balance: walletOf(user),
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: profile photo on login / signup / password login too (full URL or null)
+    profile_image: absoluteUrl(user.profile_image),
   };
 }
 
@@ -224,7 +226,7 @@ const checkUser = async (req, res) => {
       return res.json({
         exists: true,
         message: 'User found. Please verify OTP.',
-        user: { id: publicId(user), name: user.name, email: user.email, mobile: user.mobile },
+        user: { id: publicId(user), name: user.name, email: user.email, mobile: user.mobile, profile_image: absoluteUrl(user.profile_image) },
         has_password: withPassword,
         login_methods: withPassword ? ['otp', 'password'] : ['otp'],
       });
@@ -859,6 +861,7 @@ const getContest = async (req, res) => {
       return {
         user_id: person ? publicId(person) : entry.user_id,
         user_name: person ? person.name : 'Unknown User',
+        profile_image: person ? absoluteUrl(person.profile_image) : null, // NEW IMPLEMENTATION — NODE.JS PROJECT: leaderboard photo
         basket_id: basket.old_id != null ? basket.old_id : entry.basket_id,
         serial_no: basket.serial_no || null,
         total_score: prices.started ? num(entry.total_score) : 0,

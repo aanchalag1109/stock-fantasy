@@ -12,7 +12,7 @@ const logger = require('../config/logger');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats + safe joining
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
-const { keysOf, findByPublicId, priceMaps } = require('../helpers/mobile-compat');
+const { keysOf, findByPublicId, priceMaps, absoluteUrl } = require('../helpers/mobile-compat');
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -216,7 +216,7 @@ const getContest = async (req, res) => {
     // Get all entries
     const entries = await ContestEntry.find({ contest_id: { $in: contestKeys } })
       .populate({ path: 'basket_id', model: 'SavedBasket', select: 'assets multipliers serial_no' })
-      .populate({ path: 'user_id', model: 'User', select: 'name' })
+      .populate({ path: 'user_id', model: 'User', select: 'name profile_image' })
       .lean();
 
     const participants = entries.map((entry) => {
@@ -229,6 +229,7 @@ const getContest = async (req, res) => {
       return {
         user_id: entry.user_id?._id || entry.user_id,
         user_name: entry.user_id?.name || 'Unknown User',
+        profile_image: absoluteUrl(entry.user_id?.profile_image), // NEW IMPLEMENTATION — NODE.JS PROJECT: leaderboard photo
         basket_id: basket._id,
         serial_no: basket.serial_no,
         total_score: calculationStarted ? (entry.total_score || 0) : 0,

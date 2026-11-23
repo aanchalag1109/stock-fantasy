@@ -6,6 +6,7 @@ const ContestEntry = require('../models/contest-entry.model');
 const Transaction = require('../models/transaction.model');
 const LeagueSession = require('../models/league-session.model');
 const logger = require('../config/logger');
+const { absoluteUrl } = require('../helpers/mobile-compat'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 
 /**
  * GET /api/v1/stats/user?user_id=
@@ -60,7 +61,7 @@ const getLeaderboard = async (req, res) => {
       rank: idx + 1,
       user_id: e.user_id?._id || e.user_id,
       user_name: e.user_id?.name || 'Unknown',
-      profile_image: e.user_id?.profile_image || null,
+      profile_image: absoluteUrl(e.user_id?.profile_image), // NEW IMPLEMENTATION — NODE.JS PROJECT: full URL (was a relative path)
       basket_serial: e.basket_id?.serial_no || null,
       total_score: e.total_score || 0,
       prize_amount: e.prize_amount || 0,

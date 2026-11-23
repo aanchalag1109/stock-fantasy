@@ -153,3 +153,19 @@ describe('contest cards show the same prize as the detail screen', () => {
     assert.deepEqual(cardPrize(db.contest, 'upcoming', 3).prize_pool, 9000);
   });
 });
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): leaderboard rows carry the player's photo
+describe('leaderboard profile photos', () => {
+  test('each participant has profile_image (full URL, or null)', async () => {
+    require('../../src/config/env').APP_URL = 'http://206.189.133.192:8000';
+    reset({ joined: 2 });
+    User.find = () => list([
+      { _id: new ObjectId(), old_id: 1, name: 'Asha', profile_image: 'uploads/profiles/p1.jpg' },
+      { _id: new ObjectId(), old_id: 2, name: 'Ravi', profile_image: null },
+    ]);
+    const body = await fetchContest();
+    const byName = Object.fromEntries(body.participants.map((p) => [p.user_name, p.profile_image]));
+    assert.deepEqual(byName, { Asha: 'http://206.189.133.192:8000/uploads/profiles/p1.jpg', Ravi: null });
+    User.find = () => list([]);
+  });
+});
