@@ -40,7 +40,7 @@ function reset({ joined = 40, sessionStatus = 'live', ended = true } = {}) {
       _id: new ObjectId(), old_id: 5, status: sessionStatus,
       assets: [{ asset_symbol: 'AAA', start_price: 10, ...(ended ? { end_price: 11 } : {}) }],
     },
-    entries: Array.from({ length: joined }, (_, i) => ({ _id: new ObjectId(), user_id: i + 1, basket_id: i + 1, total_score: joined - i })),
+    entries: Array.from({ length: joined }, (_, i) => ({ _id: new ObjectId(), contest_id: 50, user_id: i + 1, basket_id: i + 1, total_score: joined - i })),
   };
   db.contest = {
     _id: new ObjectId(), old_id: 50, league_session_id: 5, category: 'mega', status: 'active',
@@ -100,5 +100,56 @@ describe('live contest detail follows actual joins', () => {
     assert.equal(body.contest.prize_pool, 9000);
     assert.equal(rows[0].per_winner_amount, 2700);
     assert.equal(body.contest.is_flexible_prize, false);
+  });
+});
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the contest CARD (list) shows the same prize as
+// the detail screen — e.g. a live winner-takes-all card used to keep its old full-house prize.
+describe('contest cards show the same prize as the detail screen', () => {
+  const { contestsBySession } = require('../../src/controllers/mobile-api.controller');
+  const { cardPrize } = require('../../src/services/contest-automation/contest-scoring');
+  Contest.find = () => list([db.contest]);
+
+  async function card() {
+    let body;
+    await contestsBySession({ params: { sessionId: '5' }, query: {} }, { json: (b) => { body = b; }, status() { return this; } });
+    return body.contests[0];
+  }
+  const FORMATS = [
+    ['winner_takes_all', { category: 'winner_takes_all', participants: 10 }, 5],
+    ['h2h', { category: 'h2h', participants: 2 }, 2],
+    ['4x multiplier', { category: 'multiplier', multiplier: 4, participants: 12 }, 9],
+    ['equal', { category: 'equal', participants: 20, winning_percentage: 50 }, 8],
+    ['mega', {}, 40],
+  ];
+
+  for (const [name, extra, joined] of FORMATS) {
+    test(`live ${name}: card prize pool and first prize = detail screen = payout`, async () => {
+      reset({ joined });
+      Object.assign(db.contest, extra, { prize_distribution: [{ rank_start: 1, rank_end: 1, winners: 1, per_winner: 9000, percent: 100 }] });
+      const detail = await fetchContest();
+      const rows = detail.prize_distribution || detail.contest.prize_distribution;
+      const c = await card();
+      const payout = dynamicPrizeRows(db.contest, joined);
+      assert.equal(c.prize_pool, detail.contest.prize_pool);
+      assert.equal(c.prize_pool, payout.prizePool);
+      assert.equal(c.first_prize, rows[0].per_winner_amount);
+      assert.equal(c.is_live_prize, true);
+      assert.ok(c.prize_pool < 9000, 'not the old full-house prize');
+    });
+  }
+
+  test('upcoming flexible contest: the card shows the advertised prize, like the detail screen', async () => {
+    reset({ sessionStatus: 'upcoming', ended: false });
+    const c = await card();
+    assert.deepEqual([c.prize_pool, c.first_prize, c.is_live_prize], [9000, 2700, false]);
+  });
+
+  test('fixed-prize (guaranteed) contest: the stored prize, live or not', async () => {
+    reset({ joined: 3 });
+    db.contest.category = 'guaranteed';
+    const c = await card();
+    assert.deepEqual([c.prize_pool, c.first_prize, c.is_fixed_prize], [9000, 2700, true]);
+    assert.deepEqual(cardPrize(db.contest, 'upcoming', 3).prize_pool, 9000);
   });
 });

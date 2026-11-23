@@ -22,7 +22,7 @@ const ContestEntry = require('../../models/contest-entry.model');
 const SavedBasket = require('../../models/saved-basket.model');
 const ContestPerformancePrize = require('../../models/contest-performance-prize.model');
 const {
-  keysOf, publicId, num, round2, scoreAssets, buildDynamicPrizeDistribution,
+  keysOf, publicId, num, round2, scoreAssets, buildDynamicPrizeDistribution, asPrizeArray,
 } = require('../../helpers/mobile-compat');
 const formats = require('../contest-formats');
 
@@ -137,6 +137,47 @@ function dynamicPrizeRows(contest, participants) {
   return { rows: buildDynamicPrizeDistribution(winners, prizePool, contest.category || 'mega'), totalPool, prizePool, winners };
 }
 
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the prize shown on a contest CARD, identical to
+ * the contest detail screen and to the payout. Every card API uses this.
+ *   - fixed-prize formats (guaranteed, practice): the stored prize, always;
+ *   - flexible formats (mega, equal, winner takes all, h2h, multiplier) before the session starts:
+ *     the advertised (stored) prize;
+ *   - flexible formats once the session is live / completed: actual joins × entry fee − platform fee,
+ *     first prize and winners from the same rows the payout pays (dynamicPrizeRows).
+ * @param {object} contest  lean contest
+ * @param {string} sessionStatus
+ * @param {number} joined   entries in the contest
+ * @returns {{ prize_pool:number, first_prize:number, total_pool:number|null, winners:number|null, is_flexible_prize:boolean, is_live_prize:boolean }}
+ */
+function cardPrize(contest, sessionStatus, joined) {
+  const isFixed = formats.isFixedPool(contest);
+  const started = ['live', 'completed'].includes(sessionStatus);
+  if (!isFixed && started) {
+    const live = dynamicPrizeRows(contest, Number(joined) || 0);
+    return {
+      prize_pool: round2(live.prizePool),
+      first_prize: round2(live.rows.length ? live.rows[0].per_winner_amount : 0),
+      total_pool: round2(live.totalPool),
+      winners: live.winners,
+      is_flexible_prize: true,
+      is_live_prize: true,
+    };
+  }
+  // Stored (advertised) prize — first prize as the detail screen shows it before the start.
+  const pool = num(contest.prize_pool);
+  const stored = asPrizeArray(contest.prize_distribution);
+  let first = 0;
+  if (stored.length) {
+    const row = stored[0];
+    const percent = num(row.percent ?? row.percentage ?? row.prize_percent);
+    const winnersCount = parseInt(row.winners || row.winners_count || 1, 10) || 1;
+    const fixedAmount = num(row.per_winner ?? row.perWinner ?? row.per_winner_amount);
+    first = isFixed || !percent ? fixedAmount : ((pool * percent) / 100) / winnersCount;
+  }
+  return { prize_pool: round2(pool), first_prize: round2(first), total_pool: null, winners: null, is_flexible_prize: !isFixed, is_live_prize: false };
+}
+
 /** Replaces the stored ContestPerformancePrize rows for a contest. */
 async function savePrizeRows(contest, participants) {
   const { rows, totalPool, prizePool, winners } = dynamicPrizeRows(contest, participants);
@@ -183,5 +224,5 @@ async function payoutPrizeRows(contest, participants) {
 
 module.exports = {
   sessionPriceMaps, sessionContests, contestEntries, countParticipants, basketsFor, basketSymbols,
-  scoreEntries, assignRanks, savePrizeRows, payoutPrizeRows, isFixedPrize, dynamicPrizeRows,
+  scoreEntries, assignRanks, savePrizeRows, payoutPrizeRows, isFixedPrize, dynamicPrizeRows, cardPrize,
 };

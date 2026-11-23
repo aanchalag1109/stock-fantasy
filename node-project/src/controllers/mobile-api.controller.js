@@ -29,7 +29,7 @@ const deviceTokens = require('../services/notifications/device-token.service');
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: live prize rows use the payout's own calculation
-const { dynamicPrizeRows } = require('../services/contest-automation/contest-scoring');
+const { dynamicPrizeRows, cardPrize } = require('../services/contest-automation/contest-scoring');
 const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION — NODE.JS PROJECT: market types
 // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits for the player's basket (client feedback)
 const sessionAssets = require('../services/session-assets.service');
@@ -448,7 +448,19 @@ const getSession = async (req, res) => {
 const getUserSessions = async (req, res) => {
   try {
     const sessions = await LeagueSession.find({}).sort({ start_time: -1 }).lean();
-    const contests = await Contest.find({}).select('old_id league_session_id entry_fee prize_pool category').lean();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the fields the shared card-prize calculation needs, and the
+    // joined count of contests whose session has started (one grouped count, not every entry)
+    const contests = await Contest.find({}).select('old_id league_session_id entry_fee prize_pool category platform_fee winning_percentage multiplier is_fixed_prize fixed_prize_pool prize_distribution').lean();
+    const startedKeys = new Set(sessions.filter((s) => ['live', 'completed'].includes(s.status)).flatMap((s) => keysOf(s).map(String)));
+    const startedContests = contests.filter((c) => startedKeys.has(String(c.league_session_id)));
+    const joined = new Map();
+    if (startedContests.length) {
+      const rowsCount = await ContestEntry.aggregate([
+        { $match: { contest_id: { $in: startedContests.flatMap(keysOf) } } },
+        { $group: { _id: '$contest_id', n: { $sum: 1 } } },
+      ]);
+      rowsCount.forEach((r) => joined.set(String(r._id), r.n));
+    }
     const bySession = new Map();
     contests.forEach((contest) => {
       const key = String(contest.league_session_id);
@@ -472,7 +484,8 @@ const getUserSessions = async (req, res) => {
           ...sessionRow(session, { image_url: session.image_url }),
           contest_id: publicId(contest),
           entry_fee: num(contest.entry_fee),
-          prize_pool: num(contest.prize_pool),
+          // NEW IMPLEMENTATION — NODE.JS PROJECT: shared card-prize calculation (same as detail + payout)
+          prize_pool: cardPrize(contest, session.status, countFor(contest, joined)).prize_pool,
           contest_category: contest.category,
           assets: [],
           entries_count: 0,
@@ -605,14 +618,8 @@ const getUserJoinedSessions = async (req, res) => {
       const joinedEntries = entries.filter((entry) => sessionContestKeys.has(String(entry.contest_id)));
       let totalPrizePool = 0;
       sessionContests.forEach((contest) => {
-        let prizePool = num(contest.prize_pool);
-        const category = String(contest.category || '').toLowerCase();
-        if (['live', 'completed'].includes(session.status) && (category === 'flexible' || !formats.isFixedPool(contest))) {
-          const joinedCount = countFor(contest, allCounts);
-          const totalPool = joinedCount * num(contest.entry_fee);
-          prizePool = totalPool - (totalPool * num(contest.platform_fee)) / 100;
-        }
-        totalPrizePool += prizePool;
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: shared card-prize calculation (same as detail + payout)
+        totalPrizePool += cardPrize(contest, session.status, countFor(contest, allCounts)).prize_pool;
       });
       return {
         id: publicId(session),
@@ -641,22 +648,12 @@ function contestPublic(contest, session, joinedCount) {
   const entryFee = num(contest.entry_fee);
   const platformFee = num(contest.platform_fee);
   const isFixed = formats.isFixedPool(contest);
-  let prizePool = num(contest.prize_pool);
-  if (!isFixed && session && session.status !== 'upcoming') {
-    const totalPool = joinedCount * entryFee;
-    prizePool = totalPool - (totalPool * platformFee) / 100;
-  }
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): one card-prize calculation for every card,
+  // identical to the contest detail screen and the payout (live winner-takes-all etc. included).
+  const prize = cardPrize(contest, session ? session.status : 'upcoming', joinedCount);
+  const prizePool = prize.prize_pool;
+  const firstPrize = prize.first_prize;
   const distribution = asPrizeArray(contest.prize_distribution);
-  let firstPrize = 0;
-  if (distribution.length) {
-    const first = distribution[0];
-    firstPrize = round2(first.per_winner ?? first.perWinner ?? 0);
-  }
-  if (!isFixed && session && ['live', 'completed'].includes(session.status) && prizePool > 0) {
-    const winners = formats.winnersFor(contest, joinedCount);
-    const dist = buildDynamicPrizeDistribution(winners, prizePool, contest.category);
-    if (dist.length) firstPrize = round2(dist[0].per_winner_amount);
-  }
   const badge = formats.appBadge(contest);
   const spots = parseInt(contest.participants || 100, 10);
   return {
@@ -671,6 +668,7 @@ function contestPublic(contest, session, joinedCount) {
     prize_pool: round2(prizePool),
     is_flexible_prize: !isFixed,
     is_fixed_prize: isFixed,
+    is_live_prize: prize.is_live_prize, // NEW IMPLEMENTATION — NODE.JS PROJECT: true = from actual joins
     is_pinned: !!contest.is_pinned,
     pin_order: contest.pin_order || 0,
     prize_distribution: typeof contest.prize_distribution === 'string' ? contest.prize_distribution : JSON.stringify(distribution),
@@ -743,18 +741,10 @@ const myContestsBySession = async (req, res) => {
     return res.json({
       contests: contests.map((contest) => {
         const joined = countFor(contest, counts);
-        const row = contestPublic(contest, plain, joined);
-        const flexible = String(contest.category || '').toLowerCase() === 'flexible' || !formats.isFixedPool(contest);
-        if (flexible) {
-          const totalPool = joined * num(contest.entry_fee);
-          row.prize_pool = totalPool - (totalPool * num(contest.platform_fee)) / 100;
-          row.is_flexible_prize = true;
-        }
-        // NEW IMPLEMENTATION — NODE.JS PROJECT: once live, contestPublic already gives the first prize from actual joins
-        const distribution = asPrizeArray(contest.prize_distribution);
-        const live = ['live', 'completed'].includes(plain.status);
-        if (!formats.isNewFormat(contest) && !(live && flexible)) row.first_prize = distribution.length ? round2(distribution[0].perWinner ?? distribution[0].per_winner ?? 0) : 0;
-        return row;
+        // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): prize_pool / first_prize come from the shared
+        // card-prize calculation in contestPublic (same as the detail screen and the payout). The separate
+        // override here showed upcoming contests a pool from the joins so far and used another first-prize rule.
+        return contestPublic(contest, plain, joined);
       }),
       session: {
         id: publicId(plain),
@@ -961,18 +951,17 @@ const getUserContests = async (req, res) => {
       if (!group.contests.has(contestKey)) {
         const joinedUsers = countFor(contest, counts);
         const maxParticipants = parseInt(contest.participants || 0, 10);
-        let prizePool = num(contest.prize_pool);
-        const category = String(contest.category || '').toLowerCase();
-        const isFlexible = ['flexible', 'mega', 'equal'].includes(category) && ['live', 'completed'].includes(session.status);
-        if (isFlexible) {
-          const totalPool = joinedUsers * num(contest.entry_fee);
-          prizePool = totalPool - (totalPool * num(contest.platform_fee)) / 100;
-        }
+        // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): shared card-prize calculation. Before, only
+        // mega/equal/flexible were recalculated once live, so a live winner-takes-all / h2h / multiplier card
+        // kept the old full-house prize while the detail screen showed the real one.
+        const prize = cardPrize(contest, session.status, joinedUsers);
         group.contests.set(contestKey, {
           contest_id: publicId(contest),
           category: contest.category,
-          prize_pool: prizePool,
-          is_flexible_prize: isFlexible,
+          prize_pool: prize.prize_pool,
+          first_prize: prize.first_prize,
+          is_flexible_prize: prize.is_flexible_prize,
+          is_live_prize: prize.is_live_prize,
           entry_fee: num(contest.entry_fee),
           status: contest.status,
           total_spots: maxParticipants,
