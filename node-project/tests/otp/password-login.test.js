@@ -249,3 +249,58 @@ describe('update-profile can no longer set a password with only a user_id', () =
     assert.ok(await bcrypt.compare('hacked123', user().password));
   });
 });
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): mobile / email change only with OTP
+describe('changing mobile or email needs OTP', () => {
+  beforeEach(reset);
+  const NEW_MOBILE = '9123456780';
+  const profile = (fields) => {
+    let req = request(app).post('/api/v1/update-profile').field('user_id', String(user().old_id));
+    Object.entries({ name: 'Asha', email: 'asha@x.com', mobile: MOBILE, ...fields }).forEach(([k, v]) => { req = req.field(k, v); });
+    return req;
+  };
+
+  test('update-profile keeps working with the current mobile/email, but refuses to change them', async () => {
+    await signup();
+    assert.equal((await profile({ name: 'Asha K', mobile: `+91${MOBILE}` })).status, 200, 'same number in another format is not a change');
+    assert.equal(user().name, 'Asha K');
+    let res = await profile({ mobile: NEW_MOBILE });
+    assert.equal(res.status, 403);
+    assert.deepEqual([res.body.otp_required, res.body.field], [true, 'mobile']);
+    res = await profile({ email: 'new@x.com' });
+    assert.deepEqual([res.status, res.body.field], [403, 'email']);
+    assert.deepEqual([user().mobile, user().email], [MOBILE, 'asha@x.com']);
+  });
+
+  test('change email: OTP to the registered mobile', async () => {
+    await signup();
+    const uid = user().old_id;
+    let res = await api('/change-email', { user_id: uid, new_email: 'new@x.com', otp: '000000' });
+    assert.equal(res.status, 400, 'no OTP requested yet');
+    await otp('change_email');
+    res = await api('/change-email', { user_id: uid, new_email: 'new@x.com', otp: OTP });
+    assert.equal(res.status, 200, res.text);
+    assert.equal(user().email, 'new@x.com');
+  });
+
+  test('change mobile: OTP to the current number AND to the new number', async () => {
+    await signup();
+    const uid = user().old_id;
+    await otp('change_mobile');
+    await otp('new_mobile', NEW_MOBILE);
+    let res = await api('/change-mobile', { user_id: uid, new_mobile: NEW_MOBILE, otp_current: OTP });
+    assert.equal(res.status, 400, 'both OTPs required');
+    res = await api('/change-mobile', { user_id: uid, new_mobile: NEW_MOBILE, otp_current: OTP, otp_new: OTP });
+    assert.equal(res.status, 200, res.text);
+    assert.equal(db.users[0].mobile, NEW_MOBILE);
+    assert.equal(res.body.user.mobile, NEW_MOBILE);
+  });
+
+  test('a number or email already used by another account is refused', async () => {
+    await signup();
+    db.users.push({ _id: new ObjectId(), old_id: 999, name: 'Other', email: 'other@x.com', mobile: NEW_MOBILE });
+    assert.equal((await api('/send-otp', { mobile: NEW_MOBILE, purpose: 'new_mobile' })).status, 409);
+    await otp('change_email');
+    assert.equal((await api('/change-email', { user_id: user().old_id, new_email: 'other@x.com', otp: OTP })).status, 409);
+  });
+});

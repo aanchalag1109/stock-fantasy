@@ -42,6 +42,9 @@ router.post('/register', api.register);
 // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): login with OTP or password
 router.post('/password-login', api.passwordLogin);
 router.post('/set-password', api.setPassword); // set / reset the password with an OTP (purpose: password)
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): mobile / email change only with OTP
+router.post('/change-email', api.changeEmail);
+router.post('/change-mobile', api.changeMobile);
 router.get('/check-user', api.checkUser);
 router.post('/check-user', api.checkUser);
 

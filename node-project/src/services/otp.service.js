@@ -23,7 +23,9 @@ const logger = require('../config/logger');
 const smsService = require('./sms.service');
 
 // NEW IMPLEMENTATION — NODE.JS PROJECT: 'password' = set / reset the password (login with OTP or password)
-const PURPOSES = ['login', 'signup', 'password'];
+// NEW IMPLEMENTATION — NODE.JS PROJECT: profile changes (client feedback) — 'change_email' / 'change_mobile'
+// are sent to the CURRENT mobile (proves the account owner); 'new_mobile' to the NEW number (proves it).
+const PURPOSES = ['login', 'signup', 'password', 'change_email', 'change_mobile', 'new_mobile'];
 const OTP_EXPIRY_SECONDS = 300;
 const RESEND_COOLDOWN_SECONDS = 30;
 const MAX_VERIFY_ATTEMPTS = 5;

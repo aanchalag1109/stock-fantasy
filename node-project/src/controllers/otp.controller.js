@@ -28,13 +28,18 @@ const sendOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid mobile number required (10-15 characters).' });
     }
     if (!purpose) {
-      return res.status(400).json({ success: false, message: "purpose must be 'login', 'signup' or 'password'." });
+      return res.status(400).json({ success: false, message: "purpose must be one of: login, signup, password, change_email, change_mobile, new_mobile." });
     }
 
     // Same exact-match lookup the login/register endpoints use.
     const user = await User.findOne({ mobile }).select('_id').lean();
     // NEW IMPLEMENTATION — NODE.JS PROJECT: 'password' (set / reset password) needs an existing account
-    if ((purpose === 'login' || purpose === 'password') && !user) {
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: change_email / change_mobile go to the account's current mobile;
+    // new_mobile goes to a number that must not belong to another account yet.
+    if (purpose === 'new_mobile' && user) {
+      return res.status(409).json({ success: false, message: 'This mobile number is already used by another account.' });
+    }
+    if (['login', 'password', 'change_email', 'change_mobile'].includes(purpose) && !user) {
       return res.status(404).json({ success: false, message: 'User not found. Please register first.' });
     }
     if (purpose === 'signup' && user) {

@@ -248,15 +248,20 @@ const updateProfile = async (req, res) => {
     const { name, email, mobile, password, age, gender } = req.body;
 
     if (name) user.name = name.trim();
-    if (email) {
-      const emailExists = await User.findOne({ email: email.toLowerCase(), _id: { $ne: user._id } });
-      if (emailExists) return res.status(409).json({ success: false, message: 'Email already in use' });
-      user.email = email.toLowerCase().trim();
-    }
-    if (mobile) {
-      const mobileExists = await User.findOne({ mobile: mobile.trim(), _id: { $ne: user._id } });
-      if (mobileExists) return res.status(409).json({ success: false, message: 'Mobile already in use' });
-      user.mobile = mobile.trim();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): mobile / email change only with OTP
+    // (POST /api/v1/change-mobile, /api/v1/change-email). Sending the current values is fine.
+    const last10 = (v) => String(v || '').replace(/\D/g, '').slice(-10);
+    const mobileChanged = mobile && last10(mobile) !== last10(user.mobile);
+    const emailChanged = email && String(email).trim().toLowerCase() !== String(user.email || '').trim().toLowerCase();
+    if (mobileChanged || emailChanged) {
+      return res.status(403).json({
+        success: false,
+        otp_required: true,
+        field: mobileChanged ? 'mobile' : 'email',
+        message: mobileChanged
+          ? 'To change your mobile number, verify it with OTP (Change mobile number).'
+          : 'To change your email, verify with OTP sent to your registered mobile (Change email).',
+      });
     }
     // NEW IMPLEMENTATION — NODE.JS PROJECT: password login — change only with the current password;
     // accounts without one set it with an OTP (POST /api/v1/set-password).

@@ -267,6 +267,69 @@ const getUserProfile = async (req, res) => {
   }
 };
 
+/** NEW IMPLEMENTATION — NODE.JS PROJECT: which of mobile / email a profile request really changes. */
+const last10 = (value) => String(value || '').replace(/\D/g, '').slice(-10);
+function profileChanges(user, body) {
+  const mobile = body.mobile != null && String(body.mobile).trim() !== '' && last10(body.mobile) !== last10(user.mobile);
+  const email = body.email != null && String(body.email).trim() !== ''
+    && String(body.email).trim().toLowerCase() !== String(user.email || '').trim().toLowerCase();
+  return { mobile, email };
+}
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): change the email with an OTP sent to the user's
+ * registered mobile. 1) POST /send-otp { mobile: <current mobile>, purpose: 'change_email' }
+ * 2) POST /change-email { user_id, new_email, otp }
+ */
+const changeEmail = async (req, res) => {
+  try {
+    const user = await findByPublicId(User, req.body.user_id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    const email = String(req.body.new_email || req.body.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 255) return res.status(422).json({ success: false, message: 'Please enter a valid email address.' });
+    if (email === String(user.email || '').toLowerCase()) return res.status(422).json({ success: false, message: 'This is already your email.' });
+    if (await User.findOne({ email, _id: { $ne: user._id } })) return res.status(409).json({ success: false, message: 'This email is already used by another account.' });
+    const otpResult = await otpService.verifyOtp(user.mobile, 'change_email', req.body.otp);
+    if (!otpResult.ok) return otpService.sendVerifyError(res, otpResult);
+    await User.updateOne({ _id: user._id }, { $set: { email, email_verified_at: null } });
+    user.email = email;
+    return res.json({ success: true, message: 'Email updated successfully', user: { ...authUser(user), profile_image: absoluteUrl(user.profile_image) } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Could not change the email. Please try again.' });
+  }
+};
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): change the mobile number with two OTPs —
+ * one to the current number (the account owner) and one to the new number (they own it).
+ * 1) POST /send-otp { mobile: <current mobile>, purpose: 'change_mobile' }
+ * 2) POST /send-otp { mobile: <new mobile>, purpose: 'new_mobile' }
+ * 3) POST /change-mobile { user_id, new_mobile, otp_current, otp_new }
+ */
+const changeMobile = async (req, res) => {
+  try {
+    const user = await findByPublicId(User, req.body.user_id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    const mobile = String(req.body.new_mobile || '').trim();
+    if (mobile.length < 10 || mobile.length > 15) return res.status(422).json({ success: false, message: 'Please enter a valid mobile number.' });
+    if (last10(mobile) === last10(user.mobile)) return res.status(422).json({ success: false, message: 'This is already your mobile number.' });
+    if (await User.findOne({ mobile, _id: { $ne: user._id } })) return res.status(409).json({ success: false, message: 'This mobile number is already used by another account.' });
+    // Both checked before either OTP is used up, so one wrong code doesn't waste the other.
+    if (!/^\d{6}$/.test(String(req.body.otp_current || '').trim()) || !/^\d{6}$/.test(String(req.body.otp_new || '').trim())) {
+      return res.status(400).json({ success: false, message: 'Enter both OTPs: the one sent to your current number and the one sent to the new number.' });
+    }
+    const current = await otpService.verifyOtp(user.mobile, 'change_mobile', req.body.otp_current);
+    if (!current.ok) return otpService.sendVerifyError(res, { ...current, message: `Current number: ${current.message}` });
+    const fresh = await otpService.verifyOtp(mobile, 'new_mobile', req.body.otp_new);
+    if (!fresh.ok) return otpService.sendVerifyError(res, { ...fresh, message: `New number: ${fresh.message}` });
+    await User.updateOne({ _id: user._id }, { $set: { mobile } });
+    user.mobile = mobile;
+    return res.json({ success: true, message: 'Mobile number updated successfully', user: { ...authUser(user), profile_image: absoluteUrl(user.profile_image) } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Could not change the mobile number. Please try again.' });
+  }
+};
+
 const updateProfile = async (req, res) => {
   try {
     const user = await findByPublicId(User, req.body.user_id);
@@ -289,9 +352,20 @@ const updateProfile = async (req, res) => {
       if (problem) return res.status(422).json({ success: false, message: problem, errors: { password: [problem] } });
       newPasswordHash = await passwordAuth.hashPassword(req.body.password);
     }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): mobile and email are changed only with OTP
+    // (POST /change-mobile, /change-email). Sending the current values (as the profile form does) is fine.
+    const changes = profileChanges(user, req.body);
+    if (changes.mobile || changes.email) {
+      return res.status(403).json({
+        success: false,
+        otp_required: true,
+        field: changes.mobile ? 'mobile' : 'email',
+        message: changes.mobile
+          ? 'To change your mobile number, verify it with OTP (Change mobile number).'
+          : 'To change your email, verify with OTP sent to your registered mobile (Change email).',
+      });
+    }
     user.name = req.body.name;
-    user.email = String(req.body.email).toLowerCase();
-    user.mobile = req.body.mobile;
     if (newPasswordHash) {
       user.password = newPasswordHash;
       user.password_set_at = new Date();
@@ -1636,7 +1710,7 @@ const { getLivePrices, getStockLivePrice, getCryptoLivePrice } = require('./live
 const { lgpayCallback } = require('./payment.controller');
 
 module.exports = {
-  login, register, passwordLogin, setPassword, checkUser, getSettings, getUserProfile, updateProfile,
+  login, register, passwordLogin, setPassword, checkUser, getSettings, getUserProfile, updateProfile, changeEmail, changeMobile,
   getPaymentDetails, updatePaymentDetails, banners, upcomingSessions, getSession,
   getUserSessions, getActiveSession, getSessionAssets, getSessionAssetsGrouped, getUserJoinedSessions,
   contestsBySession, myContestsBySession, getContest, getUserContests, bulkJoinContest,
