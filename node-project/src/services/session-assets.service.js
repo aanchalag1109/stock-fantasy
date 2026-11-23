@@ -249,7 +249,69 @@ function selectionOf(doc) {
   return out;
 }
 
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): how many stocks a basket has from each market
+ * category of its session, for the basket preview. Categories come from the session (so a category
+ * with no picks is listed with 0), with the player's pick limits.
+ * @returns {{ categories: Array<{ category_id, category_name, selected:number, min_select:number|null,
+ *   max_select:number|null, pool_count:number, status:'ok'|'below_min'|'above_max' }>,
+ *   total_selected:number, other_count:number, complete:boolean }}
+ *   other_count = picked stocks that are not in any category of the session.
+ */
+function basketCategorySummary(session, assets) {
+  const doc = session && typeof session.toObject === 'function' ? session.toObject() : session;
+  const limits = basketLimits(doc);
+  // Sessions created before categories had limits: categories from the session's assets, no limits.
+  let categories = limits;
+  if (!categories.length && doc && Array.isArray(doc.assets)) {
+    const seen = new Map();
+    doc.assets.forEach((a) => {
+      if (!a || a.category_id == null) return;
+      const key = String(a.category_id);
+      if (!seen.has(key)) seen.set(key, { category_id: a.category_id, category_name: a.category_name || null, min_select: null, max_select: null, pool_count: 0 });
+      seen.get(key).pool_count += 1;
+    });
+    categories = [...seen.values()];
+  }
+  const categoryOf = new Map();
+  ((doc && doc.assets) || []).forEach((a) => {
+    if (a && a.asset_symbol) categoryOf.set(String(a.asset_symbol).trim().toUpperCase(), String(a.category_id));
+  });
+  const counts = new Map();
+  const seenSymbols = new Set();
+  let other = 0;
+  (Array.isArray(assets) ? assets : []).forEach((asset) => {
+    const key = String((asset && (asset.asset_symbol || asset.symbol || asset.name)) || '').trim().toUpperCase();
+    if (!key || seenSymbols.has(key)) return;
+    seenSymbols.add(key);
+    const category = categoryOf.get(key);
+    if (category == null) { other += 1; return; }
+    counts.set(category, (counts.get(category) || 0) + 1);
+  });
+  const rows = categories.map((c) => {
+    const selected = counts.get(String(c.category_id)) || 0;
+    let status = 'ok';
+    if (c.min_select != null && selected < c.min_select) status = 'below_min';
+    else if (c.max_select != null && selected > c.max_select) status = 'above_max';
+    return {
+      category_id: c.category_id,
+      category_name: c.category_name,
+      selected,
+      min_select: c.min_select,
+      max_select: c.max_select,
+      pool_count: c.pool_count,
+      status,
+    };
+  });
+  return {
+    categories: rows,
+    total_selected: seenSymbols.size,
+    other_count: other,
+    complete: rows.every((r) => r.status === 'ok') && (limits.length === 0 || other === 0),
+  };
+}
+
 module.exports = {
   activeCategories, activeAssets, parseSelection, buildAssignment, templateAssetsData, selectionOf, categoryRef, minOf, maxOf,
-  basketLimits, checkBasket,
+  basketLimits, checkBasket, basketCategorySummary,
 };

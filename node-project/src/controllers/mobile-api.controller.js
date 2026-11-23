@@ -801,6 +801,7 @@ const getContest = async (req, res) => {
         total_points: round2(scored.total),
         assets: scored.rows,
         multipliers: basket.multipliers || [],
+        category_summary: sessionAssets.basketCategorySummary(sessionPlain, basket.assets || []), // NEW IMPLEMENTATION — NODE.JS PROJECT
       };
     });
     if (prices.started) participants.sort((a, b) => b.total_score - a.total_score);
@@ -988,6 +989,7 @@ const getUserContests = async (req, res) => {
         serial_no: basket.serial_no || null,
         assets: scored.rows,
         multipliers: basket.multipliers || [],
+        category_summary: sessionAssets.basketCategorySummary(session, basket.assets || []), // NEW IMPLEMENTATION — NODE.JS PROJECT
         starting_prices: entry.starting_prices || [],
         total_score: num(entry.total_score),
         total_points: round2(scored.total),
@@ -1188,6 +1190,8 @@ const savedBaskets = async (req, res) => {
         lc_count: grouped.lc.length,
         mc_count: grouped.mc.length,
         sc_count: grouped.sc.length,
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: stocks per market category of the session, with limits
+        category_summary: sessionAssets.basketCategorySummary(session, basket.assets || []),
         created_at: sqlDate(basket.created_at),
         updated_at: sqlDate(basket.updated_at),
       });
@@ -1318,6 +1322,8 @@ const getUserContestBaskets = async (req, res) => {
         lc_count: grouped.lc.length,
         mc_count: grouped.mc.length,
         sc_count: grouped.sc.length,
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: stocks per market category of the session, with limits
+        category_summary: sessionAssets.basketCategorySummary(session, basket.assets || []),
         created_at: sqlDate(basket.created_at),
         updated_at: sqlDate(basket.updated_at),
       });

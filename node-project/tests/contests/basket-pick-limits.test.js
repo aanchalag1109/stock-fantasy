@@ -139,3 +139,41 @@ describe('basket endpoints enforce the limits', () => {
     assert.match(bad.body.message, /Large Cap: pick at least 1/);
   });
 });
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT: basket preview — stocks per market category (client feedback)
+describe('basket preview: category_summary', () => {
+  const { basketCategorySummary } = require('../../src/services/session-assets.service');
+  beforeEach(reset);
+
+  test('every session category is listed with selected / min / max / pool and a status', () => {
+    const s = basketCategorySummary(session(), pick('RELIANCE', 'TCS', 'INFY'));
+    assert.deepEqual(s.categories, [
+      { category_id: 1, category_name: 'Large Cap', selected: 3, min_select: 1, max_select: 2, pool_count: 3, status: 'above_max' },
+      { category_id: 2, category_name: 'Mid Cap', selected: 0, min_select: 1, max_select: null, pool_count: 2, status: 'below_min' },
+    ]);
+    assert.deepEqual([s.total_selected, s.other_count, s.complete], [3, 0, false]);
+    const ok = basketCategorySummary(session(), pick('RELIANCE', 'IRCTC', 'TATAPOWER'));
+    assert.deepEqual(ok.categories.map((c) => [c.selected, c.status]), [[1, 'ok'], [2, 'ok']]);
+    assert.equal(ok.complete, true);
+  });
+
+  test('stocks outside the session are counted as other; older sessions list categories without limits', () => {
+    assert.equal(basketCategorySummary(session(), pick('RELIANCE', 'IRCTC', 'AAPL')).other_count, 1);
+    delete session().categories;
+    const s = basketCategorySummary(session(), pick('RELIANCE', 'IRCTC'));
+    assert.deepEqual(s.categories.map((c) => [c.category_name, c.selected, c.min_select, c.max_select, c.pool_count, c.status]), [
+      ['Large Cap', 1, null, null, 3, 'ok'], ['Mid Cap', 1, null, null, 2, 'ok'],
+    ]);
+    assert.equal(s.complete, true);
+  });
+
+  test('GET /saved-baskets returns category_summary for each basket', async () => {
+    db.baskets.push({ _id: new ObjectId(), old_id: 71, user_id: ids.user, session_id: 9, is_standalone: true, serial_no: 'B1', assets: pick('RELIANCE', 'TCS', 'IRCTC'), multipliers: [], created_at: new Date() });
+    SavedBasket.find = (f) => { const rows = db.baskets.filter((d) => matches(d, f)); const q = { sort: () => q, lean: () => q, then: (a, b) => Promise.resolve(rows).then(a, b) }; return q; };
+    const res = await request(app).get('/api/v1/saved-baskets?user_id=5');
+    assert.equal(res.status, 200, res.text);
+    const summary = res.body.data[0].category_summary;
+    assert.deepEqual(summary.categories.map((c) => [c.category_name, c.selected, c.max_select]), [['Large Cap', 2, 2], ['Mid Cap', 1, null]]);
+    assert.equal(summary.complete, true);
+  });
+});
