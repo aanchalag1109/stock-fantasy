@@ -264,7 +264,8 @@ const review = (action) => async (req, res) => {
         userRef: transaction.user_id,
         balance: 'winnings_balance',
         amount,
-        transaction: { type: 'deposit', transaction_id: `TXNREFUND_${transaction._id}`, payment_method: 'Withdrawal refund', description: 'Withdrawal rejected - Refund to winnings' },
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: 'refund' as in PHP (was 'deposit')
+        transaction: { type: 'refund', transaction_id: `TXNREFUND_${transaction._id}`, payment_method: 'Withdrawal refund', description: 'Withdrawal rejected - amount refunded to winnings' },
       });
     }
     // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — pending deposit/withdrawal reviewed by an admin

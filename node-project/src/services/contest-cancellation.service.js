@@ -101,7 +101,10 @@ async function refundEntries(contest, label) {
       amount,
       split: { winnings_balance: toWinnings, deposit_balance: toDeposit },
       transaction: {
-        type: 'deposit',
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: 'refund' as in PHP, so the app lists it under the contest
+        // as a refund (was 'deposit')
+        type: 'refund',
+        payment_method: 'Contest refund',
         contest_id: label,
         transaction_id: `REFUND_${label}_E${entry.old_id != null ? entry.old_id : entry._id}`,
         description: `Contest #${label} cancelled - Entry fee refunded`,

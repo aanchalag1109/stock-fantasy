@@ -257,7 +257,7 @@ describe('live scores (contest:update-live-scores)', () => {
 
   test('scores entries with starting prices against current prices and ranks the contest', async () => {
     const s = addSession();
-    const c = addContest(s);
+    const c = addContest(s, { min_participants: 2 }); // 3 players: enough, so it is not cancelled at the start
     const rows = addEntries(c, s, 3, (i) => ({ assets: [{ name: 'RELIANCE' }], multipliers: [{ multiplier: 1, prediction: i === 1 ? 'DOWN' : 'UP' }] }));
     await runSessionLifecycle(NOW);
     get('ContestEntry', rows[2].entry._id).starting_prices = {}; // joined without starting prices
@@ -283,15 +283,22 @@ async function runToCompletion(session, endPrices, startPrices) {
 describe('results (contest:calculate-performance)', () => {
   beforeEach(reset);
 
-  test('fewer than 10 entries: cancelled and refunded exactly once', async () => {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): cancelled + refunded when the session STARTS
+  // (joining has closed, it can't fill any more), not after it ends; the results job is only a backstop.
+  test('fewer than 10 entries: cancelled and refunded exactly once, at the start of the session', async () => {
     const s = addSession();
     const c = addContest(s);
     const rows = addEntries(c, s, 4);
+    await runSessionLifecycle(NOW); // session goes live
+    await settle();
+    assert.equal(get('Contest', c._id).status, 'cancelled', 'cancelled as soon as the session started');
+    rows.forEach(({ user }) => assert.equal(get('User', user._id).deposit_balance, 10));
+    assert.ok(db.Transaction.every((t) => t.type === 'refund'));
     await runToCompletion(s, { RELIANCE: 110, TCS: 200, INFY: 50 });
     const first = await runContestResults();
     const second = await runContestResults();
     await settle();
-    assert.equal(first.cancelled, 1);
+    assert.equal(first.cancelled, 0, 'nothing left to cancel at the end');
     assert.equal(second.cancelled, 0);
     assert.equal(get('Contest', c._id).status, 'cancelled');
     rows.forEach(({ user }) => assert.equal(get('User', user._id).deposit_balance, 10));
@@ -362,7 +369,7 @@ describe('results (contest:calculate-performance)', () => {
     await runToCompletion(s, { RELIANCE: 110, TCS: 200, INFY: 50 });
     const result = await runContestResults();
     await settle();
-    assert.equal(result.cancelled, 1);
+    assert.equal(result.cancelled, 0, 'the lonely H2H was already cancelled when the session started');
     assert.equal(get('Contest', lonely._id).status, 'cancelled');
     assert.equal(get('User', alone[0].user._id).deposit_balance, 100, 'entry fee refunded');
     assert.equal(get('Contest', h2h._id).prizes_distributed, true);

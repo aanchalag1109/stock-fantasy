@@ -4,7 +4,9 @@ const withdrawalRequestSchema = new mongoose.Schema({
   old_id: { type: Number, index: true },
   user_id: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
   amount: { type: Number, required: true }, // ProbCoins deducted from the winnings balance
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
+  // 'approved' = accepted by an admin (Node); 'accepted' = the same, written by the PHP system. The app
+  // API always reports both as 'accepted' (withdrawal.service.js appStatus), as PHP did.
+  status: { type: String, enum: ['pending', 'approved', 'accepted', 'rejected'], default: 'pending', index: true },
   admin_message: { type: String, default: null },
   usdt_wallet_address: { type: String, default: null },
   usdt_network: { type: String, default: 'TRC20' },

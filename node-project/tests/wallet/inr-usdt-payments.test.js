@@ -321,6 +321,20 @@ describe('Withdrawals in INR or USDT', () => {
     await withdrawals.processWithdrawal(String(b._id), { action: 'reject', adminMessage: 'again', admin: 'admin@x' });
     assert.equal(user().winnings_balance, 49000, 'refunded once');
     assert.equal(b.status, 'rejected');
+
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): what the app sees — as the PHP API did
+    const refund = db.Transaction.find((t) => t.transaction_id === `WDREFUND_${b._id}`);
+    assert.deepEqual([refund.type, refund.status, refund.payment_method], ['refund', 'success', 'Withdrawal refund']);
+    assert.match(refund.description, /^Withdrawal #\S+ rejected - amount refunded: Wrong address$/);
+    const history = (await request(app).get('/api/v1/withdraw/history?user_id=41')).body.withdrawals;
+    const byId = Object.fromEntries(history.map((w) => [w.payout_amount, w]));
+    assert.deepEqual([byId[10].status, byId[10].status_label], ['accepted', 'Accepted'], 'approved is shown as accepted');
+    assert.deepEqual([byId[20].status, byId[20].status_label], ['rejected', 'Rejected']);
+  });
+
+  test('withdrawal status for the app: approved → accepted (PHP value), labels', () => {
+    assert.deepEqual(['approved', 'accepted', 'pending', 'rejected', undefined].map(withdrawals.appStatus), ['accepted', 'accepted', 'pending', 'rejected', 'pending']);
+    assert.equal(withdrawals.statusLabel('approved'), 'Accepted');
   });
 });
 

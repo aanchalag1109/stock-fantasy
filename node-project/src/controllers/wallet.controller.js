@@ -207,8 +207,16 @@ const getWithdrawalRequests = async (req, res) => {
     const userId = req.query.user_id || req.userId;
     if (!userId) return res.status(400).json({ success: false, message: 'user_id required' });
 
-    const requests = await WithdrawalRequest.find({ user_id: userId }).sort({ created_at: -1 }).lean();
-    return res.json({ success: true, withdrawal_requests: requests });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: numeric or ObjectId user ids (the raw string matched nothing),
+    // and the status the app understands ('accepted', as PHP) plus a label.
+    const user = await withdrawals.findUser(userId);
+    if (!user) return res.json({ success: true, withdrawal_requests: [] });
+    const keys = user.old_id != null ? [user._id, user.old_id] : [user._id];
+    const requests = await WithdrawalRequest.find({ user_id: { $in: keys } }).sort({ created_at: -1 }).lean();
+    return res.json({
+      success: true,
+      withdrawal_requests: requests.map((r) => ({ ...r, status: withdrawals.appStatus(r.status), status_label: withdrawals.statusLabel(r.status) })),
+    });
   } catch (err) {
     logger.error('getWithdrawalRequests error:', err.message);
     res.status(500).json({ success: false, message: 'Failed to fetch withdrawal requests' });

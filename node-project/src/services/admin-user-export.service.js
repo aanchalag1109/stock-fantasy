@@ -82,7 +82,7 @@ async function statsFor(users) {
     totalsBy(ContestEntry, {}, keys, null),
     totalsBy(Transaction, { type: 'deposit', status: 'success', payment_method: { $ne: 'Withdrawal refund' } }, keys, '$amount'),
     totalsBy(Transaction, { type: 'winnings', status: 'success' }, keys, '$amount'),
-    totalsBy(WithdrawalRequest, { status: 'approved' }, keys, '$amount'),
+    totalsBy(WithdrawalRequest, { status: { $in: ['approved', 'accepted'] } }, keys, '$amount'), // Node + PHP rows
   ]);
   return { contests, deposited, winnings, withdrawn };
 }

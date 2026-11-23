@@ -157,10 +157,11 @@ async function processWithdrawal(id, { action, adminMessage, payoutReference, ad
       balance: 'winnings_balance',
       amount: coins,
       transaction: {
-        type: 'deposit',
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: 'refund' as in PHP (was 'deposit'), so the app shows a refund
+        type: 'refund',
         transaction_id: `WDREFUND_${before._id}`,
         payment_method: 'Withdrawal refund',
-        description: `Withdrawal rejected - refund${adminMessage ? ': ' + clean(adminMessage) : ''}`,
+        description: `Withdrawal #${publicId(before)} rejected - amount refunded${adminMessage ? ': ' + clean(adminMessage) : ''}`,
       },
     });
     if (refund.missingUser) logger.error(`[withdrawal] ${before._id} rejected but user ${before.user_id} was not found for the refund`);
@@ -198,6 +199,16 @@ async function processWithdrawal(id, { action, adminMessage, payoutReference, ad
   };
 }
 
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT: the status the app understands. The app was built on the PHP
+ * API, where an accepted withdrawal is 'accepted'; Node stores 'approved' — shown as 'accepted'.
+ */
+const appStatus = (status) => (status === 'approved' ? 'accepted' : status || 'pending');
+const STATUS_LABEL = { pending: 'Pending', accepted: 'Accepted', rejected: 'Rejected' };
+const statusLabel = (status) => STATUS_LABEL[appStatus(status)] || appStatus(status);
+/** Every status meaning "accepted by an admin" (Node and PHP rows), for queries. */
+const ACCEPTED_STATUSES = ['approved', 'accepted'];
+
 /** What the app sees. */
 function publicWithdrawal(w) {
   return {
@@ -206,7 +217,8 @@ function publicWithdrawal(w) {
     currency: w.currency || 'USDT',
     payout_amount: w.payout_amount != null ? w.payout_amount : null,
     rate: w.rate || null,
-    status: w.status,
+    status: appStatus(w.status),
+    status_label: statusLabel(w.status),
     usdt_wallet_address: w.usdt_wallet_address || null,
     usdt_network: w.usdt_network || null,
     payout_details: w.payout_details || null,
@@ -247,4 +259,7 @@ async function saveInrPayoutDetails(user, body = {}) {
   return { ok: true, details: { upi_id: upi || null, account_holder_name: holder || null, account_number: account || null, ifsc_code: ifsc || null, bank_name: bank || null } };
 }
 
-module.exports = { requestWithdrawal, legacyUsdtWithdrawal, processWithdrawal, publicWithdrawal, inrDestination, saveInrPayoutDetails, findUser };
+module.exports = {
+  requestWithdrawal, legacyUsdtWithdrawal, processWithdrawal, publicWithdrawal, inrDestination, saveInrPayoutDetails, findUser,
+  appStatus, statusLabel, ACCEPTED_STATUSES,
+};

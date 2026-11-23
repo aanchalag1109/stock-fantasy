@@ -100,7 +100,7 @@ async function loadProfile(user, can) {
         sum(Transaction, { ...byUser, type: 'contest_entry', status: 'success' }),
         sum(Transaction, { ...byUser, type: 'winnings', status: 'success' }),
         sum(Transaction, { ...byUser, type: 'referral', status: 'success' }),
-        sum(WithdrawalRequest, { ...byUser, status: 'approved' }),
+        sum(WithdrawalRequest, { ...byUser, status: { $in: ['approved', 'accepted'] } }), // Node + PHP rows
         sum(WithdrawalRequest, { ...byUser, status: 'pending' }),
       ]);
       return { deposited, entryFees, winnings, referrals, withdrawn, pendingWd };

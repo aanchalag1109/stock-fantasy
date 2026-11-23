@@ -223,7 +223,8 @@ describe('Contests → Cancel (PHP cancelContest)', () => {
     assert.equal(res.body.message, 'Contest cancelled and users refunded');
     assert.equal(get('Contest', c._id).status, 'cancelled');
     rows.forEach((r) => assert.equal(balance(r), 25));
-    assert.ok(db.Transaction.every((t) => t.description === `Contest #${c._id} cancelled - Entry fee refunded` && t.type === 'deposit'));
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: refunds are type 'refund' (as PHP), not 'deposit'
+    assert.ok(db.Transaction.every((t) => t.description === `Contest #${c._id} cancelled - Entry fee refunded` && t.type === 'refund'));
 
     const again = await json(admin, 'post', `/contests/${c._id}/cancel`);
     assert.equal(again.status, 400);
@@ -430,13 +431,21 @@ describe('Live Management (PHP LiveManagementController)', () => {
     const s = addSession({ status: 'upcoming', start_time: min(30), end_time: min(90), assets: [{ asset_symbol: 'AAA' }, { asset_symbol: 'BBB' }] });
     const c = addContest(s, { status: 'upcoming' });
     const cancelled = addContest(s, { status: 'cancelled' });
-    const [{ entry }] = addEntries(c, 1, () => 0).map((r) => { get('SavedBasket', r.basket._id).assets = [{ name: 'AAA' }]; return r; });
+    const [{ entry }] = addEntries(c, 10, () => 0).map((r) => { get('SavedBasket', r.basket._id).assets = [{ name: 'AAA' }]; return r; });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): below its minimum when joining closes →
+    // cancelled and refunded at the start, not after the session ends
+    const underfilled = addContest(s, { status: 'upcoming' });
+    const [lonely] = addEntries(underfilled, 1, () => 0);
     const admin = await login();
     const res = await json(admin, 'post', `/api/start-session/${s._id}`);
     assert.equal(res.status, 200, res.text);
     assert.equal(get('LeagueSession', s._id).status, 'live');
     assert.equal(get('Contest', c._id).status, 'live');
     assert.equal(get('Contest', cancelled._id).status, 'cancelled');
+    assert.equal(get('Contest', underfilled._id).status, 'cancelled');
+    assert.equal(balance(lonely), 25, 'entry fee refunded at the start');
+    const refund = db.Transaction.find((t) => same(t.user_id, lonely.user._id));
+    assert.deepEqual([refund.type, refund.payment_method], ['refund', 'Contest refund']);
     assert.deepEqual(get('LeagueSession', s._id).assets.map((a) => a.start_price), [100, 200]);
     assert.deepEqual(get('ContestEntry', entry._id).starting_prices, { AAA: 100 });
 
@@ -480,7 +489,8 @@ describe('Live Management (PHP LiveManagementController)', () => {
   });
 
   test('Start Contests / Update Scores run the automation jobs', async () => {
-    addContest(addSession({ status: 'upcoming', start_time: min(-1), end_time: min(60) }), { status: 'upcoming' });
+    const startable = addContest(addSession({ status: 'upcoming', start_time: min(-1), end_time: min(60) }), { status: 'upcoming' });
+    addEntries(startable, 10); // NEW IMPLEMENTATION — NODE.JS PROJECT: an empty contest is now cancelled at the start
     const admin = await login();
     const start = await json(admin, 'post', '/api/live/start-contests');
     assert.equal(start.body.success, true);

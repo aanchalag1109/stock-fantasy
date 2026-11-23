@@ -32,6 +32,9 @@ const logger = require('../../config/logger');
 const { keysOf } = require('../../helpers/mobile-compat');
 const priceFeed = require('./price-feed');
 const scoring = require('./contest-scoring');
+// NEW IMPLEMENTATION — NODE.JS PROJECT: cancel under-filled contests when the session starts
+const formats = require('../contest-formats');
+const { cancelContest } = require('../contest-cancellation.service');
 
 const FETCH_WINDOW_MS = 30 * 60 * 1000;
 
@@ -76,7 +79,40 @@ async function copyToEntries(session, pricesBySymbol, field, timeField, now) {
   return updated;
 }
 
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): joining closes when the session starts, so a
+ * contest that is below its minimum players then can never fill. It is cancelled and every entry fee
+ * refunded right away (to the wallet each part came from), instead of keeping the money until the
+ * session ends. Same cancellation as the admin Cancel button; contests already cancelled, scored or
+ * paid are skipped, so this is safe to run on every tick. results.job.js keeps its check as a backstop.
+ * @returns {Promise<number>} contests cancelled now
+ */
+async function cancelUnderfilledAtStart(session) {
+  let cancelled = 0;
+  const contests = await scoring.sessionContests(session, { status: { $nin: ['cancelled', 'completed'] }, is_calculated: { $ne: true }, prizes_distributed: { $ne: true } });
+  for (const contest of contests) {
+    try {
+      const participants = await scoring.countParticipants(contest);
+      const minimum = formats.minParticipantsFor(contest);
+      if (participants >= minimum) continue;
+      const result = await cancelContest(contest, {
+        claimFilter: { is_calculated: { $ne: true }, prizes_distributed: { $ne: true } },
+        reason: `session started with ${participants} of ${minimum} required entries`,
+      });
+      if (!result.success) continue;
+      await Contest.updateOne({ _id: contest._id }, { $set: { is_calculated: true } });
+      cancelled += 1;
+    } catch (err) {
+      logger.error(`[contest-automation] contest ${contest._id}: start-of-session cancellation failed: ${err.message}`);
+    }
+  }
+  return cancelled;
+}
+
 async function captureStart(session, now) {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: under-filled contests are cancelled + refunded at the start
+  const cancelledNow = await cancelUnderfilledAtStart(session);
+  if (cancelledNow) logger.info(`[contest-automation] session ${session._id} started: ${cancelledNow} under-filled contest(s) cancelled and refunded`);
   await Contest.updateMany(
     { league_session_id: { $in: keysOf(session) }, status: { $nin: ['cancelled', 'completed', 'live'] } },
     { $set: { status: 'live' } },
@@ -161,4 +197,4 @@ async function runSessionLifecycle(now = new Date()) {
   return { to_live: toLive.modifiedCount || 0, to_completed: toCompleted.modifiedCount || 0, started, ended };
 }
 
-module.exports = { runSessionLifecycle, FETCH_WINDOW_MS, captureStart, fillMissingPrices, copyToEntries };
+module.exports = { runSessionLifecycle, FETCH_WINDOW_MS, captureStart, fillMissingPrices, copyToEntries, cancelUnderfilledAtStart };

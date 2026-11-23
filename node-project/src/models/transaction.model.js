@@ -6,7 +6,9 @@ const transactionSchema = new mongoose.Schema({
   contest_id: { type: mongoose.Schema.Types.Mixed, default: null, index: true },
   type: { 
     type: String, 
-    enum: ['deposit', 'winnings', 'contest_entry', 'withdrawal', 'referral', 'manual_adjustment'], 
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: 'refund' (as PHP) — withdrawal rejections and contest /
+    // session cancellations, so the app shows them as refunds, not deposits
+    enum: ['deposit', 'winnings', 'contest_entry', 'withdrawal', 'referral', 'manual_adjustment', 'refund'],
     required: true,
     index: true 
   },
