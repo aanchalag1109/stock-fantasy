@@ -27,10 +27,18 @@ describe('contest formats', () => {
   test('winners per type', () => {
     assert.equal(formats.winnersFor({ category: 'h2h' }, 2), 1);
     assert.equal(formats.winnersFor({ category: 'winner_takes_all' }, 37), 1);
-    assert.equal(formats.winnersFor({ category: 'multiplier', multiplier: 4 }, 20), 5);
-    assert.equal(formats.winnersFor({ category: 'multiplier', multiplier: 4 }, 9), 2);
-    assert.equal(formats.winnersFor({ category: 'multiplier', multiplier: 3 }, 9), 3, 'no floating-point rounding down');
-    assert.equal(formats.winnersFor({ category: 'multiplier', multiplier: 4 }, 3), 0);
+    const nx = (n, extra = {}) => ({ category: 'multiplier', multiplier: n, entry_fee: 100, platform_fee: 0, ...extra });
+    assert.equal(formats.winnersFor(nx(4), 20), 5);
+    assert.equal(formats.winnersFor(nx(4), 9), 2);
+    assert.equal(formats.winnersFor(nx(3), 9), 3, 'no floating-point rounding down');
+    assert.equal(formats.winnersFor(nx(4), 3), 0);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): each Nx winner gets exactly N × entry fee; the
+    // platform fee means fewer winners. 4x, 12 players, ₹100, 10% → pool 1,080 → 2 winners × ₹400.
+    assert.equal(formats.winnersFor(nx(4, { platform_fee: 10 }), 12), 2);
+    assert.equal(formats.payablePool(nx(4, { platform_fee: 10 }), 12, 1080), 800);
+    assert.equal(formats.multiplierPrize(nx(8, { entry_fee: 50 })), 400);
+    assert.equal(formats.winnersFor(nx(2, { platform_fee: 10 }), 10), 4, '10 × 90% ÷ 2 = 4.5 → 4');
+    assert.equal(formats.winnersFor(nx(4, { entry_fee: 0, platform_fee: 50 }), 8), 2, 'free contest: players ÷ N');
     assert.equal(formats.winnersFor({ category: 'mega', winning_percentage: 30 }, 10), 3, 'existing rule unchanged');
     assert.equal(formats.winnersFor({ category: 'mega' }, 10, 50), 5, 'fallback % when unset');
     assert.equal(formats.winnersFor({ category: 'mega', winning_percentage: 30 }, 0), 0);

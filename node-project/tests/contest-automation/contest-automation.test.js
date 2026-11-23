@@ -377,7 +377,7 @@ describe('results (contest:calculate-performance)', () => {
     assert.equal(get('User', players[1].user._id).winnings_balance, 0);
   });
 
-  test('4x: 9 of 12 spots joined → 2 winners share the whole pool; WTA pays rank 1 only', async () => {
+  test('4x: 9 of 12 spots joined → each winner gets exactly 4 × entry; WTA pays rank 1 only', async () => {
     const s = addSession();
     const fourX = addContest(s, { category: 'multiplier', multiplier: 4, participants: 12, entry_fee: 100, platform_fee: 10 });
     const wta = addContest(s, { category: 'winner_takes_all', participants: 5, entry_fee: 50, platform_fee: 20 });
@@ -390,9 +390,10 @@ describe('results (contest:calculate-performance)', () => {
     const result = await runContestResults();
     await settle();
     assert.equal(result.cancelled, 0);
-    // 9 × 100 − 10% = 810, floor(9 / 4) = 2 winners → 405 each (≥ 4 × 100 × 0.9 = 360)
-    assert.equal(get('User', four[0].user._id).winnings_balance, 405);
-    assert.equal(get('User', four[1].user._id).winnings_balance, 405);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): 9 × 100 − 10% = 810 → ⌊810 ÷ 400⌋ = 2 winners,
+    // each exactly 4 × 100 = 400 (the remaining 10 stays with the platform)
+    assert.equal(get('User', four[0].user._id).winnings_balance, 400);
+    assert.equal(get('User', four[1].user._id).winnings_balance, 400);
     assert.equal(get('User', four[2].user._id).winnings_balance, 0);
     // 3 × 50 − 20% = 120 → rank 1 only
     assert.equal(get('User', w[0].user._id).winnings_balance, 120);

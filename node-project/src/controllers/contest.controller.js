@@ -154,7 +154,8 @@ const contestsBySession = async (req, res) => {
       }
       if (!isFixed && ['live', 'completed'].includes(session.status) && prizePool > 0) {
         const actualWinners = formats.winnersFor(contest, joinedCount);
-        const dist = buildDynamicPrizeDistribution(actualWinners, prizePool, contest.category);
+        // NEW IMPLEMENTATION — NODE.JS PROJECT: Nx winners get exactly N × entry fee
+        const dist = buildDynamicPrizeDistribution(actualWinners, formats.payablePool(contest, joinedCount, prizePool), contest.category);
         if (dist.length > 0) firstPrize = Math.round((dist[0].per_winner_amount || 0) * 100) / 100;
       }
 
@@ -290,7 +291,8 @@ const getContest = async (req, res) => {
       });
     } else if (displayPrizePool > 0) {
       const winners = formats.winnersFor(contest, joinedCount);
-      prizeDistribution = buildDynamicPrizeDistribution(winners, displayPrizePool, contest.category);
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: Nx winners get exactly N × entry fee
+      prizeDistribution = buildDynamicPrizeDistribution(winners, formats.payablePool(contest, joinedCount, displayPrizePool), contest.category);
     }
 
     const prizes = prizeDistribution;

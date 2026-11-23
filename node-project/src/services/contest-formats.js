@@ -67,12 +67,53 @@ const isFixedPool = (contest) => !!(contest && contest.is_fixed_prize) || !!FORM
  * Number of paid ranks for `joined` entries.
  * Existing types keep their winning-% rule exactly (fallbackPct when unset).
  */
+// NEW IMPLEMENTATION — NODE.JS PROJECT: platform fee % used by the payout when a contest has none set.
+const DEFAULT_PLATFORM_FEE = 30;
+function platformFeePct(contest) {
+  const raw = contest && contest.platform_fee;
+  const n = Number(raw);
+  if (raw == null || raw === '' || !Number.isFinite(n)) return DEFAULT_PLATFORM_FEE;
+  return Math.min(Math.max(n, 0), 100);
+}
+/** True unless the contest is known to be free (entry fee 0). */
+const isPaidEntry = (contest) => !(contest && contest.entry_fee != null && contest.entry_fee !== '' && !(Number(contest.entry_fee) > 0));
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): an Nx contest pays every winner EXACTLY N × the
+ * entry fee — "4x" means 4x. The platform fee comes from fewer winners, not smaller prizes:
+ *   winners = ⌊ players × (100 − fee%) ÷ (100 × N) ⌋   (with 0% fee: players ÷ N, as before)
+ * e.g. 4x, 12 players, ₹100, 10% → pool ₹1,080 → 2 winners × ₹400; the platform keeps ₹400.
+ * Free multiplier contests (entry 0) keep players ÷ N sharing their prize pool.
+ */
+function multiplierWinners(contest, count) {
+  const n = multiplierOf(contest) || 2;
+  if (!isPaidEntry(contest)) return Math.floor(count / n);
+  const keep = 100 - platformFeePct(contest);
+  return Math.floor((count * keep) / (100 * n) + 1e-9);
+}
+
+/** Prize amount each Nx winner gets (N × entry fee), or null for other formats / free contests. */
+function multiplierPrize(contest) {
+  if (formatOf(contest) !== 'multiplier' || !isPaidEntry(contest) || !(Number(contest.entry_fee) > 0)) return null;
+  return (multiplierOf(contest) || 2) * Number(contest.entry_fee);
+}
+
+/**
+ * The prize pool actually paid out for `joined` players: for paid Nx contests winners × N × entry fee
+ * (the rest is the platform's), otherwise `prizePool` unchanged.
+ */
+function payablePool(contest, joined, prizePool) {
+  const each = multiplierPrize(contest);
+  if (each == null) return prizePool;
+  return winnersFor(contest, joined) * each;
+}
+
 function winnersFor(contest, joined, fallbackPct = 30) {
   const count = Math.max(0, Math.floor(Number(joined) || 0));
   if (!count) return 0;
   const format = formatOf(contest);
   if (FORMATS[format].singleWinner) return 1;
-  if (format === 'multiplier') return Math.floor(count / (multiplierOf(contest) || 2));
+  if (format === 'multiplier') return multiplierWinners(contest, count);
   const raw = contest && contest.winning_percentage;
   const pct = raw == null || raw === '' || Number.isNaN(Number(raw)) ? fallbackPct : Number(raw);
   return Math.max(1, Math.floor(count * (pct / 100)));
@@ -179,5 +220,6 @@ module.exports = {
   FORMATS, CATEGORIES, NEW_FORMATS, MULTIPLIERS, LEGACY_MIN_PARTICIPANTS,
   formatOf, multiplierOf, isNewFormat, isEqualSplitCategory, isFixedPool,
   winnersFor, formatFloor, minParticipantsFor, labelFor, formatBadge, appBadge,
+  platformFeePct, multiplierPrize, payablePool,
   equalSplitRows, publicFields, validateFormat,
 };

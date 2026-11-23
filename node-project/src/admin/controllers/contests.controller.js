@@ -302,7 +302,8 @@ function validateFields(body, multiSession) {
   const spots = format.participants;
   maxEntries = format.maxEntries;
   if (newFormat && Number.isFinite(spots) && spots > 0) {
-    const contestLike = { category: body.category, multiplier: format.multiplier };
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: Nx winners depend on the platform fee (each winner gets N × entry)
+    const contestLike = { category: body.category, multiplier: format.multiplier, entry_fee: entryFee, platform_fee: platformFee };
     winning = Math.round((formats.winnersFor(contestLike, spots) / spots) * 100 * 10000) / 10000;
   }
   return {
@@ -324,9 +325,16 @@ function poolFrom(body, fields) {
     platformFeeAmount = (totalPool * fields.platformFee) / 100;
     prizePool = totalPool - platformFeeAmount;
   }
+  const contestLike = { category: body.category, multiplier: fields.multiplier, entry_fee: fields.entryFee, platform_fee: fields.platformFee };
   const totalWinners = formats.isNewFormat({ category: body.category })
-    ? formats.winnersFor({ category: body.category, multiplier: fields.multiplier }, fields.participants)
+    ? formats.winnersFor(contestLike, fields.participants)
     : Math.max(1, Math.floor(fields.participants * (fields.winning / 100)));
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): Nx — every winner gets exactly N × entry fee;
+  // what is not paid out stays with the platform.
+  if (!isFixed) {
+    const paid = formats.payablePool(contestLike, fields.participants, prizePool);
+    if (paid !== prizePool) { platformFeeAmount = totalPool - paid; prizePool = paid; }
+  }
   return { isFixed, totalPool, platformFeeAmount, prizePool, totalWinners };
 }
 

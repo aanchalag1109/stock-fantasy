@@ -246,7 +246,8 @@ function diagnostics({ contest, session, participants, stats, flexibleDistributi
   const platformPct = num(contest.platform_fee);
   const totalPool = stats.total_participants * entryFee;
   const platformFee = (totalPool * platformPct) / 100;
-  const prizePool = totalPool - platformFee;
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: Nx winners get exactly N × entry fee
+  const prizePool = formats.payablePool(contest, stats.total_participants, totalPool - platformFee);
   const totalWinners = formats.isNewFormat(contest) ? formats.winnersFor(contest, stats.total_participants) : Math.ceil((stats.total_participants * winningPct) / 100);
 
   // Step 8: user-wise prizes (ties share a rank)

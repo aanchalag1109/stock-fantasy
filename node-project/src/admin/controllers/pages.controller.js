@@ -213,7 +213,8 @@ const performance = {
       const winningPercent    = Number(contest.winning_percentage || 30);
       const totalPool         = actualParticipantsCount * entryFee;
       const platformFeeAmount = totalPool * (platformFeePercent / 100);
-      const actualPrizePool   = totalPool - platformFeeAmount;
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: Nx winners get exactly N × entry fee (formats.payablePool)
+      const actualPrizePool   = formats.payablePool(contest, actualParticipantsCount, totalPool - platformFeeAmount);
       let actualWinnersCount  = Math.floor(actualParticipantsCount * (winningPercent / 100));
       if (actualWinnersCount < 1 && actualParticipantsCount > 0) actualWinnersCount = 1;
       if (actualParticipantsCount === 0) actualWinnersCount = 0;

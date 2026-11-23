@@ -134,7 +134,10 @@ function dynamicPrizeRows(contest, participants) {
   // NEW IMPLEMENTATION — NODE.JS PROJECT: per-type winners (h2h/WTA: 1, multiplier: joined ÷ N)
   const winners = formats.winnersFor(contest, participants, 50);
   if (winners <= 0) return { rows: [], totalPool, prizePool, winners: 0 };
-  return { rows: buildDynamicPrizeDistribution(winners, prizePool, contest.category || 'mega'), totalPool, prizePool, winners };
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): an Nx winner gets exactly N × entry fee; the
+  // pool paid out is winners × that, the rest stays with the platform.
+  const paid = formats.payablePool(contest, participants, prizePool);
+  return { rows: buildDynamicPrizeDistribution(winners, paid, contest.category || 'mega'), totalPool, prizePool: paid, winners };
 }
 
 /**
