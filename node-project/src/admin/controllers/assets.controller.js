@@ -282,4 +282,39 @@ const assets = {
   },
 };
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): "Import missing assets" — preview the assets of a
+// market the master list does not have yet, then add them all as inactive.
+const assetImport = require('../../services/market-data/asset-import.service');
+const logger = require('../../config/logger');
+
+assets.importPage = async (req, res) => {
+  const market = markets.isMarket(req.query.market) ? req.query.market : '';
+  let preview = null;
+  let error = null;
+  if (market) {
+    try {
+      preview = await assetImport.preview(market);
+    } catch (err) {
+      error = err instanceof assetImport.ImportSourceError ? err.message : `Could not load the list: ${err.message}`;
+    }
+  }
+  render(res, 'assets/import', { title: 'Import Missing Assets', market, marketOptions: markets.MARKETS, sources: assetImport.SOURCE_LABEL, preview, error });
+};
+
+assets.importRun = async (req, res) => {
+  const market = markets.isMarket(req.body.market) ? req.body.market : '';
+  if (!market) { req.flash('error', 'Choose a market to import.'); return res.redirect('/market-assets/import'); }
+  try {
+    const result = await assetImport.importMissing(market);
+    logger.info(`[asset-import] ${req.adminAccess ? req.adminAccess.email : 'admin'} imported ${result.added} ${market} assets`);
+    req.flash('success', result.added
+      ? `${result.added} new ${markets.labelOf(market)} asset(s) added as Inactive. Switch on the ones you want to use.`
+      : `No new ${markets.labelOf(market)} assets — the list already has all ${result.found}.`);
+    return res.redirect(`/market-assets?market=${market}&status=inactive`);
+  } catch (err) {
+    req.flash('error', err instanceof assetImport.ImportSourceError ? err.message : `Import failed: ${err.message}`);
+    return res.redirect(`/market-assets/import?market=${market}`);
+  }
+};
+
 module.exports = { assets };

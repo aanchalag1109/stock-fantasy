@@ -7,6 +7,9 @@ const { assets } = require('../controllers/assets.controller');
 
 router.get('/', requireAdmin, requirePermission('assets.view'), assets.index);
 router.get('/create', requireAdmin, requirePermission('assets.create'), assets.create);
+// NEW IMPLEMENTATION — NODE.JS PROJECT: import the assets of a market that are missing, as inactive
+router.get('/import', requireAdmin, requirePermission('assets.create'), assets.importPage);
+router.post('/import', requireAdmin, requirePermission('assets.create'), assets.importRun);
 router.get('/check-symbol', requireAdmin, requirePermission('assets.create', 'assets.edit'), assets.checkSymbol);
 router.post('/', requireAdmin, requirePermission('assets.create'), assets.store);
 router.post('/fix-logos', requireAdmin, requirePermission('assets.edit'), assets.fixLogos);

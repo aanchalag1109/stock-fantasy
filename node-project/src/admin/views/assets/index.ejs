@@ -14,9 +14,15 @@
             <p class="text-muted mb-0">The central list of stocks and coins. Assets are assigned to market categories when a session is created.</p>
         </div>
         <% if (canCreate) { %>
-        <a href="/market-assets/create<%= q.market && marketOptions[q.market] ? '?market=' + q.market : '' %>" class="btn btn-primary btn-lg">
-            <i class="bi bi-plus-circle me-2"></i>Add Asset
-        </a>
+        <div class="d-flex gap-2 flex-wrap">
+            <%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): import missing assets as inactive %>
+            <a href="/market-assets/import<%= q.market && marketOptions[q.market] ? '?market=' + q.market : '' %>" class="btn btn-outline-primary btn-lg">
+                <i class="bi bi-cloud-download me-2"></i>Import Missing Assets
+            </a>
+            <a href="/market-assets/create<%= q.market && marketOptions[q.market] ? '?market=' + q.market : '' %>" class="btn btn-primary btn-lg">
+                <i class="bi bi-plus-circle me-2"></i>Add Asset
+            </a>
+        </div>
         <% } %>
     </div>
 

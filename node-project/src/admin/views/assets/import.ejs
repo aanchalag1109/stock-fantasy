@@ -1,0 +1,75 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): Import Missing Assets — preview, then add them all as Inactive. %>
+<%
+  const SHOW = 300;
+  const missing = preview ? preview.missing : [];
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-cloud-download text-primary me-2"></i>Import Missing Assets</h1>
+            <p class="text-muted mb-0">Finds the stocks / coins of a market that are not in Assets yet and adds them as <strong>Inactive</strong>. Existing assets are never changed.</p>
+        </div>
+        <a href="/market-assets<%= market ? '?market=' + market : '' %>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Assets</a>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="GET" action="/market-assets/import" class="row g-2 align-items-end">
+                <div class="col-md-5">
+                    <label for="market" class="form-label fw-semibold">Market</label>
+                    <select id="market" name="market" class="form-select" required>
+                        <option value="">Choose a market…</option>
+                        <% Object.entries(marketOptions).forEach(([key, m]) => { %>
+                        <option value="<%= key %>" <%= market === key ? 'selected' : '' %>><%= m.label %> — <%= sources[key] %></option>
+                        <% }) %>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search me-1"></i>Check for missing assets</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <% if (error) { %>
+    <div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-1"></i><%= error %></div>
+    <% } %>
+
+    <% if (preview) { %>
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <strong><%= marketOptions[market].label %></strong> · source: <%= preview.source %><br>
+                <span class="small text-muted"><%= preview.found %> found · <%= preview.existing %> already in Assets ·</span>
+                <span class="badge bg-<%= missing.length ? 'primary' : 'success' %>"><%= missing.length %> new</span>
+            </div>
+            <% if (missing.length) { %>
+            <form method="POST" action="/market-assets/import" onsubmit="this.querySelector('button').disabled = true; return confirm('Add <%= missing.length %> new <%= marketOptions[market].label %> asset(s) as Inactive?')">
+                <input type="hidden" name="market" value="<%= market %>">
+                <button type="submit" class="btn btn-success"><i class="bi bi-cloud-download me-1"></i>Import <%= missing.length %> as Inactive</button>
+            </form>
+            <% } %>
+        </div>
+        <% if (!missing.length) { %>
+        <div class="card-body text-center text-success py-4"><i class="bi bi-check-circle me-1"></i>Assets already has every <%= marketOptions[market].label %> symbol from this source.</div>
+        <% } else { %>
+        <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light" style="position: sticky; top: 0;"><tr><th>#</th><th>Symbol</th><th>Name</th></tr></thead>
+                <tbody>
+                    <% missing.slice(0, SHOW).forEach((a, i) => { %>
+                    <tr><td class="text-muted small"><%= i + 1 %></td><td class="font-monospace fw-semibold"><%= a.symbol %></td><td><%= a.name %></td></tr>
+                    <% }) %>
+                    <% if (missing.length > SHOW) { %>
+                    <tr><td colspan="3" class="text-center text-muted small py-2">… and <%= missing.length - SHOW %> more (all <%= missing.length %> will be imported)</td></tr>
+                    <% } %>
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer small text-muted">
+            After importing, open Assets with the <strong>Inactive</strong> filter, tick the ones you want and use the bulk action to make them Active. Only active assets can be picked when creating a session.
+        </div>
+        <% } %>
+    </div>
+    <% } %>
+</div>
