@@ -64,6 +64,10 @@ app.use(require('./helpers/public-url').requestContext);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT: every asset in an API response gets its logo (image_url) —
+// basket stocks, alpha/beta multiplier picks, session assets, … (client feedback)
+app.use('/api', require('./helpers/asset-images').assetImagesMiddleware);
+
 app.use(morgan('combined', {
   stream: { write: (msg) => logger.info(msg.trim()) }
 }));
