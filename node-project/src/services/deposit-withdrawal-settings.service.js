@@ -19,7 +19,7 @@
  *     original names (min_deposit_amount, …) so existing values carry over.
  *   - deposit gateway charges: percent + fixed amount, and who pays them (user or platform).
  *   - USDT withdrawal network (what users must send their USDT address for).
- *   - INR withdrawals on / off. Never saved = on. Off stops new requests; the limits are kept, and
+ *   - INR and USDT withdrawals on / off, separately. Never saved = on. Off stops new requests; the limits are kept, and
  *     requests already made can still be accepted or rejected.
  */
 
@@ -39,7 +39,7 @@ const CHARGE_KEYS = {
 };
 const WITHDRAWAL_NETWORK_KEY = 'usdt_withdrawal_network';
 const WITHDRAWAL_NETWORKS = ['TRC20', 'BEP20', 'ERC20'];
-const INR_WITHDRAWAL_KEY = 'inr_withdrawal_status';
+const WITHDRAWAL_SWITCH_KEYS = { INR: 'inr_withdrawal_status', USDT: 'usdt_withdrawal_status' };
 const SWITCH_VALUES = ['enabled', 'disabled'];
 
 // Labels of the limit keys. INR labels are unchanged from the original module.
@@ -73,6 +73,7 @@ const DEFAULTS = {
   usdt_deposit_charge_bearer: 'user',
   usdt_withdrawal_network: 'TRC20',
   inr_withdrawal_status: 'enabled',
+  usdt_withdrawal_status: 'enabled',
 };
 
 const ALL_KEYS = Object.keys(DEFAULTS);
@@ -153,11 +154,13 @@ function validate(input = {}) {
   else values[WITHDRAWAL_NETWORK_KEY] = network;
 
   // Not sent → left as it is, so a save that does not know the switch can never turn it back on.
-  const inrSwitch = text(INR_WITHDRAWAL_KEY).toLowerCase();
-  if (inrSwitch !== '') {
-    if (!SWITCH_VALUES.includes(inrSwitch)) errors[INR_WITHDRAWAL_KEY] = 'INR withdrawals must be enabled or disabled.';
-    else values[INR_WITHDRAWAL_KEY] = inrSwitch;
-  }
+  CURRENCIES.forEach((currency) => {
+    const key = WITHDRAWAL_SWITCH_KEYS[currency];
+    const state = text(key).toLowerCase();
+    if (state === '') return;
+    if (!SWITCH_VALUES.includes(state)) errors[key] = `${currency} withdrawals must be enabled or disabled.`;
+    else values[key] = state;
+  });
 
   return { values, errors };
 }
@@ -185,11 +188,12 @@ async function getCharges(currency) {
   };
 }
 
-/** False when the admin switched this currency's withdrawals off (INR only). Throws when it cannot be read. */
+/** False when the admin switched this currency's withdrawals off. Throws when it cannot be read. */
 async function isWithdrawalAllowed(currency) {
-  if (currency !== 'INR') return true;
-  const stored = await readRows([INR_WITHDRAWAL_KEY]);
-  return stored[INR_WITHDRAWAL_KEY] !== 'disabled';
+  const key = WITHDRAWAL_SWITCH_KEYS[currency];
+  if (!key) return false;
+  const stored = await readRows([key]);
+  return stored[key] !== 'disabled';
 }
 
 async function getWithdrawalNetwork() {

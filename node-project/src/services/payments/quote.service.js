@@ -153,7 +153,13 @@ async function withdrawalQuote({ currency: rawCurrency, probcoins } = {}) {
   if (!currency) return fail(400, 'Choose a payout currency: INR or USDT.');
   // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): admin on/off switch. Every withdrawal request
   // starts with this quote, so nothing is deducted while it is off.
-  if (!(await settings.isWithdrawalAllowed(currency))) {
+  let allowed;
+  try {
+    allowed = await settings.isWithdrawalAllowed(currency);
+  } catch (err) {
+    return fail(503, `${currency} withdrawals are temporarily unavailable. Please try again later.`);
+  }
+  if (!allowed) {
     return fail(403, `${currency} withdrawals are not available right now.`, { withdrawal_disabled: true });
   }
   const coins = toCents(probcoins);

@@ -386,7 +386,7 @@ describe('Withdrawals in INR or USDT', () => {
 });
 
 // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): admin switch for INR withdrawals
-describe('INR withdrawals on / off', () => {
+describe('INR / USDT withdrawals on / off', () => {
   beforeEach(reset);
   const inrUser = () => { user().payment_details = { upi_id: 'asha@upi', usdt_wallet_address: 'TXyzWallet' }; };
   const ask = (currency) => request(app).post('/api/v1/withdraw/request').send({ user_id: '41', currency, probcoins: '5000' });
@@ -415,6 +415,28 @@ describe('INR withdrawals on / off', () => {
     assert.equal((await ask('INR')).status, 200, 'switching it on applies to the next request');
   });
 
+  test('USDT has its own switch; the older withdraw endpoints obey it too', async () => {
+    inrUser();
+    db.settings.usdt_withdrawal_status = 'disabled';
+    const start = user().winnings_balance;
+    const calls = [
+      () => ask('USDT'),
+      () => request(app).post('/api/v1/withdraw/quote').send({ currency: 'USDT', probcoins: '5000' }),
+      () => request(app).post('/api/v1/withdraw-amount').send({ user_id: '41', amount: '5000' }),
+      () => request(app).post('/api/v1/wallet/withdraw').send({ user_id: '41', amount: '5000' }),
+    ];
+    for (const call of calls) {
+      const res = await call();
+      assert.deepEqual([res.status, res.body.message, res.body.withdrawal_disabled], [403, 'USDT withdrawals are not available right now.', true]);
+    }
+    assert.deepEqual([user().winnings_balance, db.WithdrawalRequest.length, db.Transaction.length], [start, 0, 0]);
+    assert.equal((await option('USDT')).withdrawal_enabled, false);
+    assert.equal((await option('INR')).withdrawal_enabled, true);
+    assert.equal((await ask('INR')).status, 200);
+    db.settings.inr_withdrawal_status = 'disabled';
+    assert.deepEqual([(await option('INR')).withdrawal_enabled, (await option('USDT')).withdrawal_enabled], [false, false], 'both can be off');
+  });
+
   test('a request made before it was disabled can still be rejected and refunded', async () => {
     inrUser();
     const start = user().winnings_balance;
@@ -429,7 +451,7 @@ describe('INR withdrawals on / off', () => {
     const start = user().winnings_balance;
     const real = Setting.find;
     Setting.find = () => ({ lean: async () => { throw new Error('db down'); } });
-    try { assert.ok((await ask('INR')).status >= 500); } finally { Setting.find = real; }
+    try { for (const c of ['INR', 'USDT']) assert.equal((await ask(c)).status, 503); } finally { Setting.find = real; }
     assert.equal(user().winnings_balance, start);
   });
 
@@ -446,6 +468,11 @@ describe('INR withdrawals on / off', () => {
     });
     assert.match(html, /<option value="disabled" selected>Disabled/);
     assert.match(html, /"inr_withdrawal_status"/, 'sent by the page script');
+    assert.match(html, /id="usdt_withdrawal_status"/);
+    assert.equal(html.match(/<option value="disabled" selected>/g).length, 1, 'only INR is off');
+    assert.equal(html.match(/id="usdt_withdrawal_network"/g).length, 1);
+    assert.equal(settingsService.validate({ ...base, usdt_withdrawal_status: 'disabled' }).values.usdt_withdrawal_status, 'disabled');
+    assert.match(settingsService.validate({ ...base, usdt_withdrawal_status: 'x' }).errors.usdt_withdrawal_status, /USDT withdrawals must be/);
   });
 });
 

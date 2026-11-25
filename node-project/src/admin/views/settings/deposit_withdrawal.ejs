@@ -101,19 +101,17 @@
                                         </div>
                                         <div class="small text-muted mt-2" data-example="<%= col.currency %>"></div>
 
-                                        <% if (col.currency === 'INR') { %>
-                                        <%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): INR withdrawals on / off %>
-                                        <h6 class="text-muted text-uppercase small mt-4">INR withdrawals</h6>
-                                        <label for="inr_withdrawal_status" class="form-label small mb-1">Allow users to withdraw in INR</label>
-                                        <select name="inr_withdrawal_status" id="inr_withdrawal_status" class="form-select form-select-sm" style="max-width:200px">
-                                            <option value="enabled" <%= val('inr_withdrawal_status') !== 'disabled' ? 'selected' : '' %>>Enabled</option>
-                                            <option value="disabled" <%= val('inr_withdrawal_status') === 'disabled' ? 'selected' : '' %>>Disabled</option>
+                                        <%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): withdrawals on / off per currency %>
+                                        <% const switchKey = col.currency.toLowerCase() + '_withdrawal_status'; %>
+                                        <h6 class="text-muted text-uppercase small mt-4"><%= col.currency %> withdrawals</h6>
+                                        <label for="<%= switchKey %>" class="form-label small mb-1">Allow users to withdraw in <%= col.currency %></label>
+                                        <select name="<%= switchKey %>" id="<%= switchKey %>" class="form-select form-select-sm" style="max-width:200px">
+                                            <option value="enabled" <%= val(switchKey) !== 'disabled' ? 'selected' : '' %>>Enabled</option>
+                                            <option value="disabled" <%= val(switchKey) === 'disabled' ? 'selected' : '' %>>Disabled</option>
                                         </select>
-                                        <div class="invalid-feedback" data-error-for="inr_withdrawal_status"></div>
-                                        <div class="form-text">Disabled stops new INR requests at once. Requests already made stay in Withdrawal Requests and can still be accepted or rejected.</div>
-                                        <% } %>
+                                        <div class="invalid-feedback" data-error-for="<%= switchKey %>"></div>
+                                        <div class="form-text mb-2">Disabled stops new <%= col.currency %> requests at once. Requests already made stay in Withdrawal Requests and can still be accepted or rejected.<% if (col.currency === 'USDT') { %> Enabled also needs the USDT limits and rate to be set.<% } %></div>
                                         <% if (col.currency === 'USDT') { %>
-                                        <h6 class="text-muted text-uppercase small mt-4">USDT withdrawals</h6>
                                         <label for="usdt_withdrawal_network" class="form-label small mb-1">Network users withdraw to</label>
                                         <select name="usdt_withdrawal_network" id="usdt_withdrawal_network" class="form-select form-select-sm" style="max-width:200px">
                                             <% networks.forEach(n => { %><option value="<%= n %>" <%= val('usdt_withdrawal_network') === n ? 'selected' : '' %>><%= n %></option><% }) %>
