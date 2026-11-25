@@ -47,6 +47,7 @@ function matches(doc, filter = {}) {
       return Object.entries(cond).every(([op, arg]) => {
         if (op === '$in') return arg.some((a) => same(val, a));
         if (op === '$ne') return !same(val, arg);
+        if (op === '$ne') return Array.isArray(val) ? !val.includes(arg) : val !== arg;
         throw new Error(`unsupported ${op}`);
       });
     }

@@ -23,7 +23,7 @@
                     <tbody>
                         <% tickets.forEach(t => {
                             const created = t.created_at ? new Date(t.created_at) : null;
-                            const createdText = created ? created.getFullYear() + '-' + String(created.getMonth()+1).padStart(2,'0') + '-' + String(created.getDate()).padStart(2,'0') + ' ' + String(created.getHours()).padStart(2,'0') + ':' + String(created.getMinutes()).padStart(2,'0') : '—';
+                            const createdText = created ? created.toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).slice(0, 16) : '—';
                         %>
                         <tr>
                             <td><%= t.old_id || String(t._id).slice(-6) %></td>

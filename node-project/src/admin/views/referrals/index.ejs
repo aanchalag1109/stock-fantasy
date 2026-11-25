@@ -25,7 +25,7 @@
                         <td><%= t.user_id && t.user_id.name ? t.user_id.name : '—' %></td>
                         <td>₹<%= Number(t.amount || 0).toFixed(2) %></td>
                         <td><%= t.status %></td>
-                        <td><%= t.created_at ? new Date(t.created_at).toLocaleString('en-IN') : '' %></td>
+                        <td><%= t.created_at ? new Date(t.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '' %></td>
                     </tr>
                     <% }) %>
                     <% if (!transactions.length) { %><tr><td colspan="4" class="text-center py-4 text-muted">No referral transactions</td></tr><% } %>

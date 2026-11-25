@@ -39,6 +39,7 @@ function matches(doc, filter = {}) {
         if (op === '$in') return arg.some((a) => same(val, a));
         if (op === '$gte') return val >= arg;
         if (op === '$lte') return val <= arg;
+        if (op === '$ne') return Array.isArray(val) ? !val.includes(arg) : val !== arg;
         throw new Error(`unsupported ${op}`);
       });
     }
@@ -83,6 +84,8 @@ User.findById = (id) => query(clone(db.users.find((u) => same(u._id, id)) || nul
 User.updateOne = async (f, u) => { const d = db.users.find((x) => matches(x, f)); if (d) applyUpdate(d, u); return { modifiedCount: d ? 1 : 0 }; };
 AdminRole.findById = (id) => query(clone(db.roles.find((r) => same(r._id, id)) || null));
 Transaction.findOne = (f) => query(clone(db.transactions.find((t) => matches(t, f)) || null));
+Transaction.updateOne = async (f, u) => { const d = db.transactions.find((x) => matches(x, f)); if (d) applyUpdate(d, u); return { modifiedCount: d ? 1 : 0 }; };
+User.exists = async (f) => (db.users.some((u) => matches(u, f)) ? { _id: 1 } : null);
 Transaction.create = async (doc) => {
   if (db.transactions.some((t) => t.transaction_id === doc.transaction_id)) throw Object.assign(new Error('E11000'), { code: 11000 });
   const t = { _id: new ObjectId(), ...doc }; db.transactions.push(t); return t;
@@ -193,6 +196,38 @@ describe('Admin → USDT Deposits: actions', () => {
     assert.equal(deposit('PRM2').status, 'cancelled');
     assert.match(deposit('PRM2').review_reason, /Rejected by super@test\.local: customer abandoned/);
     assert.equal(balance(), 1615 + 2000);
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: same rule as INR Deposit Orders
+  describe('reject when an earlier credit did not finish', () => {
+    beforeEach(reset);
+    const attempt = async (apply) => {
+      const admin = await login();
+      const real = User.updateOne;
+      User.updateOne = async (...a) => { if (apply) await real(...a); throw new Error('connection lost'); };
+      try { await admin.post('/usdt-deposits/PRM3/approve'); } finally { User.updateOne = real; }
+      assert.equal(deposit('PRM3').status, 'review');
+      await admin.post('/usdt-deposits/PRM3/reject');
+      const tx = db.transactions.find((t) => t.transaction_id === 'PAYRAM_PRM3');
+      return { admin, result: [deposit('PRM3').status, balance(), tx.status, tx.credit_pending] };
+    };
+
+    test('nothing had been credited: stopped for good', async () => {
+      assert.deepEqual((await attempt(false)).result, ['cancelled', 1615, 'failed', false]);
+    });
+
+    test('the money had already arrived: not rejected, marked credited', async () => {
+      const { admin, result } = await attempt(true);
+      assert.deepEqual(result, ['credited', 1615 + 2000, 'success', false]);
+      assert.match((await admin.get('/usdt-deposits/PRM3')).text, /already reached the wallet/);
+    });
+
+    test('an older success row: moved to review instead of rejected', async () => {
+      db.transactions.push({ _id: new ObjectId(), user_id: ids.player, type: 'deposit', amount: 2000, status: 'success', transaction_id: 'PAYRAM_PRM3' });
+      await (await login()).post('/usdt-deposits/PRM3/reject');
+      assert.equal(deposit('PRM3').status, 'review');
+      assert.match(deposit('PRM3').review_reason, /already shows this deposit as successful/);
+    });
   });
 
   test('a view-only admin sees the pages but no actions, and actions are refused', async () => {

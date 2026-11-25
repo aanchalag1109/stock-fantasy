@@ -1,6 +1,6 @@
                         <% logs.forEach(log => { %>
                         <tr>
-                            <td class="ps-4"><%= (log.run_time || log.created_at) ? new Date(log.run_time || log.created_at).toLocaleString('en-IN') : '—' %></td>
+                            <td class="ps-4"><%= (log.run_time || log.created_at) ? new Date(log.run_time || log.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—' %></td>
                             <td><%= log.type || log.job_name || 'api' %></td>
                             <td>
                                 <% if (log.success !== false && log.status !== 'failed') { %><span class="badge bg-success">Success</span>

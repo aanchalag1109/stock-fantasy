@@ -111,8 +111,10 @@ const index = async (req, res) => {
     const userId = req.query.user_id || '';
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const filter = {};
-    if (type) filter.type = type;
-    if (status) filter.status = status;
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: entry fees are stored as 'contest_entry'; "Entry Fee" used to match nothing
+    if (type) filter.type = type === 'entry_fee' || type === 'contest_entry' ? { $in: ['contest_entry', 'entry_fee'] } : type;
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: rows are stored as 'success'; "Completed" used to match nothing
+    if (status) filter.status = status === 'completed' ? { $in: ['success', 'completed'] } : status;
     let userKeys = null;
     if (userId) {
       userKeys = /^\d+$/.test(String(userId)) ? await userKeysForId(userId) : [userId];

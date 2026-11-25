@@ -39,6 +39,7 @@ router.post('/pending-prizes/distribute-session/:id', requireAdmin, requirePermi
 
 router.get('/payments', requireAdmin, requirePermission('payments.view'), payments.index);
 // PHP PARITY: approve / reject / verify behave exactly like PHP Admin\PaymentController
+router.get('/payments/:id', requireAdmin, requirePermission('payments.view'), payments.show); // NEW IMPLEMENTATION — NODE.JS PROJECT
 router.post('/payments/:id/approve', requireAdmin, requirePermission('payments.approve'), payments.action('approve'));
 router.post('/payments/:id/reject', requireAdmin, requirePermission('payments.approve'), payments.action('reject'));
 router.post('/payments/:id/verify', requireAdmin, requirePermission('payments.approve'), payments.action('verify'));

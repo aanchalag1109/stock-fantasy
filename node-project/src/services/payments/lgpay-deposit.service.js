@@ -157,6 +157,11 @@ async function settleOrder(order, { source, paidAmount } = {}) {
       await Payment.updateOne({ _id: claimed._id }, { $set: { payment_status: STATUS.REVIEW, credited_at: null, review_reason: 'User not found when crediting' } });
       return { credited: false, error: 'user not found' };
     }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: a duplicate is only "already credited" when its row says so
+    if (result.duplicate && result.existing && result.existing.status === 'failed') {
+      await Payment.updateOne({ _id: claimed._id }, { $set: { payment_status: STATUS.REVIEW, credited_at: null, review_reason: 'The wallet history already has a failed row for this order' } });
+      return { credited: false, error: 'the wallet history already has a failed row for this order' };
+    }
     if (result.duplicate) return { credited: false, already: true };
     logger.info('Payment callback processed successfully', { orderId: claimed.order_id, probcoins: coins, source });
     // NEW IMPLEMENTATION — NODE.JS PROJECT: Automated Notifications — deduped per order (callback retries / return page / admin)

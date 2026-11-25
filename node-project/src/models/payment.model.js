@@ -17,6 +17,11 @@ const paymentSchema = new mongoose.Schema({
   paid_amount: { type: Number, default: null },      // amount LG Pay reported as paid
   review_reason: { type: String, default: null },
   credited_at: { type: Date, default: null },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: the admin's decision (Deposit Orders → View)
+  decision: { type: String, default: null },         // 'approved' | 'rejected'
+  decided_by: { type: String, default: null },
+  decided_at: { type: Date, default: null },
+  admin_note: { type: String, default: null },
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

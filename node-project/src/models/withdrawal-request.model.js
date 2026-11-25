@@ -19,6 +19,9 @@ const withdrawalRequestSchema = new mongoose.Schema({
   payout_details: { type: mongoose.Schema.Types.Mixed, default: null }, // INR: UPI or bank snapshot
   payout_reference: { type: String, default: null },  // UTR / tx hash entered by the admin
   processed_at: { type: Date, default: null },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: a rejected request's refund: 'pending' until the money is back,
+  // then 'done'. null on requests rejected before this existed (never refunded again).
+  refund_state: { type: String, default: null },
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

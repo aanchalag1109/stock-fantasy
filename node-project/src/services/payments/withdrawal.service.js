@@ -144,27 +144,48 @@ async function processWithdrawal(id, { action, adminMessage, payoutReference, ad
   if (!mongoose.isValidObjectId(String(id))) return { type: 'error', message: 'Request already processed or not found' };
   const reference = clean(payoutReference).slice(0, 200);
 
-  const before = await WithdrawalRequest.findOneAndUpdate(
+  let before = await WithdrawalRequest.findOneAndUpdate(
     { _id: id, status: 'pending' },
-    { $set: { status, admin_message: clean(adminMessage) || null, payout_reference: reference || null, processed_at: new Date() } },
+    { $set: {
+      status, admin_message: clean(adminMessage) || null, payout_reference: reference || null, processed_at: new Date(),
+      ...(status === 'rejected' ? { refund_state: 'pending' } : {}),
+    } },
   );
+  let reason = clean(adminMessage) || null;
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: rejected, but the refund did not finish → Reject again finishes it
+  // (creditOnce never pays it twice). Only for requests that recorded refund_state.
+  if (!before && status === 'rejected') {
+    before = await WithdrawalRequest.findOne({ _id: id, status: 'rejected', refund_state: 'pending' }).lean();
+    if (before) reason = before.admin_message || null;
+  }
   if (!before) return { type: 'error', message: 'Request already processed or not found' };
 
   const coins = num(before.amount);
   if (status === 'rejected') {
-    const refund = await creditOnce({
-      userRef: before.user_id,
-      balance: 'winnings_balance',
-      amount: coins,
-      transaction: {
-        // NEW IMPLEMENTATION — NODE.JS PROJECT: 'refund' as in PHP (was 'deposit'), so the app shows a refund
-        type: 'refund',
-        transaction_id: `WDREFUND_${before._id}`,
-        payment_method: 'Withdrawal refund',
-        description: `Withdrawal #${publicId(before)} rejected - amount refunded${adminMessage ? ': ' + clean(adminMessage) : ''}`,
-      },
-    });
-    if (refund.missingUser) logger.error(`[withdrawal] ${before._id} rejected but user ${before.user_id} was not found for the refund`);
+    let refund;
+    try {
+      refund = await creditOnce({
+        userRef: before.user_id,
+        balance: 'winnings_balance',
+        amount: coins,
+        transaction: {
+          // NEW IMPLEMENTATION — NODE.JS PROJECT: 'refund' as in PHP (was 'deposit'), so the app shows a refund
+          type: 'refund',
+          transaction_id: `WDREFUND_${before._id}`,
+          payment_method: 'Withdrawal refund',
+          description: `Withdrawal #${publicId(before)} rejected - amount refunded${reason ? ': ' + reason : ''}`,
+        },
+      });
+    } catch (err) {
+      logger.error(`[withdrawal] ${before._id} rejected but the refund did not finish: ${err.message}`);
+      return { type: 'error', message: 'Withdrawal rejected, but the refund did not finish. Open the request and press Retry Refund.' };
+    }
+    if (refund.missingUser || (refund.duplicate && refund.existing && refund.existing.status === 'failed')) {
+      logger.error(`[withdrawal] ${before._id} rejected but not refunded (user ${before.user_id}${refund.missingUser ? ' not found' : ', failed refund row'})`);
+      return { type: 'error', message: refund.missingUser ? 'Withdrawal rejected, but the user was not found, so nothing was refunded.' : 'Withdrawal rejected, but its refund row is marked failed. Check the player\'s wallet.' };
+    }
+    await WithdrawalRequest.updateOne({ _id: before._id, status: 'rejected' }, { $set: { refund_state: 'done' } })
+      .catch((err) => logger.warn(`[withdrawal] ${before._id} refunded but not marked done: ${err.message}`));
   }
   const ledgerStatus = status === 'approved' ? 'success' : 'failed';
   const synced = await Transaction.updateOne({ transaction_id: `WD_${before._id}` }, { $set: { status: ledgerStatus } });
@@ -185,7 +206,7 @@ async function processWithdrawal(id, { action, adminMessage, payoutReference, ad
   notify(`withdrawal_${status}`, {
     user: before.user_id,
     dedupeKey: `withdrawal_${status}:${before._id}`,
-    params: { amount: coins, reason: status === 'rejected' ? clean(adminMessage) || null : null },
+    params: { amount: coins, reason: status === 'rejected' ? reason : null },
     data: { screen: 'withdrawals', withdrawal_id: String(before._id) },
   });
   if (status === 'rejected') return { type: 'success', message: 'Withdrawal rejected. Amount refunded.' };

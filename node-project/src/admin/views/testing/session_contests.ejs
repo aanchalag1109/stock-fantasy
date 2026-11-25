@@ -30,7 +30,7 @@
                             <td><%= contest.category %></td>
                             <td><%= contest.entry_fee %></td>
                             <td><%= contest.participants || 0 %></td>
-                            <td><%= contest.created_at ? new Date(contest.created_at).toLocaleString('en-IN', { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
+                            <td><%= contest.created_at ? new Date(contest.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
                             <td>
                                 <a href="/testing/contest/<%= contest._id %>" class="btn btn-sm btn-outline-primary">View</a>
                             </td>

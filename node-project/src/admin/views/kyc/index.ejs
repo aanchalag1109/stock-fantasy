@@ -24,7 +24,7 @@
                     <tbody>
                         <% submissions.forEach(s => {
                             const created = s.created_at ? new Date(s.created_at) : null;
-                            const createdText = created ? created.getFullYear() + '-' + String(created.getMonth()+1).padStart(2,'0') + '-' + String(created.getDate()).padStart(2,'0') + ' ' + String(created.getHours()).padStart(2,'0') + ':' + String(created.getMinutes()).padStart(2,'0') : '—';
+                            const createdText = created ? created.toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).slice(0, 16) : '—';
                             const docType = s.document_type || (s.aadhar_number || s.aadhar ? 'Aadhar' : (s.pan_number || s.pan ? 'PAN' : '—'));
                             const docNumber = s.document_number || s.aadhar_number || s.aadhar || s.pan_number || s.pan || '—';
                         %>

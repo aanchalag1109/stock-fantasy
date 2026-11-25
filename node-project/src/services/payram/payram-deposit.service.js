@@ -28,7 +28,7 @@ const PayramDeposit = require('../../models/payram-deposit.model');
 const User = require('../../models/user.model');
 const config = require('../../config/env');
 const logger = require('../../config/logger');
-const { creditOnce } = require('../contest-automation/ledger');
+const { creditOnce, cancelPendingCredit } = require('../contest-automation/ledger');
 const payram = require('./payram.client');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: shared INR/USDT quote (rate, per-currency limits, gateway charges)
 const { depositQuote } = require('../payments/quote.service');
@@ -190,6 +190,11 @@ async function credit(deposit, verification, { fromStatuses = OPEN_STATUSES, pay
     });
     if (result.missingUser) {
       await PayramDeposit.updateOne({ _id: claimed._id }, { $set: { status: 'review', credited_at: null, review_reason: 'User not found when crediting' } });
+      return 'review';
+    }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: a duplicate is only "already credited" when its row says so
+    if (result.duplicate && result.existing && result.existing.status === 'failed') {
+      await PayramDeposit.updateOne({ _id: claimed._id }, { $set: { status: 'review', credited_at: null, review_reason: 'The wallet history already has a failed row for this deposit' } });
       return 'review';
     }
     if (result.duplicate) return 'already';
@@ -376,6 +381,26 @@ async function adminReject(depositId, { admin, note }) {
     { $set: { status: 'cancelled', review_reason: [deposit.review_reason, reason].filter(Boolean).join(' | ') } },
   );
   if (!res.modifiedCount) return { type: 'error', message: `Deposit is already ${deposit.status}` };
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: an unfinished credit is stopped for good; money that already reached
+  // the wallet is never reported as rejected (same rule as INR Deposit Orders).
+  const transactionId = `PAYRAM_${deposit.deposit_id}`;
+  const undo = (set) => PayramDeposit.updateOne({ _id: deposit._id, status: 'cancelled' }, { $set: { review_reason: deposit.review_reason || null, ...set } });
+  let found;
+  try {
+    found = await cancelPendingCredit(transactionId, { payment_method: 'PayRam (USDT) - Admin Rejected', description: `USDT deposit rejected - nothing was credited (${deposit.deposit_id})` });
+  } catch (err) {
+    await undo({ status: deposit.status }).catch(() => {});
+    return { type: 'error', message: `Could not reject the deposit: ${err.message}` };
+  }
+  if (found.state === 'applied') {
+    await undo({ status: 'credited', credited_at: deposit.credited_at || new Date(), transaction_id: transactionId });
+    await logEvent(deposit, { source: 'admin', status: 'REJECT', authenticated_by: admin, result: 'already credited' });
+    return { type: 'error', message: 'Not rejected: this deposit had already reached the wallet. It is now marked Credited.' };
+  }
+  if (found.state === 'settled' && found.row.status !== 'failed') {
+    await undo({ status: 'review', review_reason: 'The wallet history already shows this deposit as successful. Check the wallet before deciding.' });
+    return { type: 'error', message: "Not rejected: the wallet history already shows this deposit as successful. Moved to Needs review; check the player's wallet first." };
+  }
   await logEvent(deposit, { source: 'admin', status: 'REJECT', authenticated_by: admin, result: 'cancelled' });
   return { type: 'success', message: `Deposit ${deposit.deposit_id} rejected; nothing was credited.` };
 }

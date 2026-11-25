@@ -29,8 +29,8 @@
                                 <tr>
                                     <td><%= session.old_id || session._id %></td>
                                     <td><%= session.name %></td>
-                                    <td><%= session.start_time ? new Date(session.start_time).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
-                                    <td><%= session.end_time ? new Date(session.end_time).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
+                                    <td><%= session.start_time ? new Date(session.start_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
+                                    <td><%= session.end_time ? new Date(session.end_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
                                     <td><span class="badge bg-info"><%= session.status %></span></td>
                                     <td>
                                         <a href="/testing/session/<%= session._id %>/contests" class="btn btn-sm btn-outline-info">

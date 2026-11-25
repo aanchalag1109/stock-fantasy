@@ -31,7 +31,7 @@
                     <tbody>
                         <% items.forEach(announcement => {
                             const created = announcement.created_at ? new Date(announcement.created_at) : null;
-                            const createdText = created ? created.getFullYear() + '-' + String(created.getMonth()+1).padStart(2,'0') + '-' + String(created.getDate()).padStart(2,'0') + ' ' + String(created.getHours()).padStart(2,'0') + ':' + String(created.getMinutes()).padStart(2,'0') : '—';
+                            const createdText = created ? created.toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).slice(0, 16) : '—';
                         %>
                         <tr>
                             <td><input type="checkbox" class="announcement-checkbox" value="<%= announcement._id %>"></td>

@@ -921,17 +921,27 @@ const payments = {
     ]);
     const userMap = await paymentOrders.usersFor(items);
     items.forEach(p => { p.user = userMap.get(String(p.user_id)) || null; });
+    const counts = await paymentOrders.statusCounts(search); // NEW IMPLEMENTATION — NODE.JS PROJECT: status tabs
     render(res, 'payments/index', {
-      title: 'Deposit Orders', payments: items, total, pages: Math.ceil(total / limit), page: Number(page), search, status, admin: req.session.admin,
+      title: 'Deposit Orders', counts, payments: items, total, pages: Math.ceil(total / limit), page: Number(page), search, status, admin: req.session.admin,
     });
+  },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): view the order first, then accept / reject —
+  // like USDT Deposits.
+  show: async (req, res, next) => {
+    try {
+      const data = await paymentOrders.detail(req.params.id);
+      if (!data) { req.flash('error', 'Payment not found'); return res.redirect('/payments'); }
+      return render(res, 'payments/show', { title: `Deposit Order ${data.payment.order_id}`, ...data, admin: req.session.admin });
+    } catch (err) { return next(err); }
   },
   // PHP back(): return to the page (with its filters) the admin came from.
   action: (name) => async (req, res) => {
-    const result = await paymentOrders[name](req.params.id);
+    const result = await paymentOrders[name](req.params.id, { admin: req.adminAccess ? req.adminAccess.email : 'admin', note: req.body && req.body.note });
     logger.info(`[payments] ${req.adminAccess ? req.adminAccess.email : 'admin'} ${name} ${req.params.id}: ${result.message}`);
     req.flash(result.type, result.message);
     const back = req.get('Referer');
-    res.redirect(back && /\/payments(\?|$)/.test(back) ? back : '/payments');
+    res.redirect(back && /\/payments(\/[0-9a-fA-F]{24})?(\?|$)/.test(back) ? back : '/payments');
   },
 };
 

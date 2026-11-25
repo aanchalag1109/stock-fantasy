@@ -26,7 +26,10 @@ const transactionSchema = new mongoose.Schema({
   // NEW IMPLEMENTATION — NODE.JS PROJECT: contest entry fees and their refunds — the part taken from /
   // returned to each wallet (amount = from_winnings + from_deposit).
   from_winnings: { type: Number, default: null },
-  from_deposit: { type: Number, default: null }
+  from_deposit: { type: Number, default: null },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: only while a credit is unfinished (contest-automation/ledger.js)
+  credit_pending: { type: Boolean },
+  credit_inc: { type: mongoose.Schema.Types.Mixed }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

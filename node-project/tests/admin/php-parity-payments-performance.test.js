@@ -54,7 +54,7 @@ function matches(doc, filter = {}) {
     if (cond && typeof cond === 'object' && !(cond instanceof ObjectId) && !(cond instanceof Date) && Object.keys(cond).some((k) => k.startsWith('$'))) {
       return Object.entries(cond).every(([op, arg]) => {
         switch (op) {
-          case '$ne': return !same(val, arg);
+          case '$ne': return Array.isArray(val) ? !val.some((v) => same(v, arg)) : !same(val, arg);
           case '$in': return arg.some((a) => (a instanceof RegExp ? a.test(String(val)) : same(val, a)));
           case '$nin': return !arg.some((a) => same(val, a));
           case '$gt': return val != null && cmp(val, arg) > 0;
@@ -79,7 +79,7 @@ function applyUpdate(doc, update) {
   const set = update.$set || (update.$inc || update.$push || update.$unset ? {} : update);
   Object.assign(doc, set);
   Object.entries(update.$inc || {}).forEach(([k, v]) => { doc[k] = (doc[k] || 0) + v; });
-  Object.entries(update.$push || {}).forEach(([k, v]) => { doc[k] = [...(doc[k] || []), v]; });
+  Object.entries(update.$push || {}).forEach(([k, v]) => { doc[k] = [...(doc[k] || []), ...(v && v.$each ? v.$each : [v])]; });
 }
 function stub(name) {
   const Model = models[name];
@@ -155,13 +155,14 @@ async function flashAfter(agent, res) {
 describe('Payment Orders (PHP Admin\\PaymentController)', () => {
   let user;
   let payment;
-  beforeEach(() => {
+  const setup = () => {
     reset();
     user = { _id: new ObjectId(), name: 'Asha Verma', mobile: '9876543210', email: 'asha@x.com', deposit_balance: 100, winnings_balance: 0 };
     db.User.push(user);
     payment = { _id: new ObjectId(), order_id: 'ORD123', user_id: user._id, amount: 500, payment_status: 0, created_at: new Date() };
     db.Payment.push(payment, { _id: new ObjectId(), order_id: 'ORD999', user_id: new ObjectId(), amount: 50, payment_status: 1, created_at: new Date() });
-  });
+  };
+  beforeEach(setup);
 
   test('search matches order id or the user name / mobile / email (literal text)', async () => {
     const admin = await login();
@@ -213,7 +214,12 @@ describe('Payment Orders (PHP Admin\\PaymentController)', () => {
   test('Verify asks LG Pay (signed) and reports PAID / PENDING / FAILED without changing the payment', async () => {
     const calls = [];
     const answers = [
-      [{ status: 200, data: { status: 1, data: { money: 50000 } } }, 'success', 'LG Pay Status: PAID ✓ - Amount: ₹500 - You can now approve this payment'],
+      [{ status: 200, data: { status: 1, data: { status: 1, money: 50000 } } }, 'success', 'LG Pay Status: PAID ✓ - Amount: ₹500 - You can now approve this payment'],
+      // NEW IMPLEMENTATION — NODE.JS PROJECT: PAID needs the order's own status, as in the automatic check
+      [{ status: 200, data: { status: 1, data: { status: 0, money: 50000 } } }, 'warning', 'LG Pay Status: NOT PAID - Amount: ₹500 - Do not accept this payment yet'],
+      [{ status: 200, data: { status: 1, data: { money: 50000 } } }, 'warning', 'LG Pay Status: NOT CONFIRMED - Amount: ₹500 - LG Pay did not say whether this order is paid. Check it in LG Pay before accepting.'],
+      [{ status: 200, data: { status: 1 } }, 'warning', 'LG Pay Status: NOT CONFIRMED - LG Pay did not say whether this order is paid. Check it in LG Pay before accepting.'],
+      [{ status: 200, data: { status: 1, data: { status: 1, money: 40000 } } }, 'warning', 'LG Pay Status: PAID LESS - received ₹400 for an order of ₹500'],
       [{ status: 200, data: { status: 0 } }, 'warning', 'LG Pay Status: PENDING - Payment not completed yet'],
       [{ status: 200, data: { status: 2, msg: 'Order expired' } }, 'danger', 'LG Pay Status: FAILED - Order expired'],
       [{ status: 502, data: '' }, 'danger', 'Failed to connect to LG Pay (HTTP 502)'],
@@ -233,6 +239,131 @@ describe('Payment Orders (PHP Admin\\PaymentController)', () => {
     assert.equal(calls[0].url, `${config.LGPAY.baseUrl}/api/order/query`);
     const expected = crypto.createHash('md5').update(`app_id=${config.LGPAY.appId}&order_sn=ORD123&key=${config.LGPAY.secretKey}`).digest('hex').toUpperCase();
     assert.deepEqual(calls[0].params, { app_id: config.LGPAY.appId, order_sn: 'ORD123', sign: expected });
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): view first, then accept / reject; India time
+  test('the list only offers View; the order page has the actions, saves note and decision, then hides them', async () => {
+    payment.created_at = new Date('2026-11-24T09:00:00Z');
+    const admin = await login();
+    const list = await admin.get('/payments');
+    assert.match(list.text, new RegExp(`href="/payments/${payment._id}"`));
+    assert.doesNotMatch(list.text, /\/(approve|reject|verify)"/);
+    assert.match(list.text, /02:30 pm/i, '09:00 UTC is 02:30 pm in India');
+    assert.match(list.text, /data-status-tab="0"[^>]*>Pending <span[^>]*>1</);
+    const path = `/payments/${payment._id}`;
+    const page = await admin.get(path);
+    ['approve', 'reject', 'verify'].forEach((a) => assert.match(page.text, new RegExp(`action="${path}/${a}"`)));
+    assert.match(page.text, /02:30:00 pm/i);
+    const viewerPage = await (await login('viewer@test.local')).get(path);
+    assert.equal(viewerPage.status, 200);
+    assert.doesNotMatch(viewerPage.text, /\/reject"/);
+    const res = await admin.post(`${path}/reject`).set('Referer', `http://localhost${path}`).type('form').send({ note: 'No payment received' });
+    assert.equal(res.headers.location, `http://localhost${path}`);
+    const p = get('Payment', payment._id);
+    assert.deepEqual([p.decision, p.decided_by, p.admin_note], ['rejected', 'super@test.local', 'No payment received']);
+    assert.equal(db.Transaction[0].description, 'INR deposit rejected - nothing was credited (Order ORD123)');
+    const after = await admin.get(path);
+    assert.match(after.text, /Rejected by super@test\.local/);
+    assert.doesNotMatch(after.text, /\/approve"/);
+    assert.equal((await admin.get('/payments/' + new ObjectId())).headers.location, '/payments');
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: a credit that fails midway never leaves "success" without money
+  describe('a credit that does not finish', () => {
+    beforeEach(setup); // Node 20 does not repeat the outer hook for nested tests
+    const User = models.User;
+    let real;
+    const breakWallet = (apply) => { real = User.updateOne; User.updateOne = async (...a) => { if (apply) await real(...a); throw new Error('connection lost'); }; };
+    const row = () => db.Transaction.find((t) => t.transaction_id === 'ORD123');
+    const state = () => [get('User', user._id).deposit_balance, get('Payment', payment._id).payment_status, row().status, row().credit_pending];
+    const attempt = async (apply) => {
+      const admin = await login();
+      breakWallet(apply);
+      try { await admin.post(`/payments/${payment._id}/approve`); } finally { User.updateOne = real; }
+      return admin;
+    };
+
+    test('rejecting it afterwards: failed everywhere, nothing credited', async () => {
+      const admin = await attempt(false);
+      assert.deepEqual(state(), [100, 0, 'failed', true]);
+      assert.match((await admin.get(`/payments/${payment._id}`)).text, /An earlier credit did not finish/);
+      await admin.post(`/payments/${payment._id}/reject`);
+      assert.deepEqual(state(), [100, -1, 'failed', false]);
+      assert.equal(row().payment_method, 'Admin Rejected');
+    });
+
+    test('approving it again credits it once', async () => {
+      const admin = await attempt(false);
+      await admin.post(`/payments/${payment._id}/approve`);
+      assert.deepEqual(state(), [600, 1, 'success', false]);
+    });
+
+    test('money already in (the reply was lost): approve does not pay twice, reject is refused', async () => {
+      let admin = await attempt(true);
+      await admin.post(`/payments/${payment._id}/approve`);
+      assert.deepEqual(state(), [600, 1, 'success', false]);
+      db.Transaction = [];
+      Object.assign(get('User', user._id), { deposit_balance: 100, credit_marks: [] });
+      get('Payment', payment._id).payment_status = 0;
+      admin = await attempt(true);
+      const res = await admin.post(`/payments/${payment._id}/reject`);
+      assert.match((await flashAfter(admin, res)).text, /already reached the wallet/);
+      assert.deepEqual(state(), [600, 1, 'success', false]);
+    });
+
+    test('an older "success" row: not rejected silently, moved to Needs review', async () => {
+      db.Transaction.push({ _id: new ObjectId(), user_id: user._id, type: 'deposit', amount: 500, status: 'success', transaction_id: 'ORD123' });
+      const admin = await login();
+      const res = await admin.post(`/payments/${payment._id}/reject`);
+      assert.match((await flashAfter(admin, res)).text, /Needs review/);
+      assert.equal(get('Payment', payment._id).payment_status, 3);
+      assert.match((await admin.get(`/payments/${payment._id}`)).text, /wallet history shows this deposit as/);
+    });
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: rows are stored as 'success'
+  test('Transactions: the Completed filter and counter find successful rows', async () => {
+    db.Transaction.push(
+      { _id: new ObjectId(), user_id: user._id, type: 'deposit', amount: 500, status: 'success', transaction_id: 'T_OK', description: 'good-row', created_at: new Date() },
+      { _id: new ObjectId(), user_id: user._id, type: 'deposit', amount: 500, status: 'failed', transaction_id: 'T_BAD', description: 'bad-row', created_at: new Date() },
+    );
+    const page = await (await login()).get('/transactions?status=completed');
+    assert.match(page.text, /good-row/);
+    assert.doesNotMatch(page.text, /bad-row/);
+    assert.match(page.text, /<h3 class="mb-1">1<\/h3>/);
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: entry fees are stored as 'contest_entry'
+  test('Transactions: the Entry Fee filter finds contest entries (old links too)', async () => {
+    db.Transaction.push(
+      { _id: new ObjectId(), user_id: user._id, type: 'contest_entry', amount: 50, status: 'success', transaction_id: 'E1', description: 'joined-row', created_at: new Date() },
+      { _id: new ObjectId(), user_id: user._id, type: 'deposit', amount: 500, status: 'success', transaction_id: 'D1', description: 'deposit-row', created_at: new Date() },
+    );
+    const admin = await login();
+    for (const type of ['contest_entry', 'entry_fee']) {
+      const page = await admin.get('/transactions?type=' + type);
+      assert.match(page.text, /joined-row/, type);
+      assert.doesNotMatch(page.text, /deposit-row/, type);
+      assert.match(page.text, /<option value="contest_entry" selected>Entry Fee/);
+    }
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: the server may run in UTC, so every server-rendered date names its zone
+  test('no server-rendered admin date depends on the server timezone', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const dir = path.join(__dirname, '../../src/admin/views');
+    const bad = [];
+    const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) return walk(f);
+      return fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+        const browserOnly = /performance/.test(f) && /price_fetched_at/.test(line);
+        if (!browserOnly && !/timeZone/.test(line) && (/new Date\([^()]+\)\.toLocale/.test(line) || /\.getHours\(\)/.test(line))) bad.push(`${path.relative(dir, f)}:${i + 1}`);
+      });
+    });
+    walk(dir);
+    assert.deepEqual(bad, []);
   });
 
   test('view-only admins cannot approve, reject or verify', async () => {

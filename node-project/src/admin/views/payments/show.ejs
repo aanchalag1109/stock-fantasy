@@ -1,0 +1,100 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): Admin → Deposit Orders (INR) — detail; accept / reject only here %>
+<%
+  const inr = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pc = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' PC';
+  const when = (d) => d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+  const STATUS = { 0: ['secondary', 'Pending'], 1: ['success', 'Success'], 3: ['warning text-dark', 'Needs review'], 4: ['warning text-dark', 'Processing'], '-1': ['danger', 'Failed'] };
+  const st = STATUS[payment.payment_status] || ['secondary', 'Pending'];
+  const coins = payment.probcoins != null ? payment.probcoins : payment.amount;
+  const short = payment.paid_amount != null && Number(payment.paid_amount) < Number(payment.amount);
+  const mismatch = transaction && transaction.status === 'success' && !transaction.credit_pending && Number(payment.payment_status) !== 1;
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-0">Deposit Order <span class="font-monospace"><%= payment.order_id %></span></h1>
+            <span class="badge bg-<%= st[0] %> mt-1"><%= st[1] %></span>
+        </div>
+        <a href="/payments" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Deposit Orders</a>
+    </div>
+
+    <% if (payment.review_reason) { %><div class="alert alert-warning"><i class="bi bi-info-circle me-2"></i><%= payment.review_reason %></div><% } %>
+    <% if (mismatch) { %><div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>The wallet history shows this deposit as <strong>success</strong>, but the order is <strong><%= st[1] %></strong>. Check the player's wallet before deciding.</div><% } %>
+    <% if (transaction && transaction.credit_pending) { %><div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>An earlier credit did not finish. Accept completes it (never twice); Reject stops it for good.</div><% } %>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="row g-3 mb-4">
+                <div class="col-sm-4"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="small text-muted">Amount to pay</div><div class="h4 mb-0"><%= inr(payment.amount) %></div>
+                    <% if (payment.charges) { %><small class="text-muted"><%= inr(payment.base_amount) %> + charges <%= inr(payment.charges) %><%= payment.charges_bearer === 'platform' ? ' (absorbed)' : '' %></small><% } %>
+                </div></div></div>
+                <div class="col-sm-4"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="small text-muted">Received (LG Pay)</div><div class="h4 mb-0 <%= short ? 'text-danger' : '' %>"><%= inr(payment.paid_amount) %></div>
+                </div></div></div>
+                <div class="col-sm-4"><div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="small text-muted">ProbCoins</div><div class="h4 mb-0 text-success"><%= pc(coins) %></div>
+                    <small class="text-muted"><%= payment.rate ? 'at ₹1 = ' + payment.rate + ' PC' : '1:1' %></small>
+                </div></div></div>
+            </div>
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">Order details</div>
+                <div class="card-body p-0"><table class="table mb-0"><tbody>
+                    <tr><th class="w-25 ps-3">Order ID</th><td class="font-monospace"><%= payment.order_id %></td></tr>
+                    <tr><th class="ps-3">Gateway / currency</th><td>LG Pay / INR</td></tr>
+                    <tr><th class="ps-3">Created</th><td><%= when(payment.created_at) %></td></tr>
+                    <tr><th class="ps-3">Last updated</th><td><%= when(payment.updated_at) %></td></tr>
+                    <tr><th class="ps-3">Wallet credited</th><td><%= when(payment.credited_at) %></td></tr>
+                    <tr><th class="ps-3">Decision</th><td><% if (payment.decision) { %><%= payment.decision === 'approved' ? 'Accepted' : 'Rejected' %> by <%= payment.decided_by %> on <%= when(payment.decided_at) %><% } else { %>—<% } %></td></tr>
+                    <tr><th class="ps-3">Admin note</th><td><%= payment.admin_note || '—' %></td></tr>
+                </tbody></table></div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">User</div>
+                <div class="card-body">
+                    <% if (user) { %>
+                    <div class="fw-semibold"><%= user.name || 'User' %> <% if (user.old_id != null) { %><small class="text-muted">#<%= user.old_id %></small><% } %></div>
+                    <div class="small text-muted"><%= user.mobile || '' %> <%= user.email ? '· ' + user.email : '' %></div>
+                    <div class="small mt-2">Deposit balance: <strong><%= pc(user.deposit_balance) %></strong></div>
+                    <div class="small">Winnings balance: <strong><%= pc(user.winnings_balance) %></strong></div>
+                    <% if (can('users.view')) { %><a href="/users/<%= user._id %>" class="btn btn-sm btn-outline-primary mt-2">View player</a><% } %>
+                    <% } else { %><span class="text-danger">User not found</span><% } %>
+                </div>
+            </div>
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">Wallet transaction</div>
+                <div class="card-body small">
+                    <% if (transaction) { %>
+                    <div class="mb-1"><span class="text-muted">Amount</span> <strong><%= pc(transaction.amount) %></strong></div>
+                    <div class="mb-1"><span class="text-muted">Method</span> <%= transaction.payment_method || '—' %></div>
+                    <div class="mb-1"><span class="text-muted">Status</span> <%= transaction.status %></div>
+                    <div class="mb-1"><%= transaction.description || '' %></div>
+                    <% if (can('transactions.view')) { %><a href="/transactions/<%= transaction._id %>" class="btn btn-sm btn-outline-secondary mt-1">Open transaction</a><% } %>
+                    <% } else { %><span class="text-muted">No wallet transaction — nothing has been credited.</span><% } %>
+                </div>
+            </div>
+            <% if (can('payments.approve') && decidable) { %>
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-dark text-white fw-semibold">Actions</div>
+                <div class="card-body">
+                    <form method="POST" action="/payments/<%= payment._id %>/verify" class="mb-3">
+                        <button type="submit" class="btn btn-info w-100"><i class="bi bi-arrow-repeat me-1"></i>Verify with LG Pay</button>
+                        <small class="text-muted d-block mt-1">Asks LG Pay for the payment status. Changes nothing.</small>
+                    </form>
+                    <form method="POST" action="/payments/<%= payment._id %>/approve" class="mb-3" onsubmit="return confirm('Accept this payment and credit <%= pc(coins) %>?')">
+                        <input type="text" name="note" aria-label="Note" class="form-control form-control-sm mb-2" maxlength="300" placeholder="Note (optional)">
+                        <button type="submit" class="btn btn-success w-100"><i class="bi bi-check-circle me-1"></i>Accept &amp; credit <%= pc(coins) %></button>
+                    </form>
+                    <form method="POST" action="/payments/<%= payment._id %>/reject" onsubmit="return confirm('Reject this payment? Nothing will be credited.')">
+                        <input type="text" name="note" aria-label="Reason" class="form-control form-control-sm mb-2" maxlength="300" placeholder="Reason (optional)">
+                        <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-circle me-1"></i>Reject</button>
+                    </form>
+                </div>
+            </div>
+            <% } %>
+        </div>
+    </div>
+</div>

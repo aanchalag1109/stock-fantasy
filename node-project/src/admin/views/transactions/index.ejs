@@ -3,14 +3,16 @@
     deposit: { bg: '#e8f5e8', color: '#2e7d32', icon: 'arrow-down-circle' },
     withdrawal: { bg: '#fff3cd', color: '#856404', icon: 'arrow-up-circle' },
     refund: { bg: '#d1ecf1', color: '#0c5460', icon: 'arrow-clockwise' },
+    contest_entry: { bg: '#e3f2fd', color: '#1565c0', icon: 'credit-card' }, // NEW IMPLEMENTATION — NODE.JS PROJECT: the stored value
     entry_fee: { bg: '#e3f2fd', color: '#1565c0', icon: 'credit-card' },
   };
   const statusStyles = {
+    success: { bg: '#e8f5e8', color: '#2e7d32', icon: 'check-circle' }, // NEW IMPLEMENTATION — NODE.JS PROJECT: the stored value
     completed: { bg: '#e8f5e8', color: '#2e7d32', icon: 'check-circle' },
     pending: { bg: '#fff3cd', color: '#856404', icon: 'clock' },
     failed: { bg: '#f8d7da', color: '#721c24', icon: 'x-circle' },
   };
-  const completed = transactions.filter((row) => row.status === 'completed').length;
+  const completed = transactions.filter((row) => row.status === 'success' || row.status === 'completed').length;
   const pending = transactions.filter((row) => row.status === 'pending').length;
   const failed = transactions.filter((row) => row.status === 'failed').length;
   const pageAmount = transactions.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
@@ -118,7 +120,7 @@
                                     <option value="deposit" <%= type === 'deposit' ? 'selected' : '' %>>Deposit</option>
                                     <option value="withdrawal" <%= type === 'withdrawal' ? 'selected' : '' %>>Withdrawal</option>
                                     <option value="refund" <%= type === 'refund' ? 'selected' : '' %>>Refund</option>
-                                    <option value="entry_fee" <%= type === 'entry_fee' ? 'selected' : '' %>>Entry Fee</option>
+                                    <option value="contest_entry" <%= type === 'contest_entry' || type === 'entry_fee' ? 'selected' : '' %>>Entry Fee</option>
                                 </select>
                             </div>
                             <div class="col-md-4">

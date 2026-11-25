@@ -16,7 +16,7 @@
                         <tr><th>Email:</th><td><%= user.email || 'N/A' %></td></tr>
                         <tr><th>Deposit:</th><td>₹<%= Number(user.deposit_balance || 0).toFixed(2) %></td></tr>
                         <tr><th>Winnings:</th><td>₹<%= Number(user.winnings_balance || 0).toFixed(2) %></td></tr>
-                        <tr><th>Created:</th><td><%= user.created_at ? new Date(user.created_at).toLocaleString('en-IN') : '—' %></td></tr>
+                        <tr><th>Created:</th><td><%= user.created_at ? new Date(user.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—' %></td></tr>
                     </table>
                 </div>
             </div>
@@ -38,7 +38,7 @@
                                 <tr>
                                     <td><%= session.old_id || session._id %></td>
                                     <td><%= session.name %></td>
-                                    <td><%= session.start_time ? new Date(session.start_time).toLocaleString('en-IN', { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
+                                    <td><%= session.start_time ? new Date(session.start_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—' %></td>
                                     <td>
                                         <a href="/testing/user/<%= user._id %>/session/<%= session._id %>/contests" class="btn btn-sm btn-outline-success">View Contests</a>
                                     </td>

@@ -26,7 +26,7 @@
                             const pd = request.payout_details || {};
                             const inrTo = pd.method === 'UPI' ? 'UPI ' + pd.upi_id : (pd.method === 'BANK' ? pd.account_number + ' / ' + pd.ifsc_code : '-');
                             const statusLabel = request.status ? request.status.charAt(0).toUpperCase() + request.status.slice(1) : '';
-                            const when = request.created_at ? new Date(request.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+                            const when = request.created_at ? new Date(request.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
                         %>
                         <tr>
                             <td><%= request.old_id || String(request._id).slice(-6) %></td>
@@ -37,7 +37,7 @@
                                 <% if (currency === 'USDT') { %><span class="badge bg-info ms-1"><%= network %></span><% } else { %><span class="badge bg-success ms-1">INR</span><% } %>
                             </td>
                             <td><small class="font-monospace"><%= currency === 'INR' ? inrTo : (addr ? String(addr).slice(0, 18) : '-') %></small></td>
-                            <td><span class="badge bg-<%= sc[request.status] || 'secondary' %>"><%= statusLabel === 'Approved' ? 'Accepted' : statusLabel %></span></td>
+                            <td><span class="badge bg-<%= sc[request.status] || 'secondary' %>"><%= statusLabel === 'Approved' ? 'Accepted' : statusLabel %></span><% if (request.status === 'rejected' && request.refund_state === 'pending') { %> <span class="badge bg-warning text-dark">Refund not finished</span><% } %></td>
                             <td><small><%= when %></small></td>
                             <td>
                                 <a href="/withdrawal_requests/<%= request._id %>" class="btn btn-sm btn-primary">

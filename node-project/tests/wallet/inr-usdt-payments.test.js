@@ -49,6 +49,7 @@ function matches(doc, filter = {}) {
         if (op === '$gte') return Number(val) >= Number(arg);
         if (op === '$type') return typeof val === arg;
         if (op === '$regex') return new RegExp(arg).test(String(val ?? ''));
+        if (op === '$ne') return Array.isArray(val) ? !val.includes(arg) : val !== arg;
         throw new Error(`unsupported ${op}`);
       });
     }
@@ -69,6 +70,7 @@ function applyUpdate(doc, u) {
     if (k.includes('.')) { const [a, b] = k.split('.'); doc[a] = { ...(doc[a] || {}), [b]: v }; } else doc[k] = v;
   });
   Object.entries(u.$inc || {}).forEach(([k, v]) => { doc[k] = Math.round(((doc[k] || 0) + v) * 100) / 100; });
+  Object.entries(u.$push || {}).forEach(([k, v]) => { doc[k] = [...(doc[k] || []), ...(v && v.$each ? v.$each : [v])]; });
 }
 function stub(name) {
   const M = models[name];
@@ -330,6 +332,51 @@ describe('Withdrawals in INR or USDT', () => {
     const byId = Object.fromEntries(history.map((w) => [w.payout_amount, w]));
     assert.deepEqual([byId[10].status, byId[10].status_label], ['accepted', 'Accepted'], 'approved is shown as accepted');
     assert.deepEqual([byId[20].status, byId[20].status_label], ['rejected', 'Rejected']);
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: a rejected request's refund can be finished later, exactly once
+  for (const [name, apply] of [['was not applied', false], ['was applied but the reply was lost', true]]) {
+    test(`reject: the refund ${name} → Retry Refund finishes it once`, async () => {
+      await request(app).post('/api/v1/withdraw/request').send({ user_id: '41', currency: 'USDT', probcoins: '1000' });
+      const w = db.WithdrawalRequest[0];
+      const start = user().winnings_balance;
+      const { User } = models;
+      const real = User.updateOne;
+      User.updateOne = async (...a) => { if (apply) await real(...a); throw new Error('connection lost'); };
+      let res;
+      try { res = await withdrawals.processWithdrawal(String(w._id), { action: 'reject', adminMessage: 'Wrong address', admin: 'a@x' }); } finally { User.updateOne = real; }
+      assert.deepEqual([res.type, w.status, w.refund_state], ['error', 'rejected', 'pending']);
+      assert.match(res.message, /Retry Refund/);
+      assert.equal((await withdrawals.processWithdrawal(String(w._id), { action: 'approve', admin: 'a@x' })).type, 'error', 'it cannot be paid out any more');
+      res = await withdrawals.processWithdrawal(String(w._id), { action: 'reject', admin: 'a@x' });
+      assert.equal(res.type, 'success');
+      assert.equal(user().winnings_balance, start + 1000);
+      assert.equal(w.refund_state, 'done');
+      const tx = (id) => db.Transaction.find((t) => t.transaction_id === id + w._id);
+      assert.deepEqual([tx('WDREFUND_').status, tx('WD_').status], ['success', 'failed']);
+      assert.match(tx('WDREFUND_').description, /Wrong address$/);
+      assert.equal((await withdrawals.processWithdrawal(String(w._id), { action: 'reject', admin: 'a@x' })).type, 'error');
+      assert.equal(user().winnings_balance, start + 1000, 'never twice');
+    });
+  }
+
+  test('requests rejected before refunds were tracked are never refunded again', async () => {
+    await request(app).post('/api/v1/withdraw/request').send({ user_id: '41', currency: 'USDT', probcoins: '1000' });
+    const w = db.WithdrawalRequest[0];
+    Object.assign(w, { status: 'rejected', refund_state: null });
+    const start = user().winnings_balance;
+    assert.equal((await withdrawals.processWithdrawal(String(w._id), { action: 'reject', admin: 'a@x' })).type, 'error');
+    assert.equal(user().winnings_balance, start);
+  });
+
+  test('the request page offers Retry Refund only while the refund is open', async () => {
+    const ejs = require('ejs');
+    const file = require('path').join(__dirname, '../../src/admin/views/withdrawals/show.ejs');
+    const page = (refundState, allowed = true) => ejs.renderFile(file, { request: { _id: 'w1', status: 'rejected', refund_state: refundState, amount: 1000, user_id: {} }, history: [], can: () => allowed });
+    assert.match(await page('pending'), /Retry Refund/);
+    assert.doesNotMatch(await page('pending', false), /Retry Refund/);
+    assert.doesNotMatch(await page('pending'), /Amount has been refunded to user/);
+    for (const state of ['done', null]) assert.match(await page(state), /Amount has been refunded to user/);
   });
 
   test('withdrawal status for the app: approved → accepted (PHP value), labels', () => {

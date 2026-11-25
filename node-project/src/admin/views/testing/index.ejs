@@ -19,7 +19,7 @@
                                     <td><%= user.mobile || '' %></td>
                                     <td><%= user.email || 'N/A' %></td>
                                     <td><%= user.winnings_balance || 0 %></td>
-                                    <td><%= user.created_at ? new Date(user.created_at).toLocaleDateString('en-US', { month:'short', day:'2-digit' }) : '' %></td>
+                                    <td><%= user.created_at ? new Date(user.created_at).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', month:'short', day:'2-digit' }) : '' %></td>
                                     <td><a href="/testing/user/<%= user._id %>" class="btn btn-sm btn-outline-primary">View</a></td>
                                 </tr>
                                 <% }) %>

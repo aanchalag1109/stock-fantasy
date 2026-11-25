@@ -11,7 +11,7 @@
         <% if (submission.status === 'approved') { %><span class="badge badge-success">Approved</span>
         <% } else if (submission.status === 'rejected') { %><span class="badge badge-danger">Rejected</span>
         <% } else { %><span class="badge badge-warning">Pending Review</span><% } %></div>
-      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Submitted:</span><%= submission.created_at ? new Date(submission.created_at).toLocaleString() : '—' %></div>
+      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Submitted:</span><%= submission.created_at ? new Date(submission.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—' %></div>
       <% if (submission.rejection_reason) { %>
       <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Rejection:</span><span style="color:var(--danger)"><%= submission.rejection_reason %></span></div>
       <% } %>

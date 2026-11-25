@@ -1,9 +1,7 @@
 <%
   function stamp(d) {
     if (!d) return '—';
-    const dt = new Date(d);
-    const p = n => String(n).padStart(2, '0');
-    return dt.getFullYear() + '-' + p(dt.getMonth() + 1) + '-' + p(dt.getDate()) + ' ' + p(dt.getHours()) + ':' + p(dt.getMinutes()) + ':' + p(dt.getSeconds());
+    return new Date(d).toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' });
   }
 %>
 <div class="container-fluid">

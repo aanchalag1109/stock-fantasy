@@ -26,6 +26,8 @@ const userSchema = new mongoose.Schema({
   email_verified_at: { type: Date, default: null },
   deposit_balance: { type: Number, default: 0 },
   winnings_balance: { type: Number, default: 0 },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: ledger keys already applied to the balances (contest-automation/ledger.js)
+  credit_marks: { type: [String], default: undefined, select: false },
   kyc_status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
   aadhar: { type: String, default: null },
   pan: { type: String, default: null },
