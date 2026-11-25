@@ -29,7 +29,7 @@ const deviceTokens = require('../services/notifications/device-token.service');
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: live prize rows use the payout's own calculation
-const { dynamicPrizeRows, cardPrize } = require('../services/contest-automation/contest-scoring');
+const { dynamicPrizeRows, cardPrize, advertisedPerWinner } = require('../services/contest-automation/contest-scoring');
 const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION — NODE.JS PROJECT: market types
 // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits for the player's basket (client feedback)
 const sessionAssets = require('../services/session-assets.service');
@@ -912,15 +912,14 @@ const getContest = async (req, res) => {
         const rankStart = parseInt(item.rank_start || 1, 10);
         const rankEnd = parseInt(item.rank_end || rankStart, 10);
         const percent = num(item.percent ?? item.percentage ?? item.prize_percent);
-        const perWinner = isFixed
-          ? num(item.per_winner ?? item.perWinner ?? item.per_winner_amount)
-          : (winnersCount > 0 ? ((displayPrizePool * percent) / 100) / winnersCount : 0);
+        // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): exactly the amount saved in admin
+        const perWinner = advertisedPerWinner(item, displayPrizePool, isFixed);
         return {
           rank_label: item.label || item.rank_label || `Rank ${rankStart} to ${rankEnd}`,
           rank_start: rankStart,
           rank_end: rankEnd,
           winners_count: winnersCount,
-          percentage: round2(percent),
+          percentage: isFixed ? round2(percent) : Math.round(percent * 10000) / 10000, // e.g. 12.375, as in admin
           prize_amount: round2(perWinner * winnersCount),
           per_winner_amount: round2(perWinner),
         };

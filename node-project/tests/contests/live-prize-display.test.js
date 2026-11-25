@@ -154,6 +154,81 @@ describe('contest cards show the same prize as the detail screen', () => {
   });
 });
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): before live the app shows exactly the admin structure.
+describe('before live: the app shows exactly what the admin form saved', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const vm = require('node:vm');
+  const script = fs.readFileSync(path.join(__dirname, '../../src/admin/views/contests/prize-script.ejs'), 'utf8').replace(/<[/]?script>/g, '');
+
+  // Runs the real admin create/edit form script and returns the structure it saves.
+  function adminRows(values) {
+    const els = {};
+    const document = {
+      getElementById: (id) => {
+        els[id] = els[id] || { value: values[id] == null ? '' : String(values[id]), classList: { toggle() {} }, appendChild() {} };
+        return els[id];
+      },
+      createElement: () => ({}),
+      querySelectorAll: () => [],
+      querySelector: () => null,
+    };
+    vm.runInNewContext(`${script};recalc();`, { document, window: {} });
+    return JSON.parse(els.prize_distribution_hidden.value || '[]');
+  }
+  async function upcoming(category, participants, entryFee, platformFee, winning) {
+    reset({ joined: 3, sessionStatus: 'upcoming', ended: false });
+    const rows = adminRows({ category, participants, entry_fee: entryFee, platform_fee: platformFee, winning_percentage: winning });
+    Object.assign(db.contest, {
+      category, participants, entry_fee: entryFee, platform_fee: platformFee, winning_percentage: winning,
+      prize_pool: participants * entryFee * (1 - platformFee / 100), prize_distribution: rows,
+    });
+    const { contestsBySession } = require('../../src/controllers/mobile-api.controller');
+    Contest.find = () => list([db.contest]);
+    let cards;
+    await contestsBySession({ params: { sessionId: '5' }, query: {} }, { json: (b) => { cards = b; }, status() { return this; } });
+    return { rows, app: (await fetchContest()).contest.prize_distribution, card: cards.contests[0] };
+  }
+
+  test('adjusted last tier: rank 6 of 6 winners shows 99, not 495', async () => {
+    const { app } = await upcoming('mega', 20, 100, 10, 30);
+    assert.deepEqual(app.map((r) => r.per_winner_amount), [540, 324, 198, 121, 99]);
+    assert.equal(app[4].prize_amount, 99, 'group total is what the group is paid');
+  });
+
+  test('mega and equal: ranks, winners, % and prize per winner equal the admin structure for 1–400 winners', async () => {
+    for (const category of ['mega', 'equal']) {
+      for (let n = 1; n <= 400; n += 1) {
+        const { rows, app, card } = await upcoming(category, n, 100, 10, 100);
+        assert.deepEqual(
+          app.map((r) => [r.rank_start, r.rank_end, r.winners_count, r.percentage, r.per_winner_amount]),
+          rows.map((r) => [r.rank_start, r.rank_end, r.winners, r.percent, r.per_winner]),
+          `${category}, ${n} winners`,
+        );
+        assert.equal(card.first_prize, rows[0].per_winner, `${category} card, ${n} winners`);
+      }
+    }
+  });
+
+  test('a full contest never pays less than the app showed', async () => {
+    for (let n = 1; n <= 400; n += 1) {
+      const { app } = await upcoming('mega', n, 100, 10, 100);
+      const payout = dynamicPrizeRows(db.contest, n).rows;
+      app.forEach((row, i) => {
+        const diff = payout[i].per_winner_amount - row.per_winner_amount;
+        assert.ok(diff >= 0 && diff <= 1.01, `${n} winners, rank ${row.rank_start}: shown ${row.per_winner_amount}, paid ${payout[i].per_winner_amount}`);
+      });
+    }
+  });
+
+  test('old contests saved without an amount keep the % calculation', async () => {
+    reset({ sessionStatus: 'upcoming', ended: false });
+    db.contest.prize_distribution = [{ rank_start: 1, rank_end: 1, winners: 1, percent: 30 }, { rank_start: 2, rank_end: 3, winners: 2, percent: 20 }];
+    const rows = (await fetchContest()).contest.prize_distribution;
+    assert.deepEqual(rows.map((r) => r.per_winner_amount), [2700, 900]);
+  });
+});
+
 // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): leaderboard rows carry the player's photo
 describe('leaderboard profile photos', () => {
   test('each participant has profile_image (full URL, or null)', async () => {

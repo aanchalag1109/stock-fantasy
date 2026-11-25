@@ -141,6 +141,20 @@ function dynamicPrizeRows(contest, participants) {
 }
 
 /**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): prize per winner shown BEFORE the session starts —
+ * exactly the amount saved by the admin form (its "adjusted last" rule, rounded down). Recomputing it as
+ * pool × % ÷ winners ignored that rule: a 6-winner mega contest showed 495 for rank 6 instead of 99.
+ * Rows saved without an amount (older contests) keep the % calculation.
+ */
+function advertisedPerWinner(row, pool, isFixed) {
+  const saved = row.per_winner ?? row.perWinner ?? row.per_winner_amount;
+  if (isFixed || (saved != null && saved !== '')) return num(saved);
+  const percent = num(row.percent ?? row.percentage ?? row.prize_percent);
+  const winners = parseInt(row.winners || row.winners_count || 1, 10) || 1;
+  return ((pool * percent) / 100) / winners;
+}
+
+/**
  * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the prize shown on a contest CARD, identical to
  * the contest detail screen and to the payout. Every card API uses this.
  *   - fixed-prize formats (guaranteed, practice): the stored prize, always;
@@ -170,14 +184,7 @@ function cardPrize(contest, sessionStatus, joined) {
   // Stored (advertised) prize — first prize as the detail screen shows it before the start.
   const pool = num(contest.prize_pool);
   const stored = asPrizeArray(contest.prize_distribution);
-  let first = 0;
-  if (stored.length) {
-    const row = stored[0];
-    const percent = num(row.percent ?? row.percentage ?? row.prize_percent);
-    const winnersCount = parseInt(row.winners || row.winners_count || 1, 10) || 1;
-    const fixedAmount = num(row.per_winner ?? row.perWinner ?? row.per_winner_amount);
-    first = isFixed || !percent ? fixedAmount : ((pool * percent) / 100) / winnersCount;
-  }
+  const first = stored.length ? advertisedPerWinner(stored[0], pool, isFixed) : 0;
   return { prize_pool: round2(pool), first_prize: round2(first), total_pool: null, winners: null, is_flexible_prize: !isFixed, is_live_prize: false };
 }
 
@@ -227,5 +234,5 @@ async function payoutPrizeRows(contest, participants) {
 
 module.exports = {
   sessionPriceMaps, sessionContests, contestEntries, countParticipants, basketsFor, basketSymbols,
-  scoreEntries, assignRanks, savePrizeRows, payoutPrizeRows, isFixedPrize, dynamicPrizeRows, cardPrize,
+  scoreEntries, assignRanks, savePrizeRows, payoutPrizeRows, isFixedPrize, dynamicPrizeRows, cardPrize, advertisedPerWinner,
 };
