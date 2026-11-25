@@ -311,20 +311,21 @@ const getPaymentDetails = async (req, res) => {
     const userId = req.query.user_id || req.userId;
     if (!userId) return res.status(400).json({ status: 'error', message: 'User ID required' });
 
-    const user = await User.findById(userId).select('payment_details');
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: numeric ids too; account number masked; the real network
+    const user = await findByPublicId(User, userId);
     if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
-
-    const pd = user.payment_details || {};
+    const network = await require('../services/deposit-withdrawal-settings.service').getWithdrawalNetwork();
+    const { inr, usdt } = require('../services/payments/payout-details.service').publicDetails(user.payment_details, network);
     return res.json({
       status: 'success',
       data: {
-        usdt_wallet_address: pd.usdt_wallet_address || '',
-        usdt_network: 'BEP20',
-        upi_id: pd.upi_id || null,
-        account_holder_name: pd.account_holder_name || null,
-        account_number: pd.account_number || null,
-        bank_name: pd.bank_name || null,
-        ifsc_code: pd.ifsc_code || null,
+        usdt_wallet_address: usdt.usdt_wallet_address || '',
+        usdt_network: network,
+        upi_id: inr.upi_id,
+        account_holder_name: inr.account_holder_name,
+        account_number: inr.account_number,
+        bank_name: inr.bank_name,
+        ifsc_code: inr.ifsc_code,
       },
     });
   } catch (err) {
@@ -341,23 +342,19 @@ const updatePaymentDetails = async (req, res) => {
     const userId = req.body.user_id || req.userId;
     if (!userId) return res.status(400).json({ status: 'error', message: 'User ID required' });
 
-    const user = await User.findById(userId);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: same validation, OTP and network rules as the other endpoints
+    const user = await findByPublicId(User, userId);
     if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
-
-    const { usdt_wallet_address, upi_id, account_holder_name, account_number, bank_name, ifsc_code } = req.body;
-
-    user.payment_details = {
-      ...user.payment_details,
-      usdt_wallet_address: usdt_wallet_address || user.payment_details?.usdt_wallet_address || '',
-      usdt_network: 'BEP20',
-      upi_id: upi_id !== undefined ? upi_id : user.payment_details?.upi_id,
-      account_holder_name: account_holder_name !== undefined ? account_holder_name : user.payment_details?.account_holder_name,
-      account_number: account_number !== undefined ? account_number : user.payment_details?.account_number,
-      bank_name: bank_name !== undefined ? bank_name : user.payment_details?.bank_name,
-      ifsc_code: ifsc_code !== undefined ? ifsc_code : user.payment_details?.ifsc_code,
-    };
-
-    await user.save();
+    const payoutDetails = require('../services/payments/payout-details.service');
+    const address = String(req.body.usdt_wallet_address || '').trim();
+    const result = await payoutDetails.save(user, {
+      ...payoutDetails.partsFromInrForm(req.body),
+      ...(address ? { usdt: { usdt_wallet_address: address } } : {}),
+    }, req.body.otp);
+    if (!result.ok) {
+      const { ok, status, ...body } = result;
+      return res.status(status).json({ status: 'error', ...body });
+    }
     return res.json({ status: 'success', message: 'Payment details updated successfully' });
   } catch (err) {
     logger.error('updatePaymentDetails error:', err.message);

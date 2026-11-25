@@ -28,7 +28,7 @@ const sendOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid mobile number required (10-15 characters).' });
     }
     if (!purpose) {
-      return res.status(400).json({ success: false, message: "purpose must be one of: login, signup, password, change_email, change_mobile, new_mobile." });
+      return res.status(400).json({ success: false, message: "purpose must be one of: login, signup, password, change_email, change_mobile, new_mobile, payout_details." });
     }
 
     // Same exact-match lookup the login/register endpoints use.
@@ -39,7 +39,7 @@ const sendOtp = async (req, res) => {
     if (purpose === 'new_mobile' && user) {
       return res.status(409).json({ success: false, message: 'This mobile number is already used by another account.' });
     }
-    if (['login', 'password', 'change_email', 'change_mobile'].includes(purpose) && !user) {
+    if (['login', 'password', 'change_email', 'change_mobile', 'payout_details'].includes(purpose) && !user) {
       return res.status(404).json({ success: false, message: 'User not found. Please register first.' });
     }
     if (purpose === 'signup' && user) {

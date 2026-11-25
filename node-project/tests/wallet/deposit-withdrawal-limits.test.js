@@ -57,7 +57,7 @@ function resetState() {
     old_id: 7,
     deposit_balance: 1000,
     winnings_balance: 100000,
-    payment_details: { usdt_wallet_address: 'TXYZwallet', usdt_network: 'TRC20' },
+    payment_details: { usdt_wallet_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', usdt_network: 'TRC20' },
     async save() { state.writes.push(['User.save']); },
   };
 }

@@ -25,6 +25,7 @@ const { ensureOldId, publicId } = require('../../helpers/mobile-compat');
 const { creditOnce } = require('../contest-automation/ledger');
 const { notify } = require('../notifications/notification.service');
 const { withdrawalQuote } = require('./quote.service');
+const payoutDetails = require('./payout-details.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const clean = (v) => (v == null ? '' : String(v).trim());
@@ -38,24 +39,11 @@ async function findUser(ref) {
   return null;
 }
 
-/** INR payout destination from the user's saved payment details, or null. */
-function inrDestination(details = {}) {
-  const upi = clean(details.upi_id);
-  if (upi) return { method: 'UPI', upi_id: upi, account_holder_name: clean(details.account_holder_name) || null };
-  const account = clean(details.account_number);
-  const ifsc = clean(details.ifsc_code).toUpperCase();
-  const holder = clean(details.account_holder_name);
-  if (account && ifsc && holder) {
-    return { method: 'BANK', account_holder_name: holder, account_number: account, ifsc_code: ifsc, bank_name: clean(details.bank_name) || null };
-  }
-  return null;
-}
-
 /**
- * @param {{ user:object, currency:string, probcoins:any, message?:string }} input
+ * @param {{ user:object, currency:string, probcoins:any, message?:string, payoutMethod?:'BANK'|'UPI' }} input
  * @returns {Promise<{ ok:true, withdrawal:object, quote:object, user:object } | { ok:false, status:number, message:string }>}
  */
-async function requestWithdrawal({ user, currency, probcoins, message }) {
+async function requestWithdrawal({ user, currency, probcoins, message, payoutMethod }) {
   if (!user) return fail(404, 'User not found');
   const quote = await withdrawalQuote({ currency, probcoins });
   if (!quote.ok) return quote;
@@ -63,14 +51,15 @@ async function requestWithdrawal({ user, currency, probcoins, message }) {
   const details = user.payment_details || {};
   let destination;
   if (quote.currency === 'USDT') {
-    if (!clean(details.usdt_wallet_address)) {
-      return fail(400, 'Please add your USDT wallet address before withdrawing.', { payment_details_required: true });
-    }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the address must fit the network admin pays on
+    const problem = payoutDetails.usdtProblem(details, quote.network);
+    if (problem) return fail(400, problem, { payment_details_required: true, network: quote.network });
     destination = { usdt_wallet_address: clean(details.usdt_wallet_address), usdt_network: quote.network };
   } else {
-    const inr = inrDestination(details);
-    if (!inr) return fail(400, 'Please add your UPI ID or bank account details before withdrawing in INR.', { payment_details_required: true });
-    destination = { payout_details: inr, usdt_wallet_address: null, usdt_network: null };
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: bank or UPI, the player's choice when both are saved
+    const inr = payoutDetails.chooseInr(details, payoutMethod);
+    if (!inr.ok) return inr;
+    destination = { payout_details: inr.destination, usdt_wallet_address: null, usdt_network: null };
   }
 
   const coins = quote.probcoins;
@@ -242,45 +231,14 @@ function publicWithdrawal(w) {
     status_label: statusLabel(w.status),
     usdt_wallet_address: w.usdt_wallet_address || null,
     usdt_network: w.usdt_network || null,
-    payout_details: w.payout_details || null,
+    payout_details: payoutDetails.maskDestination(w.payout_details), // never the full account number
     payout_reference: w.payout_reference || null,
     admin_message: w.admin_message || null,
     created_at: w.created_at || null,
   };
 }
 
-/**
- * Saves the user's INR payout details (UPI and/or bank). USDT details keep using the existing
- * /payment-details/update endpoint.
- * @returns {Promise<{ ok:true, details:object } | { ok:false, status:number, message:string, errors?:object }>}
- */
-async function saveInrPayoutDetails(user, body = {}) {
-  const errors = {};
-  const upi = clean(body.upi_id);
-  const account = clean(body.account_number);
-  const ifsc = clean(body.ifsc_code).toUpperCase();
-  const holder = clean(body.account_holder_name);
-  const bank = clean(body.bank_name);
-  if (upi && !/^[a-zA-Z0-9._-]{2,256}@[a-zA-Z]{2,64}$/.test(upi)) errors.upi_id = 'Enter a valid UPI ID, e.g. name@bank.';
-  if (account && !/^\d{6,20}$/.test(account)) errors.account_number = 'Account number must be 6–20 digits.';
-  if (ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) errors.ifsc_code = 'Enter a valid IFSC code, e.g. HDFC0001234.';
-  if ((account || ifsc) && !(account && ifsc && holder)) errors.account_number = errors.account_number || 'Bank details need account holder name, account number and IFSC.';
-  if (!upi && !account) errors.upi_id = 'Enter a UPI ID or bank account details.';
-  if (holder.length > 100) errors.account_holder_name = 'Name is too long.';
-  if (Object.keys(errors).length) return fail(422, 'Please correct the payout details.', { errors });
-
-  const set = {
-    'payment_details.upi_id': upi || null,
-    'payment_details.account_holder_name': holder || null,
-    'payment_details.account_number': account || null,
-    'payment_details.ifsc_code': ifsc || null,
-    'payment_details.bank_name': bank || null,
-  };
-  await User.updateOne({ _id: user._id }, { $set: set });
-  return { ok: true, details: { upi_id: upi || null, account_holder_name: holder || null, account_number: account || null, ifsc_code: ifsc || null, bank_name: bank || null } };
-}
-
 module.exports = {
-  requestWithdrawal, legacyUsdtWithdrawal, processWithdrawal, publicWithdrawal, inrDestination, saveInrPayoutDetails, findUser,
+  requestWithdrawal, legacyUsdtWithdrawal, processWithdrawal, publicWithdrawal, findUser,
   appStatus, statusLabel, ACCEPTED_STATUSES,
 };

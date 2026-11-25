@@ -30,7 +30,10 @@ const show = async (req, res) => {
     const history = await WithdrawalRequest.find({ user_id: request.user_id?._id || request.user_id })
       .sort({ created_at: -1 }).limit(5).select('amount status created_at _id').lean();
 
-    render(res, 'withdrawals/show', { title: 'Withdrawal Detail', request, history, admin: req.session.admin });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: warn before paying an address that does not fit the network
+    const addressProblem = (request.currency || 'USDT') === 'USDT' && request.usdt_wallet_address && request.usdt_network
+      ? require('../../services/payments/payout-details.service').addressProblem(request.usdt_wallet_address, request.usdt_network) : null;
+    render(res, 'withdrawals/show', { title: 'Withdrawal Detail', request, history, addressProblem, admin: req.session.admin });
   } catch (err) { res.status(500).send(err.message); }
 };
 

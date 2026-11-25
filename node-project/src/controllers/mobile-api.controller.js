@@ -34,6 +34,8 @@ const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION —
 // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits for the player's basket (client feedback)
 const sessionAssets = require('../services/session-assets.service');
 const withdrawals = require('../services/payments/withdrawal.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
+const payoutDetails = require('../services/payments/payout-details.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
+const depositWithdrawalSettings = require('../services/deposit-withdrawal-settings.service');
 const passwordAuth = require('../services/password-auth.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT: OTP or password login
 
 /** 422 with the basket-limit errors (message = first one, errors = all), or null when the basket is fine. */
@@ -391,13 +393,10 @@ const getPaymentDetails = async (req, res) => {
   try {
     const user = await findByPublicId(User, req.params.user_id || req.query.user_id || req.body.user_id);
     const details = (user && user.payment_details) || {};
-    if (!details.usdt_wallet_address) {
-      return res.json({ status: 'success', data: { usdt_wallet_address: '', usdt_network: 'BEP20' } });
-    }
-    return res.json({
-      status: 'success',
-      data: { usdt_wallet_address: details.usdt_wallet_address || '', usdt_network: 'BEP20' },
-    });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: the network withdrawals are paid on (was always 'BEP20')
+    const network = await depositWithdrawalSettings.getWithdrawalNetwork();
+    const address = details.usdt_wallet_address || '';
+    return res.json({ status: 'success', data: { usdt_wallet_address: address, usdt_network: network, problem: address ? payoutDetails.usdtProblem(details, network) : null } });
   } catch (err) {
     return res.status(500).json({ status: 'error', message: 'Failed to fetch payment details' });
   }
@@ -413,13 +412,14 @@ const updatePaymentDetails = async (req, res) => {
         errors: { user_id: ['The selected user id is invalid.'] },
       });
     }
-    user.payment_details = {
-      ...(user.payment_details ? user.payment_details.toObject ? user.payment_details.toObject() : user.payment_details : {}),
-      usdt_wallet_address: req.body.usdt_wallet_address || '',
-      usdt_network: 'BEP20',
-    };
-    await user.save();
-    return res.json({ status: 'success', message: 'USDT wallet details updated successfully' });
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: address checked against the admin's network; OTP required
+    const address = String(req.body.usdt_wallet_address || '').trim();
+    const result = await payoutDetails.save(user, { usdt: address ? { usdt_wallet_address: address } : null }, req.body.otp);
+    if (!result.ok) {
+      const { ok, status, ...body } = result;
+      return res.status(status).json({ status: 'error', ...body });
+    }
+    return res.json({ status: 'success', message: 'USDT wallet details updated successfully', data: { usdt_wallet_address: address, usdt_network: result.details.usdt.network } });
   } catch (err) {
     return res.status(500).json({ status: 'error', message: 'Failed to update payment details' });
   }

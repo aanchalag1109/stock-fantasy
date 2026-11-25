@@ -237,7 +237,7 @@
                             <div class="row">
                                 <div class="col-md-6">
                                     <h6 class="text-muted">INR</h6>
-                                    <div class="mb-1"><span class="text-muted small">UPI ID:</span> <%= pd.upi_id || '—' %></div>
+                                    <div class="mb-1"><span class="text-muted small">UPI ID:</span> <%= pd.upi_id || '—' %><%= pd.upi_id && pd.upi_holder_name ? ' (' + pd.upi_holder_name + ')' : '' %></div>
                                     <div class="mb-1"><span class="text-muted small">Account holder:</span> <%= pd.account_holder_name || '—' %></div>
                                     <div class="mb-1"><span class="text-muted small">Account no.:</span> <span class="font-monospace"><%= pd.account_number || '—' %></span></div>
                                     <div class="mb-1"><span class="text-muted small">IFSC:</span> <span class="font-monospace"><%= pd.ifsc_code || '—' %></span></div>
@@ -245,7 +245,7 @@
                                 </div>
                                 <div class="col-md-6">
                                     <h6 class="text-muted">USDT</h6>
-                                    <div class="mb-1"><span class="text-muted small">Network:</span> <%= pd.usdt_wallet_address ? (pd.usdt_network || 'BEP20') : '—' %></div>
+                                    <div class="mb-1"><span class="text-muted small">Network:</span> <%= pd.usdt_wallet_address ? (pd.usdt_saved_network || 'not confirmed') : '—' %></div>
                                     <div class="mb-1 text-break"><span class="text-muted small">Wallet:</span> <span class="font-monospace small"><%= pd.usdt_wallet_address || '—' %></span></div>
                                 </div>
                             </div>

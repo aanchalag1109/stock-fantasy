@@ -26,6 +26,8 @@ async function getUnreadCount(userId) {
 /**
  * GET /api/v1/wallet/balance?user_id=
  */
+const { maskDestination } = require('../services/payments/payout-details.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
+
 const getWalletAmount = async (req, res) => {
   try {
     const userId = req.query.user_id || req.userId;
@@ -215,7 +217,7 @@ const getWithdrawalRequests = async (req, res) => {
     const requests = await WithdrawalRequest.find({ user_id: { $in: keys } }).sort({ created_at: -1 }).lean();
     return res.json({
       success: true,
-      withdrawal_requests: requests.map((r) => ({ ...r, status: withdrawals.appStatus(r.status), status_label: withdrawals.statusLabel(r.status) })),
+      withdrawal_requests: requests.map((r) => ({ ...r, payout_details: maskDestination(r.payout_details), status: withdrawals.appStatus(r.status), status_label: withdrawals.statusLabel(r.status) })),
     });
   } catch (err) {
     logger.error('getWithdrawalRequests error:', err.message);

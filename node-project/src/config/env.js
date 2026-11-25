@@ -16,6 +16,10 @@ module.exports = {
   // Static OTP while SMS_ENABLED is false; a random OTP sent by SMS otherwise (see src/services/otp.service.js).
   OTP_STATIC_CODE: /^\d{6}$/.test(process.env.OTP_STATIC_CODE || '') ? process.env.OTP_STATIC_CODE : '123456',
 
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: changing bank / UPI / USDT payout details needs an OTP. Set
+  // PAYOUT_DETAILS_OTP=false only until the app version with the OTP step is live.
+  PAYOUT_DETAILS_OTP: process.env.PAYOUT_DETAILS_OTP !== 'false',
+
   // SMS provider (apitxt.com). {otp} in otpTemplate is replaced with the code; the text
   // must match the DLT-approved template exactly or the message is rejected.
   SMS: {

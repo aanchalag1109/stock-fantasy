@@ -117,6 +117,7 @@
                                             <% networks.forEach(n => { %><option value="<%= n %>" <%= val('usdt_withdrawal_network') === n ? 'selected' : '' %>><%= n %></option><% }) %>
                                         </select>
                                         <div class="invalid-feedback" data-error-for="usdt_withdrawal_network"></div>
+                                        <div class="form-text">If you change this, players must save a USDT address for the new network before their next withdrawal.</div>
                                         <% } %>
                                     </div>
                                 </div>

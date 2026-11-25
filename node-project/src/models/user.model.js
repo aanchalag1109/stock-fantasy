@@ -2,7 +2,10 @@ const mongoose = require('mongoose');
 
 const paymentDetailsSchema = new mongoose.Schema({
   usdt_wallet_address: { type: String, default: '' },
-  usdt_network: { type: String, default: 'BEP20' },
+  usdt_network: { type: String, default: 'BEP20' }, // PHP wrote BEP20 for everyone: not reliable
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: the network the address was saved for (null = before this existed)
+  usdt_saved_network: { type: String, default: null },
+  upi_holder_name: { type: String, default: null },
   upi_id: { type: String, default: null },
   phone_number: { type: String, default: null },
   account_holder_name: { type: String, default: null },

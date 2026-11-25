@@ -16,5 +16,10 @@ router.post('/withdraw/request', requireSupportedAppVersion, ctrl.withdrawReques
 router.get('/withdraw/history', ctrl.withdrawHistory);
 router.get('/payout-details', ctrl.payoutDetails);
 router.post('/payout-details/inr', ctrl.saveInrPayoutDetails);
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): bank, UPI and USDT saved separately, with OTP
+router.post('/payout-details/bank', ctrl.saveBank);
+router.post('/payout-details/upi', ctrl.saveUpi);
+router.post('/payout-details/usdt', ctrl.saveUsdt);
+router.post('/payout-details/remove', ctrl.removePayout);
 
 module.exports = router;

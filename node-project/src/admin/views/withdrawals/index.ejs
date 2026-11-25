@@ -20,7 +20,7 @@
                         <% requests.forEach(request => {
                             const sc = { pending: 'warning', accepted: 'success', approved: 'success', rejected: 'danger' };
                             const addr = request.usdt_wallet_address || (request.user_id && request.user_id.payment_details && request.user_id.payment_details.usdt_wallet_address) || '';
-                            const network = request.usdt_network || (request.user_id && request.user_id.payment_details && request.user_id.payment_details.usdt_network) || '-';
+                            const network = request.usdt_network || '-'; // the profile's network is not reliable (PHP wrote BEP20 for everyone)
                             // NEW IMPLEMENTATION — NODE.JS PROJECT: INR or USDT payout (older rows: USDT, no payout amount)
                             const currency = request.currency || 'USDT';
                             const pd = request.payout_details || {};

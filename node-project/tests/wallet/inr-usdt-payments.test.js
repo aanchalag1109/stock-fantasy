@@ -125,7 +125,7 @@ function reset() {
       usdt_min_withdrawal_amount: 5, usdt_max_withdrawal_amount: 1000,
     },
     Payment: [], Transaction: [], WithdrawalRequest: [], Notification: [],
-    User: [{ _id: ids.user, old_id: 41, name: 'Asha', deposit_balance: 0, winnings_balance: 50000, payment_details: { usdt_wallet_address: 'TXyzWallet' } }],
+    User: [{ _id: ids.user, old_id: 41, name: 'Asha', deposit_balance: 0, winnings_balance: 50000, payment_details: { usdt_wallet_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' } }],
   };
   lgpay = { created: [], queries: 0, queryResult: { status: 0 } };
 }
@@ -280,7 +280,9 @@ describe('Withdrawals in INR or USDT', () => {
     assert.deepEqual(probcoinRange(null, 10), { min: null, max: null });
   });
 
-  test('INR withdrawal needs UPI or bank details; then deducts winnings and records the payout', async () => {
+  test('INR withdrawal needs UPI or bank details; then deducts winnings and records the payout', async (t) => {
+    config.PAYOUT_DETAILS_OTP = false; // the OTP step: tests/wallet/payout-details.test.js
+    t.after(() => { config.PAYOUT_DETAILS_OTP = true; });
     let res = await request(app).post('/api/v1/withdraw/request').send({ user_id: '41', currency: 'INR', probcoins: '5000' });
     assert.equal(res.status, 400);
     assert.equal(res.body.payment_details_required, true);
@@ -300,7 +302,7 @@ describe('Withdrawals in INR or USDT', () => {
 
   test('USDT withdrawal uses the saved address and the admin network; insufficient winnings refused', async () => {
     const res = await request(app).post('/api/v1/withdraw/request').send({ user_id: '41', currency: 'USDT', probcoins: '1000' });
-    assert.equal(res.body.withdrawal.usdt_wallet_address, 'TXyzWallet');
+    assert.equal(res.body.withdrawal.usdt_wallet_address, 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t');
     assert.equal(res.body.withdrawal.payout_amount, 10);
     user().winnings_balance = 10;
     const broke = await request(app).post('/api/v1/withdraw/request').send({ user_id: '41', currency: 'USDT', probcoins: '1000' });
@@ -388,7 +390,7 @@ describe('Withdrawals in INR or USDT', () => {
 // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): admin switch for INR withdrawals
 describe('INR / USDT withdrawals on / off', () => {
   beforeEach(reset);
-  const inrUser = () => { user().payment_details = { upi_id: 'asha@upi', usdt_wallet_address: 'TXyzWallet' }; };
+  const inrUser = () => { user().payment_details = { upi_id: 'asha@upi', usdt_wallet_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' }; };
   const ask = (currency) => request(app).post('/api/v1/withdraw/request').send({ user_id: '41', currency, probcoins: '5000' });
   const option = async (currency) => (await request(app).get('/api/v1/payments/options')).body.currencies.find((c) => c.currency === currency);
 

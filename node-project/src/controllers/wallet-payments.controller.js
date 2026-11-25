@@ -15,7 +15,8 @@
  *   POST /api/v1/withdraw/request     { user_id, currency, probcoins, message? }
  *   GET  /api/v1/withdraw/history?user_id=
  *   GET  /api/v1/payout-details?user_id=                                 saved UPI / bank / USDT details
- *   POST /api/v1/payout-details/inr   { user_id, upi_id | account_holder_name + account_number + ifsc_code, bank_name? }
+ *   POST /api/v1/payout-details/inr   { user_id, otp, upi_id | account_holder_name + account_number + ifsc_code, bank_name? }
+ *   POST /api/v1/payout-details/bank | /upi | /usdt | /remove   { user_id, otp, … }  (payout-details.service.js)
  * Users are identified by user_id, like the other mobile wallet APIs.
  */
 
@@ -27,6 +28,8 @@ const quotes = require('../services/payments/quote.service');
 const quotesService = quotes;
 const lgpayDeposits = require('../services/payments/lgpay-deposit.service');
 const withdrawals = require('../services/payments/withdrawal.service');
+const payouts = require('../services/payments/payout-details.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
+const settings = require('../services/deposit-withdrawal-settings.service');
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const input = (req, name) => {
@@ -146,7 +149,7 @@ const withdrawRequest = async (req, res) => {
   try {
     const user = await userFrom(req, res);
     if (!user) return undefined;
-    const result = await withdrawals.requestWithdrawal({ user, currency: input(req, 'currency'), probcoins: input(req, 'probcoins'), message: input(req, 'message') });
+    const result = await withdrawals.requestWithdrawal({ user, currency: input(req, 'currency'), probcoins: input(req, 'probcoins'), message: input(req, 'message'), payoutMethod: input(req, 'payout_method') });
     if (!result.ok) return failWith(res, result);
     return res.json({
       success: true,
@@ -174,33 +177,38 @@ const payoutDetails = async (req, res) => {
   try {
     const user = await userFrom(req, res);
     if (!user) return undefined;
-    const d = user.payment_details || {};
-    return res.json({
-      success: true,
-      inr: {
-        upi_id: d.upi_id || null, account_holder_name: d.account_holder_name || null, account_number: d.account_number || null,
-        ifsc_code: d.ifsc_code || null, bank_name: d.bank_name || null, ready: Boolean(withdrawals.inrDestination(d)),
-      },
-      usdt: { usdt_wallet_address: d.usdt_wallet_address || null, ready: Boolean(d.usdt_wallet_address) },
-    });
+    return res.json({ success: true, ...payouts.publicDetails(user.payment_details, await settings.getWithdrawalNetwork()) });
   } catch (err) {
     return fail(res, 500, 'Failed to load payout details');
   }
 };
 
-const saveInrPayoutDetails = async (req, res) => {
+// NEW IMPLEMENTATION — NODE.JS PROJECT: every change goes through payout-details.service.js (validation, OTP)
+const savePayout = (partsOf, message) => async (req, res) => {
   try {
     const user = await userFrom(req, res);
     if (!user) return undefined;
-    const result = await withdrawals.saveInrPayoutDetails(user, req.body || {});
+    const body = req.body || {};
+    const parts = partsOf(body);
+    if (!parts) return fail(res, 400, 'type must be bank, upi or usdt.');
+    const result = await payouts.save(user, parts, body.otp);
     if (!result.ok) return failWith(res, result);
-    return res.json({ success: true, message: 'INR payout details saved.', inr: result.details });
+    return res.json({ success: true, message, ...result.details });
   } catch (err) {
+    logger.error(`[payout-details] save failed: ${err.message}`);
     return fail(res, 500, 'Failed to save payout details');
   }
 };
+const saveInrPayoutDetails = savePayout((b) => payouts.partsFromInrForm(b), 'INR payout details saved.');
+const saveBank = savePayout((b) => ({ bank: b }), 'Bank account saved.');
+const saveUpi = savePayout((b) => ({ upi: b }), 'UPI ID saved.');
+const saveUsdt = savePayout((b) => ({ usdt: b }), 'USDT address saved.');
+const removePayout = savePayout((b) => {
+  const type = String(b.type || '').trim().toLowerCase();
+  return ['bank', 'upi', 'usdt'].includes(type) ? { [type]: null } : null;
+}, 'Payout details removed.');
 
 module.exports = {
   options, depositQuote, depositQuotes, inrCreate, inrStatus, inrHistory, withdrawQuote, withdrawRequest, withdrawHistory,
-  payoutDetails, saveInrPayoutDetails,
+  payoutDetails, saveInrPayoutDetails, saveBank, saveUpi, saveUsdt, removePayout,
 };
