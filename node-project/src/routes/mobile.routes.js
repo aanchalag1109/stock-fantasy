@@ -112,6 +112,7 @@ router.get('/live-prices', api.getLivePrices);
 router.get('/stock-live-price', api.getStockLivePrice);
 router.get('/crypto-live-price', api.getCryptoLivePrice);
 router.get('/session-stats/:sessionId', api.sessionStats);
+router.get('/session-stats/:sessionId/history', api.stockHistory); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback)
 
 router.get('/debug-payment', legacy.debugPayment);
 router.get('/check-wallet', legacy.checkWallet);

@@ -17,6 +17,8 @@ const LeagueSession = require('../../models/league-session.model');
 const logger = require('../../config/logger');
 const priceFeed = require('./price-feed');
 const scoring = require('./contest-scoring');
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): 5-minute price history of every session stock
+const { saveReading } = require('../session-stocks.service');
 
 const hasStartPrices = (entry) => entry.starting_prices && typeof entry.starting_prices === 'object'
   && Object.keys(entry.starting_prices).length > 0;
@@ -44,6 +46,7 @@ async function refreshSession(session, now = new Date()) {
     return 0;
   }
   await saveLivePrices(session, prices, now);
+  await saveReading(session, prices, now); // NEW IMPLEMENTATION — NODE.JS PROJECT: never throws
   const current = Object.fromEntries(prices);
   const { start } = scoring.sessionPriceMaps(session);
   let contestsUpdated = 0;

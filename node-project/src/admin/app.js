@@ -94,6 +94,7 @@ adminApp.use('/withdrawals', withdrawalRoutes);
 adminApp.use('/withdrawal_requests', withdrawalRoutes);
 adminApp.use('/kyc', kycRoutes);
 adminApp.use('/league-contests', leagueContestsRoutes);
+adminApp.use('/session-stocks', require('./routes/session-stocks.routes')); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback)
 adminApp.use('/tickets', ticketRoutes);
 adminApp.use('/banners', bannerRoutes);
 adminApp.use('/notifications', notificationRoutes);

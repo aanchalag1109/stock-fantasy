@@ -72,7 +72,8 @@ This document provides the exhaustive mapping between Laravel routes and the mig
 | GET | `/api/session-assets/:sessionId` | `/api/session-assets/:sessionId` | Public | `sessionController.getSessionAssetsFormatted`| Assets grouped for basket creation |
 | GET | `/api/session-contests/:sessionId` | `/api/session-contests/:sessionId` | Public | `contestController.getSessionContestsDropdown`| Contest options for dropdowns |
 | GET | `/api/session-prices/:sessionId` | `/api/session-prices/:sessionId` | Public | `sessionController.getSessionPrices` | Start & end prices for session |
-| GET | `/api/v1/session-stats/:sessionId` | `/api/v1/session-stats/:sessionId` | Public | `statsController.sessionStats` | Top gainers and losers in session |
+| GET | `/api/v1/session-stats/:sessionId` | `/api/v1/session-stats/:sessionId` | Public | `sessionStatsController.sessionStats` | Every stock of the session: price, gain / loss |
+| GET | — (new) | `/api/v1/session-stats/:sessionId/history?symbol=` | Public | `sessionStatsController.stockHistory` | One stock from session start to end |
 
 ---
 

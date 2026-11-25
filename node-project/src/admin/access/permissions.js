@@ -24,6 +24,8 @@ const MODULES = [
   { key: 'contests', label: 'Contests', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit, cancel & pin', delete: 'Delete' } },
   // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): league-wise contest details (read-only)
   { key: 'league_contests', label: 'League Contests', group: 'Games', actions: { view: 'View', export: 'Export (CSV)' } },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): price and gain / loss of every session stock (read-only)
+  { key: 'session_stocks', label: 'Session Stocks', group: 'Games', actions: { view: 'View', export: 'Export (CSV)' } },
   { key: 'live_management', label: 'Live Management', group: 'Games', actions: { view: 'View', manage: 'Start / end & distribute / cleanup' } },
   { key: 'market_categories', label: 'Market Type Categories', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' } },
   // NEW IMPLEMENTATION — NODE.JS PROJECT: Assets admin page (stocks/crypto in each market category)
@@ -86,6 +88,7 @@ const LANDING_PAGES = [
   ['sessions.view', '/league_sessions'],
   ['contests.view', '/contests'],
   ['league_contests.view', '/league-contests'],
+  ['session_stocks.view', '/session-stocks'],
   ['users.view', '/users'],
   ['transactions.view', '/transactions'],
   ['withdrawals.view', '/withdrawal_requests'],

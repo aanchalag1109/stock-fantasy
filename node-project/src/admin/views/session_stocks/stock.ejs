@@ -1,0 +1,68 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): Session Stocks, level 3 — one stock from start to end %>
+<%
+  const r = row;
+  const base = `/session-stocks/${id}`;
+  const shown = started && r.direction !== 'no_price';
+  const highest = history.length ? history.reduce((a, b) => (b.price > a.price ? b : a)) : null;
+  const lowest = history.length ? history.reduce((a, b) => (b.price < a.price ? b : a)) : null;
+  const cards = !shown ? [] : [
+    ['Start price', currency + price(r.start_price), when(r.start_at), ''],
+    [r.is_final ? 'End price' : 'Current price', currency + price(r.current_price), when(r.price_at), ''],
+    [r.is_final ? 'Final gain / loss' : 'Gain / loss', percent(r.change_percent), diff(r.change_amount), tone(r.change_percent)],
+    ['Points (UP pick)', points(r.points), 'DOWN pick: the opposite', tone(r.points)],
+    ['Highest', currency + price(highest.price), `${percent(highest.change_percent)} · ${when(highest.at)}`, ''],
+    ['Lowest', currency + price(lowest.price), `${percent(lowest.change_percent)} · ${when(lowest.at)}`, ''],
+  ];
+  const labels = { start: ['Start', 'bg-secondary'], live: ['Live', 'bg-light text-dark border'], final: ['Final', 'bg-primary'] };
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1"><%= r.symbol %> <span class="text-muted fs-5"><%= r.name !== r.symbol ? r.name : '' %></span> <span class="badge fs-6 <%= phaseBadges[phase] %>"><%= options.PHASES[phase] %></span></h1>
+            <p class="text-muted mb-0"><a href="<%= base %>"><%= session.name %></a><%= r.category_name ? ' · ' + r.category_name : '' %> · <%= when(session.start_time) %> to <%= when(session.end_time) %></p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="<%= base %>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>All stocks</a>
+            <% if (can('session_stocks.export') && history.length) { %><a href="<%= base %>/history/export?symbol=<%= encodeURIComponent(r.symbol) %>" class="btn btn-success"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV (<%= history.length %>)</a><% } %>
+        </div>
+    </div>
+
+    <% if (started && !r.has_start_price) { %><div class="alert alert-warning">The start price of this stock could not be fetched, so it has no gain / loss and scores 0.</div>
+    <% } else if (started && !shown) { %><div class="alert alert-warning">The end price of this stock could not be fetched, so it has no final gain / loss and scores 0.</div>
+    <% } else if (!started) { %><div class="alert alert-info"><%= phase === 'cancelled' ? 'This session was cancelled.' : 'Prices appear when the session starts.' %></div><% } %>
+
+    <% if (cards.length) { %>
+    <div class="row g-3 mb-4">
+        <% cards.forEach(([name, value, note, color]) => { %>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="card shadow-sm h-100"><div class="card-body py-3">
+                <div class="small text-muted"><%= name %></div>
+                <div class="h5 mb-0 text-nowrap <%= color %>"><%= value %></div>
+                <div class="small text-muted"><%= note %></div>
+            </div></div>
+        </div>
+        <% }) %>
+    </div>
+    <% } %>
+
+    <div class="card shadow-sm mb-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>Time (India)</th><th>Reading</th><th class="text-end">Price</th><th class="text-end">Change from start</th><th class="text-end">% from start</th><th class="text-end">Points (UP)</th></tr></thead>
+                <tbody>
+                    <% history.forEach((p) => { %>
+                    <tr class="<%= p.type === 'final' ? 'table-primary' : '' %>">
+                        <td class="text-nowrap"><%= when(p.at) %></td>
+                        <td><span class="badge <%= labels[p.type][1] %>"><%= labels[p.type][0] %></span></td>
+                        <td class="text-end text-nowrap"><%= currency %><%= price(p.price) %></td>
+                        <td class="text-end text-nowrap <%= tone(p.change_percent) %>"><%= diff(p.change_amount) %></td>
+                        <td class="text-end text-nowrap fw-semibold <%= tone(p.change_percent) %>"><%= percent(p.change_percent) %></td>
+                        <td class="text-end text-nowrap"><%= points(p.points) %></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!history.length) { %><tr><td colspan="6" class="text-center text-muted py-4">No prices yet.</td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

@@ -1653,60 +1653,8 @@ const getAnnouncements = async (req, res) => {
   });
 };
 
-const sessionStats = async (req, res) => {
-  try {
-    const session = await findByPublicId(LeagueSession, req.params.sessionId);
-    if (!session) return res.status(404).json({ success: false, error: 'Session not found' });
-    const filter = req.query.filter || 'all';
-    if (!['live', 'completed', 'completing'].includes(session.status)) {
-      return res.json({
-        success: true,
-        session_id: publicId(session),
-        session_name: session.name,
-        status: session.status,
-        stats: [],
-        message: 'Stats available once session goes live.',
-      });
-    }
-    const seen = new Set();
-    let stats = [];
-    (session.assets || []).forEach((asset) => {
-      if (!asset.asset_symbol || seen.has(asset.asset_symbol) || asset.start_price == null) return;
-      seen.add(asset.asset_symbol);
-      const startPrice = num(asset.start_price);
-      if (startPrice <= 0) return;
-      const currentPrice = asset.end_price == null ? startPrice : num(asset.end_price);
-      const changePercent = Math.round((((currentPrice - startPrice) / startPrice) * 100) * 10000) / 10000;
-      if (filter === 'positive' && changePercent <= 0) return;
-      if (filter === 'negative' && changePercent >= 0) return;
-      stats.push({
-        symbol: asset.asset_symbol,
-        name: asset.asset_name || asset.asset_symbol,
-        start_price: startPrice,
-        current_price: currentPrice,
-        change_percent: changePercent,
-        change_amount: Math.round((currentPrice - startPrice) * 10000) / 10000,
-        direction: changePercent > 0 ? 'up' : (changePercent < 0 ? 'down' : 'flat'),
-        last_updated: sqlDate(asset.end_price_fetched_at),
-      });
-    });
-    stats.sort((a, b) => (filter === 'negative' ? a.change_percent - b.change_percent : b.change_percent - a.change_percent));
-    const user = req.query.user_id ? await findByPublicId(User, req.query.user_id) : null;
-    return res.json({
-      success: true,
-      session_id: publicId(session),
-      session_name: session.name,
-      status: session.status,
-      filter,
-      total: stats.length,
-      stats,
-      last_updated: sqlDate(new Date()),
-      unread_notifications: await unreadCount(user),
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-};
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): session stock list with live prices and history
+const { sessionStats, stockHistory } = require('./session-stats.controller');
 
 const { getLivePrices, getStockLivePrice, getCryptoLivePrice } = require('./liveprice.controller');
 const { lgpayCallback } = require('./payment.controller');
@@ -1718,7 +1666,7 @@ module.exports = {
   contestsBySession, myContestsBySession, getContest, getUserContests, bulkJoinContest,
   saveBasket, storeStandalone, savedBaskets, deleteBasket, editBasket, destroyBasket, cleanupEmptyBaskets, getContestBaskets, getUserContestBaskets,
   getWalletAmount, getUserTransactions, userTransactionsEmpty, clearUserTransactions, depositAmount, withdrawAmount,
-  getUserNotifications, markAsRead, markAllAsRead, getAnnouncements, sessionStats,
+  getUserNotifications, markAsRead, markAllAsRead, getAnnouncements, sessionStats, stockHistory,
   getLivePrices, getStockLivePrice, getCryptoLivePrice, lgpayCallback,
   getNotificationPreferences, updateNotificationPreferences, // NEW IMPLEMENTATION — NODE.JS PROJECT
 };

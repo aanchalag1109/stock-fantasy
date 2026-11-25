@@ -1,0 +1,85 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): Session Stocks, level 1 — sessions %>
+<%
+  const f = filters;
+  const tabs = [['', 'All', 'primary'], ['live', 'Live', 'success'], ['completed', 'Completed', 'secondary'], ['upcoming', 'Upcoming', 'info'], ['cancelled', 'Cancelled', 'danger'], ['draft', 'Draft', 'dark']].filter((t) => counts[t[0]] || f.status === t[0] || ['', 'live', 'completed'].includes(t[0]));
+  const first = total ? (page - 1) * f.per_page + 1 : 0;
+%>
+<div class="container-fluid">
+    <div class="mb-3">
+        <h1 class="h3 mb-1"><i class="bi bi-list-ol text-primary me-2"></i>Session Stocks</h1>
+        <p class="text-muted mb-0">Choose a session to see every stock's price and gain / loss from start to end</p>
+    </div>
+
+    <div class="btn-group flex-wrap mb-3" role="group">
+        <% tabs.forEach(([value, label, color]) => { const on = f.status === value; %>
+        <a href="/session-stocks<%= qs({ status: value }) %>" class="btn btn-sm <%= on ? 'btn-' + color : 'btn-outline-' + color %>"><%= label %> <span class="badge <%= on ? 'bg-light text-dark' : 'bg-' + color %> ms-1"><%= counts[value] %></span></a>
+        <% }) %>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form action="/session-stocks" method="GET" class="row g-3 align-items-end">
+                <% if (f.status) { %><input type="hidden" name="status" value="<%= f.status %>"><% } %>
+                <div class="col-md-3">
+                    <label for="search" class="form-label small text-muted mb-1">Search</label>
+                    <input type="text" class="form-control" id="search" name="search" value="<%= f.search %>" placeholder="Session name or ID">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="market" class="form-label small text-muted mb-1">Market</label>
+                    <select class="form-select" id="market" name="market">
+                        <option value="">All</option>
+                        <% Object.entries(options.MARKETS).forEach(([v, label]) => { %><option value="<%= v %>" <%= f.market === v ? 'selected' : '' %>><%= label %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="from" class="form-label small text-muted mb-1">Starts from</label>
+                    <input type="date" class="form-control" id="from" name="from" value="<%= f.from %>">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="to" class="form-label small text-muted mb-1">Starts to</label>
+                    <input type="date" class="form-control" id="to" name="to" value="<%= f.to %>">
+                </div>
+                <div class="col-6 col-md-1">
+                    <label for="per_page" class="form-label small text-muted mb-1">Rows</label>
+                    <select class="form-select" id="per_page" name="per_page">
+                        <% options.PAGE_SIZES.forEach((n) => { %><option value="<%= n %>" <%= f.per_page === n ? 'selected' : '' %>><%= n %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-12 d-flex gap-2 align-items-center flex-wrap">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Apply</button>
+                    <a href="/session-stocks" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle me-1"></i>Clear filters</a>
+                    <span class="text-muted small ms-auto"><%= total ? `Showing ${first}–${first + rows.length - 1} of ${total}` : 'Nothing found' %>. Dates are India time.</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>ID</th><th>Session</th><th>Schedule</th><th>Stage</th><th>Stocks</th><th>Best</th><th>Worst</th><th title="5-minute price readings saved">Readings</th><th></th></tr></thead>
+                <tbody>
+                    <% rows.forEach((r) => { const s = r.session; %>
+                    <tr>
+                        <td class="text-nowrap" title="<%= r.id %>"><%= String(r.id).length === 24 ? '…' + String(r.id).slice(-6) : r.id %></td>
+                        <td><div class="fw-semibold"><%= s.name %></div><div class="small text-muted"><%= r.market %></div></td>
+                        <td class="small text-nowrap"><%= when(s.start_time) %><div class="text-muted">to <%= when(s.end_time) %></div></td>
+                        <td><span class="badge <%= phaseBadges[r.phase] %>"><%= r.status === 'draft' ? 'Draft' : options.PHASES[r.phase] %></span></td>
+                        <td><span class="fw-semibold"><%= r.counts.all %></span>
+                            <% if (r.best) { %><div class="small text-nowrap"><span class="text-success">▲ <%= r.counts.up %></span> <span class="text-danger">▼ <%= r.counts.down %></span> <span class="text-muted">• <%= r.counts.flat %></span></div><% } %>
+                            <% if (r.best && r.counts.no_price) { %><div class="small text-danger"><%= r.counts.no_price %> without price</div><% } %>
+                        </td>
+                        <% [r.best, r.worst].forEach((x) => { %><td class="text-nowrap"><% if (x) { %><%= x.symbol %> <span class="<%= tone(x.change_percent) %> fw-semibold"><%= percent(x.change_percent) %></span><% } else { %><span class="text-muted">—</span><% } %></td><% }) %>
+                        <td><%= r.readings || '—' %></td>
+                        <td><a href="/session-stocks/<%= r.id %>" class="btn btn-sm btn-outline-primary text-nowrap">View stocks</a></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!rows.length) { %><tr><td colspan="9" class="text-center text-muted py-4">No sessions found.</td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+        <% if (pages > 1) { %>
+        <div class="card-footer bg-white py-3"><%- include('../partials/pagination', { pages, page, extraQuery: qs({}).slice(1).replace(/"/g, '%22') }) %></div>
+        <% } %>
+    </div>
+</div>

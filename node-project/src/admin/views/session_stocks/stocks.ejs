@@ -1,0 +1,99 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): Session Stocks, level 2 — every stock of a session %>
+<%
+  const f = filters;
+  const base = `/session-stocks/${id}`;
+  const isFinal = phase === 'final';
+  const tabs = [['', 'All', 'primary', counts.all], ['up', 'Gainers', 'success', counts.up], ['down', 'Losers', 'danger', counts.down], ['flat', 'No change', 'secondary', counts.flat], ['no_price', 'Price missing', 'warning', counts.no_price]].filter((t) => t[0] !== 'no_price' || t[3] || f.direction === 'no_price');
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1"><%= session.name %> <span class="badge fs-6 <%= phaseBadges[phase] %>"><%= session.status === 'draft' ? 'Draft' : options.PHASES[phase] %></span></h1>
+            <p class="text-muted mb-0"><%= market %> · <%= when(session.start_time) %> to <%= when(session.end_time) %></p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="/session-stocks" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Sessions</a>
+            <% if (can('session_stocks.export') && started) { %>
+            <a href="<%= base %>/export<%= qs({}) %>" class="btn btn-success"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Export list (<%= rows.length %>)</a>
+            <a href="<%= base %>/history/export" class="btn btn-outline-success"><i class="bi bi-clock-history me-1"></i>Export full history</a>
+            <% } %>
+        </div>
+    </div>
+
+    <% if (phase === 'not_started') { %><div class="alert alert-info">Prices and gain / loss appear when the session starts.</div><% } %>
+    <% if (phase === 'cancelled') { %><div class="alert alert-danger">This session was cancelled.</div><% } %>
+    <% if (phase === 'finalising') { %><div class="alert alert-warning">The session has ended and the final prices are not complete yet. The last known prices are shown.</div><% } %>
+    <% if (phase === 'final' && !readings) { %><div class="alert alert-light border">No 5-minute readings are saved for this session, so a stock's history shows only its start and final price.</div><% } %>
+
+    <% if (started) { %>
+    <div class="btn-group flex-wrap mb-3" role="group">
+        <% tabs.forEach(([value, label, color, n]) => { const on = f.direction === value; %>
+        <a href="<%= base %><%= qs({ direction: value }) %>" class="btn btn-sm <%= on ? 'btn-' + color : 'btn-outline-' + color %>"><%= label %> <span class="badge <%= on ? 'bg-light text-dark' : 'bg-' + color %> ms-1"><%= n %></span></a>
+        <% }) %>
+    </div>
+    <% } %>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form action="<%= base %>" method="GET" class="row g-3 align-items-end">
+                <% if (f.direction) { %><input type="hidden" name="direction" value="<%= f.direction %>"><% } %>
+                <div class="col-md-4">
+                    <label for="search" class="form-label small text-muted mb-1">Search</label>
+                    <input type="text" class="form-control" id="search" name="search" value="<%= f.search %>" placeholder="Stock name or symbol">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label for="category" class="form-label small text-muted mb-1">Category</label>
+                    <select class="form-select" id="category" name="category">
+                        <option value="">All</option>
+                        <% categories.forEach((c) => { %><option value="<%= c %>" <%= f.category === c ? 'selected' : '' %>><%= c %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label for="sort" class="form-label small text-muted mb-1">Sort</label>
+                    <select class="form-select" id="sort" name="sort">
+                        <% Object.entries(options.STOCK_SORTS).forEach(([v, label]) => { %><option value="<%= v %>" <%= f.sort === v ? 'selected' : '' %>><%= label %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-12 d-flex gap-2 align-items-center flex-wrap">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Apply</button>
+                    <a href="<%= base %>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle me-1"></i>Clear filters</a>
+                    <span class="text-muted small ms-auto"><%= rows.length %> of <%= counts.all %> stocks<% if (started) { %>. <%= readings %> readings saved. Last price: <%= when(updated_at) %> (India time)<% } %><% if (phase === 'live') { %>. This page refreshes every minute<% } %>.</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>#</th><th>Stock</th><th>Category</th><th class="text-end">Start price</th><th class="text-end"><%= isFinal ? 'End price' : 'Current price' %></th><th class="text-end">Change</th><th class="text-end"><%= isFinal ? 'Final gain / loss' : 'Gain / loss' %></th><th class="text-end" title="What an UP pick without a multiplier scores; a DOWN pick scores the opposite">Points (UP)</th><th>Price time</th><th></th></tr></thead>
+                <tbody>
+                    <% rows.forEach((r, i) => { const shown = started && r.direction !== 'no_price'; %>
+                    <tr>
+                        <td><%= i + 1 %></td>
+                        <td><div class="d-flex align-items-center gap-2"><% if (r.image_url) { %><img src="<%= r.image_url %>" alt="" width="28" height="28" class="rounded-circle" style="object-fit: contain" onerror="this.style.display='none'"><% } %><div><div class="fw-semibold"><%= r.symbol %></div><% if (r.name !== r.symbol) { %><div class="small text-muted"><%= r.name %></div><% } %></div></div></td>
+                        <td class="small"><%= r.category_name || '—' %></td>
+                        <td class="text-end text-nowrap"><%= r.has_start_price ? currency + price(r.start_price) : '—' %></td>
+                        <td class="text-end text-nowrap"><% if (shown) { %><%= currency %><%= price(r.current_price) %><% } else if (started) { %><span class="badge bg-warning text-dark"><%= r.has_start_price ? 'End price missing' : 'Start price missing' %></span><% } else { %>—<% } %></td>
+                        <td class="text-end text-nowrap <%= shown ? tone(r.change_percent) : 'text-muted' %>"><%= shown ? diff(r.change_amount) : '—' %></td>
+                        <td class="text-end text-nowrap fw-semibold <%= shown ? tone(r.change_percent) : 'text-muted' %>"><%= shown ? percent(r.change_percent) : '—' %></td>
+                        <td class="text-end text-nowrap"><%= shown ? points(r.points) : started ? 0 : '—' %></td>
+                        <td class="small text-nowrap"><%= shown ? when(r.price_at) : '—' %></td>
+                        <td><% if (started) { %><a href="<%= base %>/stock?symbol=<%= encodeURIComponent(r.symbol) %>" class="btn btn-sm btn-outline-primary text-nowrap">History</a><% } %></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!rows.length) { %><tr><td colspan="10" class="text-center text-muted py-4"><%= counts.all ? 'No stocks match these filters.' : 'This session has no stocks.' %></td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<% if (phase === 'live') { %>
+<script>
+    // Refresh while live, but not while someone is typing in the filters.
+    setInterval(function () {
+        if (document.hidden || /^(INPUT|SELECT)$/.test((document.activeElement || {}).tagName || '')) return;
+        location.reload();
+    }, 60000);
+</script>
+<% } %>
