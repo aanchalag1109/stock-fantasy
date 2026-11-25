@@ -73,6 +73,8 @@ app.use(morgan('combined', {
 }));
 
 // Static files
+// NEW IMPLEMENTATION — NODE.JS PROJECT: KYC documents are not public
+app.use(require('./helpers/private-uploads').blockPrivateUploads);
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 app.use('/storage', express.static(path.join(__dirname, '../public/storage')));
 

@@ -60,6 +60,15 @@
               <label class="text-muted small">User ID</label>
               <div class="fw-semibold">#<%= user.old_id || user._id %></div>
             </div>
+            <%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): KYC next to the withdrawal %>
+            <div class="col-12 mb-3">
+              <label class="text-muted small">KYC</label>
+              <div>
+                <span class="badge bg-<%= user.kyc_status === 'approved' ? 'success' : (user.kyc_status === 'rejected' ? 'danger' : 'warning text-dark') %>"><%= user.kyc_status === 'approved' ? 'Approved' : (user.kyc_status === 'rejected' ? 'Rejected' : 'Not approved') %></span>
+                <% if (can('kyc.view')) { %><a class="small ms-2" href="/kyc?search=<%= encodeURIComponent(String(user._id || '')) %>">Open KYC</a><% } %>
+              </div>
+              <% if (isPending && user.kyc_status !== 'approved') { %><div class="alert alert-danger mt-2 mb-0">This player's KYC is not approved. Check it before paying.</div><% } %>
+            </div>
             <div class="col-md-4 mb-2">
               <div class="p-3 bg-light rounded text-center">
                 <small class="text-muted d-block">Deposit Balance</small>

@@ -1,68 +1,172 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): KYC list — status tabs, filters, checks, export %>
+<%
+  const f = filters;
+  const players = f.status === 'not_submitted';
+  const tabs = [
+    { value: '', label: 'All', icon: 'list-ul', color: 'primary' },
+    { value: 'pending', label: 'Pending', icon: 'hourglass-split', color: 'warning' },
+    { value: 'approved', label: 'Approved', icon: 'check-circle', color: 'success' },
+    { value: 'rejected', label: 'Rejected', icon: 'x-circle', color: 'danger' },
+    { value: 'not_submitted', label: 'Not submitted', icon: 'person-dash', color: 'secondary' },
+  ];
+  const badges = { pending: 'bg-warning text-dark', approved: 'bg-success', rejected: 'bg-danger' };
+  const shortId = (d) => (d.old_id != null ? d.old_id : String(d._id).slice(-6));
+  const first = total ? (page - 1) * f.per_page + 1 : 0;
+  const last = Math.min(page * f.per_page, total);
+  const advanced = ['reviewed_from', 'reviewed_to', 'documents', 'numbers', 'issue', 'waiting', 'reviewer'].some((k) => f[k]);
+  const select = (name, label, choices, empty) => ({ name, label, choices, empty });
+  const selects = [
+    select('documents', 'Documents', options.DOCUMENT_FILTERS, 'Any'),
+    select('numbers', 'Numbers', options.NUMBER_FILTERS, 'Any'),
+    select('issue', 'Checks', options.ISSUE_FILTERS, 'Any'),
+    select('waiting', 'Waiting for review', options.WAITING_FILTERS, 'Any time'),
+  ];
+%>
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <div>
-            <h1 class="h3 mb-2">KYC Submissions</h1>
-            <p class="mb-0">Review and manage user KYC submissions</p>
+            <h1 class="h3 mb-1"><i class="bi bi-person-vcard text-primary me-2"></i>KYC</h1>
+            <p class="text-muted mb-0">Review the identity documents players submit</p>
+        </div>
+        <% if (can('kyc.export')) { %>
+        <a href="/kyc/export<%= qs({}) %>" class="btn btn-success"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV (<%= total %>)</a>
+        <% } %>
+    </div>
+
+    <div class="btn-group flex-wrap mb-3" role="group">
+        <% tabs.forEach((t) => { const on = f.status === t.value; %>
+        <a href="/kyc<%= qs({ status: t.value }) %>" class="btn <%= on ? 'btn-' + t.color : 'btn-outline-' + t.color %>" data-status-tab="<%= t.value || 'all' %>">
+            <i class="bi bi-<%= t.icon %> me-1"></i><%= t.label %>
+            <span class="badge <%= on ? 'bg-light text-dark' : 'bg-' + t.color %> ms-1"><%= counts[t.value] %></span>
+        </a>
+        <% }) %>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form action="/kyc" method="GET" class="row g-3 align-items-end">
+                <% if (f.status) { %><input type="hidden" name="status" value="<%= f.status %>"><% } %>
+                <div class="col-md-4">
+                    <label for="search" class="form-label small text-muted mb-1">Search</label>
+                    <input type="text" class="form-control" id="search" name="search" value="<%= f.search %>" placeholder="Name, mobile, email, player ID, Aadhaar or PAN">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="from" class="form-label small text-muted mb-1"><%= players ? 'Joined' : 'Submitted' %> from</label>
+                    <input type="date" class="form-control" id="from" name="from" value="<%= f.from %>">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="to" class="form-label small text-muted mb-1"><%= players ? 'Joined' : 'Submitted' %> to</label>
+                    <input type="date" class="form-control" id="to" name="to" value="<%= f.to %>">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="sort" class="form-label small text-muted mb-1">Sort</label>
+                    <select class="form-select" id="sort" name="sort">
+                        <% Object.entries(options.SORTS).forEach(([v, label]) => { if (players && v === 'reviewed') return; %><option value="<%= v %>" <%= f.sort === v ? 'selected' : '' %>><%= label %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="per_page" class="form-label small text-muted mb-1">Rows</label>
+                    <select class="form-select" id="per_page" name="per_page">
+                        <% options.PAGE_SIZES.forEach((n) => { %><option value="<%= n %>" <%= f.per_page === n ? 'selected' : '' %>><%= n %></option><% }) %>
+                    </select>
+                </div>
+
+                <% if (!players) { %>
+                <div class="col-12 collapse <%= advanced ? 'show' : '' %>" id="moreFilters">
+                    <div class="row g-3 align-items-end">
+                        <% selects.forEach((s) => { %>
+                        <div class="col-6 col-md-3">
+                            <label for="<%= s.name %>" class="form-label small text-muted mb-1"><%= s.label %></label>
+                            <select class="form-select" id="<%= s.name %>" name="<%= s.name %>">
+                                <option value=""><%= s.empty %></option>
+                                <% Object.entries(s.choices).forEach(([v, label]) => { %><option value="<%= v %>" <%= f[s.name] === v ? 'selected' : '' %>><%= label %></option><% }) %>
+                            </select>
+                        </div>
+                        <% }) %>
+                        <div class="col-6 col-md-3">
+                            <label for="reviewed_from" class="form-label small text-muted mb-1">Reviewed from</label>
+                            <input type="date" class="form-control" id="reviewed_from" name="reviewed_from" value="<%= f.reviewed_from %>">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="reviewed_to" class="form-label small text-muted mb-1">Reviewed to</label>
+                            <input type="date" class="form-control" id="reviewed_to" name="reviewed_to" value="<%= f.reviewed_to %>">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="reviewer" class="form-label small text-muted mb-1">Reviewed by</label>
+                            <select class="form-select" id="reviewer" name="reviewer">
+                                <option value="">Anyone</option>
+                                <% reviewers.forEach((r) => { %><option value="<%= r %>" <%= f.reviewer === r ? 'selected' : '' %>><%= r %></option><% }) %>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <% } %>
+
+                <div class="col-12 d-flex gap-2 align-items-center flex-wrap">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Apply</button>
+                    <a href="/kyc<%= f.status ? '?status=' + f.status : '' %>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle me-1"></i>Clear filters</a>
+                    <% if (!players) { %>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#moreFilters"><i class="bi bi-funnel me-1"></i>More filters</button>
+                    <% } %>
+                    <span class="text-muted small ms-auto"><%= total ? `Showing ${first}–${last} of ${total}` : 'Nothing found' %>. Dates are India time.</span>
+                </div>
+            </form>
         </div>
     </div>
+
     <div class="card shadow-sm mb-4">
-        <div class="card-header fw-bold">KYC Submissions</div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>User</th>
-                            <th>Document Type</th>
-                            <th>Document Number</th>
-                            <th>Status</th>
-                            <th>Submitted At</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <% submissions.forEach(s => {
-                            const created = s.created_at ? new Date(s.created_at) : null;
-                            const createdText = created ? created.toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).slice(0, 16) : '—';
-                            const docType = s.document_type || (s.aadhar_number || s.aadhar ? 'Aadhar' : (s.pan_number || s.pan ? 'PAN' : '—'));
-                            const docNumber = s.document_number || s.aadhar_number || s.aadhar || s.pan_number || s.pan || '—';
-                        %>
-                        <tr>
-                            <td><%= s.old_id || String(s._id).slice(-6) %></td>
-                            <td><%= (s.user_id && s.user_id.name) || '—' %></td>
-                            <td><%= docType %></td>
-                            <td><%= docNumber %></td>
-                            <td>
-                                <% if (s.status === 'pending') { %><span class="badge bg-warning text-dark">Pending</span>
-                                <% } else if (s.status === 'approved') { %><span class="badge bg-success">Approved</span>
-                                <% } else { %><span class="badge bg-danger">Rejected</span><% } %>
-                            </td>
-                            <td><%= createdText %></td>
-                            <td>
-                                <a href="/kyc/<%= s._id %>" class="btn btn-sm btn-outline-primary me-1"><i class="bi bi-eye"></i> View</a>
-                                <% if (s.status === 'pending') { %>
-                                    <form action="/kyc/<%= s._id %>/approve" method="POST" class="d-inline">
-                                        <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Approve this KYC?')"><i class="bi bi-check-circle"></i> Approve</button>
-                                    </form>
-                                    <form action="/kyc/<%= s._id %>/reject" method="POST" class="d-inline">
-                                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Reject this KYC?')"><i class="bi bi-x-circle"></i> Reject</button>
-                                    </form>
-                                <% } %>
-                            </td>
-                        </tr>
-                        <% }) %>
-                        <% if (!submissions.length) { %>
-                        <tr><td colspan="7" class="text-center text-muted">No KYC submissions found.</td></tr>
-                        <% } %>
-                    </tbody>
-                </table>
-            </div>
-            <% if (pages > 1) { %>
-            <div class="card-footer bg-white py-3">
-                <%- include('../partials/pagination', { pages, page, extraQuery: status ? 'status=' + status : '' }) %>
-            </div>
-            <% } %>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <% if (players) { %>
+                <thead><tr><th>Player ID</th><th>Player</th><th>Mobile</th><th>Joined</th><th>KYC status on profile</th><th></th></tr></thead>
+                <tbody>
+                    <% rows.forEach((u) => { %>
+                    <tr>
+                        <td><%= shortId(u) %></td>
+                        <td><div class="fw-semibold"><%= u.name || '—' %></div><div class="small text-muted"><%= u.email || '' %></div></td>
+                        <td><%= u.mobile || '—' %></td>
+                        <td class="text-nowrap small"><%= when(u.created_at) %></td>
+                        <td><% if (u.kyc_status === 'approved' || u.kyc_status === 'rejected') { %><span class="badge <%= badges[u.kyc_status] %>"><%= u.kyc_status %></span> <span class="small text-muted">without documents</span><% } else { %><span class="badge bg-secondary">Not submitted</span><% } %></td>
+                        <td><% if (can('users.view')) { %><a href="/users/<%= u._id %>" class="btn btn-sm btn-outline-primary">Open player</a><% } %></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!rows.length) { %><tr><td colspan="6" class="text-center text-muted py-4">No players found.</td></tr><% } %>
+                </tbody>
+                <% } else { %>
+                <thead><tr><th>ID</th><th>Player</th><th>Aadhaar</th><th>PAN</th><th>Documents</th><th>To check</th><th>Status</th><th>Submitted</th><th>Reviewed</th><th></th></tr></thead>
+                <tbody>
+                    <% rows.forEach((s) => { const u = s.player; %>
+                    <tr>
+                        <td><%= shortId(s) %></td>
+                        <td>
+                            <% if (u) { %>
+                            <div class="fw-semibold"><%= u.name || '—' %> <span class="small text-muted">#<%= shortId(u) %></span><% if (u.is_test_user) { %> <span class="badge bg-info">Bot</span><% } %></div>
+                            <div class="small text-muted"><%= u.mobile || u.email || '' %></div>
+                            <% } else { %><span class="text-muted">Player not found</span><div class="small text-muted"><%= s.user_id || '' %></div><% } %>
+                        </td>
+                        <td class="font-monospace text-nowrap"><%= s.aadhaar_masked || '—' %></td>
+                        <td class="font-monospace text-nowrap"><%= s.pan_masked || '—' %></td>
+                        <td><span class="badge <%= s.documents_uploaded >= s.documents_total ? 'bg-success' : (s.documents_uploaded ? 'bg-warning text-dark' : 'bg-secondary') %>"><%= s.documents_uploaded %> / <%= s.documents_total %></span></td>
+                        <td class="small">
+                            <% s.issues.forEach((i) => { %><div class="<%= i.key === 'duplicate' ? 'text-danger fw-semibold' : 'text-muted' %>"><i class="bi bi-exclamation-triangle me-1"></i><%= i.text %></div><% }) %>
+                            <% if (!s.issues.length) { %><span class="text-success"><i class="bi bi-check2"></i> OK</span><% } %>
+                        </td>
+                        <td>
+                            <span class="badge <%= badges[s.status] || 'bg-secondary' %>"><%= s.status %></span>
+                            <% if (s.status === 'rejected' && s.rejection_reason) { %><div class="small text-muted"><%= s.rejection_reason %></div><% } %>
+                        </td>
+                        <td class="small text-nowrap"><%= when(s.submitted) %><% if (s.status === 'pending' && ago(s.submitted)) { %><div class="text-muted">waiting <%= ago(s.submitted) %></div><% } %></td>
+                        <td class="small"><% if (s.reviewed_at) { %><span class="text-nowrap"><%= when(s.reviewed_at) %></span><div class="text-muted"><%= s.reviewed_by || '' %></div><% } else { %>—<% } %></td>
+                        <td><a href="/kyc/<%= s._id %>" class="btn btn-sm <%= s.status === 'pending' && can('kyc.review') ? 'btn-primary' : 'btn-outline-primary' %>"><%= s.status === 'pending' && can('kyc.review') ? 'Review' : 'View' %></a></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!rows.length) { %><tr><td colspan="10" class="text-center text-muted py-4">No KYC submissions found.</td></tr><% } %>
+                </tbody>
+                <% } %>
+            </table>
         </div>
+        <% if (pages > 1) { %>
+        <div class="card-footer bg-white py-3"><%- include('../partials/pagination', { pages, page, extraQuery: qs({}).slice(1).replace(/"/g, '%22') }) %></div>
+        <% } %>
     </div>
 </div>

@@ -55,6 +55,7 @@ function resetState() {
   state.user = {
     _id: new mongoose.Types.ObjectId(),
     old_id: 7,
+    kyc_status: 'approved',
     deposit_balance: 1000,
     winnings_balance: 100000,
     payment_details: { usdt_wallet_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', usdt_network: 'TRC20' },

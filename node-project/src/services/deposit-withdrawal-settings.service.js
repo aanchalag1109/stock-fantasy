@@ -40,6 +40,8 @@ const CHARGE_KEYS = {
 const WITHDRAWAL_NETWORK_KEY = 'usdt_withdrawal_network';
 const WITHDRAWAL_NETWORKS = ['TRC20', 'BEP20', 'ERC20'];
 const WITHDRAWAL_SWITCH_KEYS = { INR: 'inr_withdrawal_status', USDT: 'usdt_withdrawal_status' };
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): approved KYC needed to withdraw. Never saved = needed.
+const WITHDRAWAL_KYC_KEY = 'withdrawal_kyc_status';
 const SWITCH_VALUES = ['enabled', 'disabled'];
 
 // Labels of the limit keys. INR labels are unchanged from the original module.
@@ -74,6 +76,7 @@ const DEFAULTS = {
   usdt_withdrawal_network: 'TRC20',
   inr_withdrawal_status: 'enabled',
   usdt_withdrawal_status: 'enabled',
+  withdrawal_kyc_status: 'enabled',
 };
 
 const ALL_KEYS = Object.keys(DEFAULTS);
@@ -161,6 +164,11 @@ function validate(input = {}) {
     if (!SWITCH_VALUES.includes(state)) errors[key] = `${currency} withdrawals must be enabled or disabled.`;
     else values[key] = state;
   });
+  const kycState = text(WITHDRAWAL_KYC_KEY).toLowerCase();
+  if (kycState !== '') {
+    if (!SWITCH_VALUES.includes(kycState)) errors[WITHDRAWAL_KYC_KEY] = 'KYC for withdrawals must be enabled or disabled.';
+    else values[WITHDRAWAL_KYC_KEY] = kycState;
+  }
 
   return { values, errors };
 }
@@ -194,6 +202,12 @@ async function isWithdrawalAllowed(currency) {
   if (!key) return false;
   const stored = await readRows([key]);
   return stored[key] !== 'disabled';
+}
+
+/** True when a withdrawal needs approved KYC. Throws when it cannot be read. */
+async function isKycRequired() {
+  const stored = await readRows([WITHDRAWAL_KYC_KEY]);
+  return stored[WITHDRAWAL_KYC_KEY] !== 'disabled';
 }
 
 async function getWithdrawalNetwork() {
@@ -317,6 +331,6 @@ function limitErrorBody(check) {
 
 module.exports = {
   KEYS, DEFAULTS, MAX_ALLOWED_AMOUNT, MAX_CHARGE_PERCENT, CURRENCIES, UNIT, LIMIT_KEYS, CHARGE_KEYS,
-  WITHDRAWAL_NETWORK_KEY, WITHDRAWAL_NETWORKS, getLimits, validate, saveLimits, getCharges, getWithdrawalNetwork, isWithdrawalAllowed,
+  WITHDRAWAL_NETWORK_KEY, WITHDRAWAL_NETWORKS, getLimits, validate, saveLimits, getCharges, getWithdrawalNetwork, isWithdrawalAllowed, isKycRequired,
   checkTransactionAmount, limitErrorBody, limitsFor,
 };

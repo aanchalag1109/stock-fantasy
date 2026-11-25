@@ -128,4 +128,4 @@ async function loadProfile(user, can) {
   };
 }
 
-module.exports = { loadProfile, mask };
+module.exports = { loadProfile, mask, docsByIds };

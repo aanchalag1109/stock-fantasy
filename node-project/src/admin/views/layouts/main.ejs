@@ -341,6 +341,17 @@ function updateLiveContestCount() {
 setInterval(updateLiveContestCount, 30000);
 document.addEventListener('DOMContentLoaded', updateLiveContestCount);
 <% } %>
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): KYC waiting for review, next to the KYC tab %>
+<% if (typeof can === 'function' && can('kyc.view')) { %>
+document.addEventListener('DOMContentLoaded', () => {
+    const badge = document.getElementById('kycPendingCount');
+    if (!badge) return;
+    fetch('/kyc/pending-count').then(r => r.json()).then(data => {
+        badge.textContent = data.count;
+        badge.style.display = data.count > 0 ? 'inline' : 'none';
+    }).catch(() => {});
+});
+<% } %>
 document.querySelectorAll('[data-confirm]').forEach(el => {
     el.addEventListener('click', e => {
         if (!confirm(el.dataset.confirm || 'Are you sure?')) e.preventDefault();

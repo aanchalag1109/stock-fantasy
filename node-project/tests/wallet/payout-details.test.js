@@ -95,7 +95,7 @@ function reset() {
   config.PAYOUT_DETAILS_OTP = true;
   db = {
     settings: { min_withdrawal_amount: 100, max_withdrawal_amount: 20000, usdt_min_withdrawal_amount: 5, usdt_max_withdrawal_amount: 1000, usdt_withdrawal_network: 'TRC20' },
-    User: [{ _id: new ObjectId(), old_id: 41, name: 'Asha', mobile: '9876543210', deposit_balance: 0, winnings_balance: 50000, payment_details: {} }],
+    User: [{ _id: new ObjectId(), old_id: 41, name: 'Asha', kyc_status: 'approved', mobile: '9876543210', deposit_balance: 0, winnings_balance: 50000, payment_details: {} }],
     Otp: [], WithdrawalRequest: [], Transaction: [], Notification: [],
   };
 }

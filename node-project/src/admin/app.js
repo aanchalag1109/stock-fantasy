@@ -17,6 +17,8 @@ adminApp.set('views', path.join(__dirname, 'views'));
 adminApp.use(express.json({ limit: '10mb' }));
 adminApp.use(express.urlencoded({ extended: true, limit: '10mb' }));
 adminApp.use(methodOverride('_method'));
+// NEW IMPLEMENTATION — NODE.JS PROJECT: KYC documents are not public
+adminApp.use(require('../helpers/private-uploads').blockPrivateUploads);
 adminApp.use(express.static(path.join(__dirname, '../../public')));
 
 adminApp.use(session({

@@ -49,6 +49,8 @@
     ] },
     { title: 'Users & Admin Management', items: [
       { show: can('users.view'), href: '/users', icon: 'bi-people', label: 'Players', active: on('/users') },
+      // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): KYC section
+      { show: can('kyc.view'), href: '/kyc', icon: 'bi-person-vcard', label: 'KYC', active: on('/kyc'), kycBadge: true },
       { show: isSuperAdmin, href: '/admin-users', icon: 'bi-person-badge', label: 'Admin Users', active: on('/admin-users') },
       { show: isSuperAdmin, href: '/admin-roles', icon: 'bi-shield-lock', label: 'Roles &amp; Permissions', active: on('/admin-roles') },
     ] },
@@ -89,6 +91,7 @@
         <a href="<%= it.href %>" class="sidebar-link <%= it.active ? 'active' : '' %>">
           <i class="bi <%= it.icon %>"></i> <%- it.label %>
           <% if (it.liveBadge) { %><span class="badge bg-danger ms-auto" id="liveContestCount">0</span><% } %>
+          <% if (it.kycBadge) { %><span class="badge bg-warning text-dark ms-auto" id="kycPendingCount" title="Waiting for review" style="display:none"></span><% } %>
         </a>
       </li>
       <% }) %>

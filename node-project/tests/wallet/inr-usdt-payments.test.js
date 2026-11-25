@@ -125,7 +125,7 @@ function reset() {
       usdt_min_withdrawal_amount: 5, usdt_max_withdrawal_amount: 1000,
     },
     Payment: [], Transaction: [], WithdrawalRequest: [], Notification: [],
-    User: [{ _id: ids.user, old_id: 41, name: 'Asha', deposit_balance: 0, winnings_balance: 50000, payment_details: { usdt_wallet_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' } }],
+    User: [{ _id: ids.user, old_id: 41, name: 'Asha', kyc_status: 'approved', deposit_balance: 0, winnings_balance: 50000, payment_details: { usdt_wallet_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' } }],
   };
   lgpay = { created: [], queries: 0, queryResult: { status: 0 } };
 }

@@ -125,6 +125,20 @@
                             <% }) %>
                         </div>
 
+                        <%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): approved KYC needed to withdraw %>
+                        <div class="card border mt-4">
+                            <div class="card-body">
+                                <h6 class="text-muted text-uppercase small">KYC</h6>
+                                <label for="withdrawal_kyc_status" class="form-label small mb-1">Withdrawals need approved KYC (INR and USDT)</label>
+                                <select name="withdrawal_kyc_status" id="withdrawal_kyc_status" class="form-select form-select-sm" style="max-width:200px">
+                                    <option value="enabled" <%= val('withdrawal_kyc_status') === 'disabled' ? '' : 'selected' %>>Yes</option>
+                                    <option value="disabled" <%= val('withdrawal_kyc_status') === 'disabled' ? 'selected' : '' %>>No</option>
+                                </select>
+                                <div class="invalid-feedback" data-error-for="withdrawal_kyc_status"></div>
+                                <div class="form-text">Yes: players can request a withdrawal only after their KYC is approved. Requests already made are not affected.</div>
+                            </div>
+                        </div>
+
                         <div class="d-flex justify-content-end mt-4">
                             <button type="submit" id="dwSaveBtn" class="btn btn-primary">
                                 <i class="bi bi-save me-1"></i> Save Settings

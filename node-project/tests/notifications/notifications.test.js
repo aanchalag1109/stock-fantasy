@@ -151,7 +151,7 @@ function reset() {
     ids[key] = new ObjectId();
     db.User.push({ _id: ids[key], name: key, fcm_token: `token-${key}`, deposit_balance: 1000, winnings_balance: 50000, ...extra });
   };
-  user('alice', { old_id: 7, payment_details: { usdt_wallet_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', usdt_network: 'TRC20' } });
+  user('alice', { old_id: 7, kyc_status: 'approved', payment_details: { usdt_wallet_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', usdt_network: 'TRC20' } });
   user('bob', { old_id: 8 });
   user('bot', { is_test_user: true });
   user('quiet', { notification_preferences: { session_reminders: false, transactions: false } });

@@ -26,6 +26,7 @@ const { creditOnce } = require('../contest-automation/ledger');
 const { notify } = require('../notifications/notification.service');
 const { withdrawalQuote } = require('./quote.service');
 const payoutDetails = require('./payout-details.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
+const kyc = require('../kyc.service'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const clean = (v) => (v == null ? '' : String(v).trim());
@@ -47,6 +48,14 @@ async function requestWithdrawal({ user, currency, probcoins, message, payoutMet
   if (!user) return fail(404, 'User not found');
   const quote = await withdrawalQuote({ currency, probcoins });
   if (!quote.ok) return quote;
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): approved KYC is required to withdraw
+  let verified;
+  try { verified = await kyc.checkWithdrawal(user); } catch (err) {
+    logger.error(`[withdrawal] KYC check failed for user ${user._id}: ${err.message}`);
+    return fail(503, 'Withdrawals are temporarily unavailable. Please try again later.');
+  }
+  if (!verified.ok) return verified;
 
   const details = user.payment_details || {};
   let destination;

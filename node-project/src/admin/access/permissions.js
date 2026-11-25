@@ -33,7 +33,7 @@ const MODULES = [
   { key: 'contest_analysis', label: 'Contest Analysis', group: 'Reports', actions: { view: 'View' } },
   { key: 'referrals', label: 'Referrals', group: 'Reports', actions: { view: 'View' } },
   { key: 'users', label: 'Players', group: 'Players', actions: { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete', wallet: 'Adjust wallet balance', export: 'Export player data (CSV)' } },
-  { key: 'kyc', label: 'KYC Submissions', group: 'Players', actions: { view: 'View', review: 'Approve / reject' } },
+  { key: 'kyc', label: 'KYC Submissions', group: 'Players', actions: { view: 'View details & documents', review: 'Approve / reject', export: 'Export list (CSV)' } },
   { key: 'tickets', label: 'Support Tickets', group: 'Players', actions: { view: 'View', reply: 'Reply & close' } },
   { key: 'transactions', label: 'Transactions', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject' } },
   { key: 'payments', label: 'Deposit Orders', group: 'Finance', actions: { view: 'View', approve: 'Approve / reject / verify' } },

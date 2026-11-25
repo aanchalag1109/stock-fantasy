@@ -1,52 +1,240 @@
-<a href="/kyc" class="btn btn-secondary btn-sm" style="margin-bottom:16px;">← Back</a>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-  <div class="card">
-    <div class="card-title" style="margin-bottom:16px;">KYC Details</div>
-    <div style="display:flex;flex-direction:column;gap:10px;font-size:14px;">
-      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">User:</span><a href="/users/<%= submission.user_id?._id %>" style="color:var(--accent)"><%= submission.user_id?.name %></a></div>
-      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Mobile:</span><%= submission.user_id?.mobile || '—' %></div>
-      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Aadhar No.:</span><code><%= submission.aadhar_number || '—' %></code></div>
-      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">PAN No.:</span><code><%= submission.pan_number || '—' %></code></div>
-      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Status:</span>
-        <% if (submission.status === 'approved') { %><span class="badge badge-success">Approved</span>
-        <% } else if (submission.status === 'rejected') { %><span class="badge badge-danger">Rejected</span>
-        <% } else { %><span class="badge badge-warning">Pending Review</span><% } %></div>
-      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Submitted:</span><%= submission.created_at ? new Date(submission.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—' %></div>
-      <% if (submission.rejection_reason) { %>
-      <div><span style="color:var(--text-muted);display:inline-block;width:130px;">Rejection:</span><span style="color:var(--danger)"><%= submission.rejection_reason %></span></div>
-      <% } %>
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): KYC details — player, numbers, checks, documents, review, history %>
+<%
+  const s = submission;
+  const status = s.status || 'pending';
+  const badges = { pending: 'bg-warning text-dark', approved: 'bg-success', rejected: 'bg-danger' };
+  const id = s.old_id != null ? s.old_id : String(s._id).slice(-6);
+  const idOf = (u) => (u.old_id != null ? u.old_id : String(u._id));
+  const hasDuplicate = issues.some((i) => i.key === 'duplicate');
+  const spaced = (n) => n.replace(/(.{4})(?=.)/g, '$1 ');
+  const url = (d) => `/kyc/${s._id}/document/${d.key}`;
+  const actions = { submitted: ['Submitted', 'bi-upload', 'primary'], resubmitted: ['Submitted again', 'bi-arrow-repeat', 'primary'], approved: ['Approved', 'bi-check-circle', 'success'], rejected: ['Rejected', 'bi-x-circle', 'danger'] };
+  const history = [...(s.history || [])].sort((a, b) => new Date(b.at) - new Date(a.at));
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-person-vcard text-primary me-2"></i>KYC #<%= id %> <span class="badge <%= badges[status] || 'bg-secondary' %> align-middle"><%= status %></span></h1>
+            <p class="text-muted mb-0">Submitted <%= when(submitted) %><% if (status === 'pending' && ago(submitted)) { %> · waiting <%= ago(submitted) %><% } %></p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/kyc" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list-ul me-1"></i>All KYC</a>
+            <% if (nextPending) { %><a href="/kyc/<%= nextPending %>" class="btn btn-outline-primary btn-sm">Next pending<i class="bi bi-arrow-right ms-1"></i></a><% } %>
+        </div>
     </div>
-    <% if (submission.status === 'pending') { %>
-    <div class="form-actions" style="flex-direction:column;gap:12px;">
-      <form method="POST" action="/kyc/<%= submission._id %>/approve">
-        <button class="btn btn-success" style="width:100%"><i class="fas fa-check"></i> Approve KYC</button>
-      </form>
-      <form method="POST" action="/kyc/<%= submission._id %>/reject">
-        <div class="form-group"><input type="text" name="reason" class="form-control" placeholder="Rejection reason..."/></div>
-        <button class="btn btn-danger" style="width:100%"><i class="fas fa-times"></i> Reject KYC</button>
-      </form>
+
+    <% if (issues.length) { %>
+    <div class="alert <%= hasDuplicate ? 'alert-danger' : 'alert-warning' %>">
+        <strong><i class="bi bi-exclamation-triangle me-1"></i>Please check:</strong>
+        <ul class="mb-0"><% issues.forEach((i) => { %><li><%= i.text %></li><% }) %></ul>
     </div>
     <% } %>
-  </div>
-  <div class="card">
-    <div class="card-title" style="margin-bottom:16px;">Documents</div>
-    <div style="display:flex;flex-direction:column;gap:12px;">
-      <% const docs = [
-        { label: 'Aadhar Front', key: 'aadhar_front' },
-        { label: 'Aadhar Back', key: 'aadhar_back' },
-        { label: 'PAN Card', key: 'pan_image' },
-        { label: 'Selfie', key: 'selfie' },
-      ]; %>
-      <% docs.forEach(d => { %>
-      <div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;"><%= d.label %></div>
-        <% if (submission[d.key]) { %>
-        <img src="/<%= submission[d.key] %>" style="max-width:100%;border-radius:8px;border:1px solid var(--border);" onerror="this.style.display='none'"/>
-        <% } else { %>
-        <div style="background:var(--bg);border-radius:8px;padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Not uploaded</div>
-        <% } %>
-      </div>
-      <% }) %>
+
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="card mb-4">
+                <div class="card-header">Player</div>
+                <div class="card-body">
+                    <% if (player) { %>
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <% if (player.profile_image) { %><img src="<%= /^https?:/i.test(player.profile_image) ? player.profile_image : '/' + String(player.profile_image).replace(/^\//, '') %>" alt="" width="56" height="56" class="rounded-circle" style="object-fit:cover" onerror="this.remove()"><% } %>
+                        <div>
+                            <div class="fw-bold"><%= player.name || '—' %><% if (player.is_test_user) { %> <span class="badge bg-info">Bot</span><% } %></div>
+                            <div class="small text-muted">Player #<%= idOf(player) %></div>
+                        </div>
+                    </div>
+                    <table class="table table-sm mb-3">
+                        <tr><td class="text-muted">Mobile</td><td><%= player.mobile || '—' %></td></tr>
+                        <tr><td class="text-muted">Email</td><td class="text-break"><%= player.email || '—' %><% if (player.email && player.email_verified_at) { %> <i class="bi bi-patch-check-fill text-success" title="Verified"></i><% } %></td></tr>
+                        <tr><td class="text-muted">Gender</td><td><%= player.gender || '—' %></td></tr>
+                        <tr><td class="text-muted">Age</td><td><%= player.age != null ? player.age : '—' %></td></tr>
+                        <tr><td class="text-muted">Joined</td><td><%= when(player.created_at) %></td></tr>
+                        <tr><td class="text-muted">KYC on profile</td><td><span class="badge <%= badges[player.kyc_status] || 'bg-secondary' %>"><%= player.kyc_status || 'pending' %></span></td></tr>
+                        <% if (player.payment_details && player.payment_details.account_holder_name) { %><tr><td class="text-muted">Bank account name</td><td><%= player.payment_details.account_holder_name %></td></tr><% } %>
+                    </table>
+                    <% if (can('users.view')) { %><a href="/users/<%= player._id %>" class="btn btn-sm btn-outline-primary">Open player profile</a><% } %>
+                    <% } else { %><div class="text-muted">Player not found (id <%= s.user_id || '—' %>). The account may have been deleted.</div><% } %>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">KYC details</div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <tr><td class="text-muted">Aadhaar</td><td><span class="font-monospace"><%= numbers.aadhaar ? spaced(numbers.aadhaar) : '—' %></span><% if (checks.aadhaar !== null) { %><div class="small text-<%= checks.aadhaar ? 'success' : 'danger' %>"><%= checks.aadhaar ? 'Number format is correct' : 'Not a valid Aadhaar number' %></div><% } %></td></tr>
+                        <tr><td class="text-muted">PAN</td><td><span class="font-monospace"><%= numbers.pan || '—' %></span><% if (checks.pan !== null) { %><div class="small text-<%= checks.pan ? 'success' : 'danger' %>"><%= checks.pan ? 'Number format is correct' : 'Not a valid individual PAN' %></div><% } %></td></tr>
+                        <% if (s.document_type || s.document_number) { %><tr><td class="text-muted"><%= s.document_type || 'Document' %></td><td class="font-monospace"><%= s.document_number || '—' %></td></tr><% } %>
+                        <tr><td class="text-muted">First submitted</td><td><%= when(s.created_at) %></td></tr>
+                        <tr><td class="text-muted">Last submitted</td><td><%= when(submitted) %></td></tr>
+                        <tr><td class="text-muted">Reviewed</td><td><%= when(s.reviewed_at) %><% if (s.reviewed_by) { %><div class="small text-muted">by <%= s.reviewed_by %></div><% } %></td></tr>
+                        <% if (s.rejection_reason) { %><tr><td class="text-muted">Rejection reason</td><td class="text-danger"><%= s.rejection_reason %></td></tr><% } %>
+                        <% if (s.review_note) { %><tr><td class="text-muted">Internal note</td><td><%= s.review_note %></td></tr><% } %>
+                    </table>
+                    <div class="small text-muted mt-2">Format checks only. They do not confirm the number with UIDAI or the Income Tax Department.</div>
+                </div>
+            </div>
+
+            <% if (duplicates.length || profileDuplicates.length) { %>
+            <div class="card mb-4 border border-danger">
+                <div class="card-header text-danger">Same number on other players</div>
+                <ul class="list-group list-group-flush">
+                    <% duplicates.forEach((d) => { %>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div><strong><%= d.what %></strong>: <%= d.player ? `${d.player.name || '—'} (#${idOf(d.player)})` : 'player not found' %><div class="small text-muted"><%= (d.player && d.player.mobile) || '' %> · KYC <%= d.submission.status %></div></div>
+                        <a href="/kyc/<%= d.submission._id %>" class="btn btn-sm btn-outline-danger">Open</a>
+                    </li>
+                    <% }) %>
+                    <% profileDuplicates.forEach((u) => { %>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>On profile: <%= u.name || '—' %> (#<%= idOf(u) %>)<div class="small text-muted"><%= u.mobile || '' %></div></div>
+                        <% if (can('users.view')) { %><a href="/users/<%= u._id %>" class="btn btn-sm btn-outline-danger">Open</a><% } %>
+                    </li>
+                    <% }) %>
+                </ul>
+            </div>
+            <% } %>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header">Documents</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <% documents.forEach((d) => { %>
+                        <div class="col-sm-6">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="fw-semibold"><%= d.label %></span>
+                                <% if (d.found) { %><span><a href="<%= url(d) %>" target="_blank" rel="noopener" class="small me-2">Open</a><a href="<%= url(d) %>?download=1" class="small">Download</a></span><% } %>
+                            </div>
+                            <div class="border rounded d-flex align-items-center justify-content-center bg-light" style="height:220px; overflow:hidden">
+                                <% if (d.found && d.view === 'image') { %>
+                                <button type="button" class="btn p-0 border-0 w-100 h-100 kyc-doc" data-src="<%= url(d) %>" data-label="<%= d.label %>"><img src="<%= url(d) %>" alt="<%= d.label %>" loading="lazy" style="max-width:100%; max-height:220px"></button>
+                                <% } else if (d.found && d.view === 'pdf') { %>
+                                <a href="<%= url(d) %>" target="_blank" rel="noopener" class="text-decoration-none text-center"><i class="bi bi-file-earmark-pdf fs-1 text-danger"></i><div>Open PDF</div></a>
+                                <% } else if (d.found) { %>
+                                <a href="<%= url(d) %>?download=1" class="text-decoration-none text-center"><i class="bi bi-file-earmark-arrow-down fs-1"></i><div>Download to view</div></a>
+                                <% } else { %>
+                                <span class="text-muted"><%= d.uploaded ? 'File not found on this server' : 'Not uploaded' %></span>
+                                <% } %>
+                            </div>
+                        </div>
+                        <% }) %>
+                    </div>
+                </div>
+            </div>
+
+            <% if (can('kyc.review')) { %>
+            <div class="card mb-4">
+                <div class="card-header">Decision</div>
+                <div class="card-body">
+                    <div class="row g-4">
+                        <% if (status !== 'approved') { %>
+                        <div class="col-md-6">
+                            <form method="POST" action="/kyc/<%= s._id %>/approve" class="kyc-decision" data-question="<%= status === 'rejected' ? 'This KYC was rejected. Approve it now?' : 'Approve this KYC?' %>">
+                                <input type="hidden" name="version" value="<%= version %>">
+                                <label for="approveNote" class="form-label small text-muted mb-1">Internal note (optional, players do not see it)</label>
+                                <textarea id="approveNote" name="note" class="form-control mb-2" rows="2" maxlength="1000"></textarea>
+                                <% if (issues.length) { %>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="confirmIssues" name="accept_duplicate" value="1" required>
+                                    <label class="form-check-label small" for="confirmIssues">I have checked the warnings above and still want to approve</label>
+                                </div>
+                                <% } %>
+                                <button type="submit" class="btn btn-success w-100"><i class="bi bi-check-circle me-1"></i>Approve KYC</button>
+                            </form>
+                        </div>
+                        <% } %>
+                        <% if (status !== 'rejected') { %>
+                        <div class="col-md-6">
+                            <form method="POST" action="/kyc/<%= s._id %>/reject" class="kyc-decision" data-question="<%= status === 'approved' ? 'Withdraw this approval? The player will have to submit again.' : 'Reject this KYC?' %>">
+                                <input type="hidden" name="version" value="<%= version %>">
+                                <label for="reason" class="form-label small text-muted mb-1">Reason (the player sees it)</label>
+                                <select id="reason" name="reason" class="form-select mb-2">
+                                    <option value="">Other (write below)</option>
+                                    <% reasons.forEach((r) => { %><option value="<%= r %>"><%= r %></option><% }) %>
+                                </select>
+                                <input type="text" name="reason_other" class="form-control mb-2" maxlength="300" placeholder="Details for the player">
+                                <input type="text" name="note" class="form-control mb-2" maxlength="1000" placeholder="Internal note (optional)">
+                                <button type="submit" class="btn btn-danger w-100"><i class="bi bi-x-circle me-1"></i><%= status === 'approved' ? 'Withdraw approval' : 'Reject KYC' %></button>
+                            </form>
+                        </div>
+                        <% } %>
+                    </div>
+                </div>
+            </div>
+            <% } %>
+
+            <div class="card mb-4">
+                <div class="card-header">History</div>
+                <div class="card-body">
+                    <% history.forEach((h) => { const a = actions[h.action] || [h.action, 'bi-dot', 'secondary']; %>
+                    <div class="d-flex gap-3 mb-3">
+                        <i class="bi <%= a[1] %> text-<%= a[2] %> fs-5"></i>
+                        <div>
+                            <div><strong><%= a[0] %></strong><% if (h.from && h.action !== 'resubmitted' && h.from !== 'pending') { %> <span class="text-muted small">(was <%= h.from %>)</span><% } %> <span class="text-muted small"><%= when(h.at) %><% if (h.by) { %> · <%= h.by %><% } %></span></div>
+                            <% if (h.reason) { %><div class="small">Reason: <%= h.reason %></div><% } %>
+                            <% if (h.note) { %><div class="small text-muted">Note: <%= h.note %></div><% } %>
+                        </div>
+                    </div>
+                    <% }) %>
+                    <% if (!history.length) { %><div class="text-muted">History is recorded from now on. First submitted <%= when(s.created_at) %>.</div><% } %>
+                </div>
+            </div>
+
+            <% if (others.length) { %>
+            <div class="card mb-4">
+                <div class="card-header">Other submissions by this player</div>
+                <div class="table-responsive"><table class="table table-sm mb-0">
+                    <% others.forEach((o) => { %><tr><td><%= when(o.submitted_at || o.created_at) %></td><td><span class="badge <%= badges[o.status] || 'bg-secondary' %>"><%= o.status %></span></td><td class="small"><%= o.rejection_reason || '' %></td><td class="text-end"><a href="/kyc/<%= o._id %>" class="btn btn-sm btn-outline-primary">Open</a></td></tr><% }) %>
+                </table></div>
+            </div>
+            <% } %>
+        </div>
     </div>
-  </div>
 </div>
+
+<div class="modal fade" id="kycViewer" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title" id="kycViewerTitle"></h6>
+                <div class="ms-auto me-2 d-flex gap-1">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="-0.25" title="Zoom out"><i class="bi bi-zoom-out"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="0.25" title="Zoom in"><i class="bi bi-zoom-in"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-rotate="90" title="Rotate"><i class="bi bi-arrow-clockwise"></i></button>
+                </div>
+                <button type="button" class="btn-close ms-0" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center bg-dark" style="height:75vh; overflow:auto"><img id="kycViewerImage" alt="" style="max-width:100%; max-height:100%; transition:transform .15s"></div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var image = document.getElementById('kycViewerImage');
+    var viewer = document.getElementById('kycViewer');
+    var zoom = 1, turn = 0;
+    function draw() { image.style.transform = 'scale(' + zoom + ') rotate(' + turn + 'deg)'; }
+    document.querySelectorAll('.kyc-doc').forEach(function (el) {
+        el.addEventListener('click', function () {
+            zoom = 1; turn = 0; draw();
+            image.src = el.dataset.src;
+            document.getElementById('kycViewerTitle').textContent = el.dataset.label;
+            bootstrap.Modal.getOrCreateInstance(viewer).show();
+        });
+    });
+    viewer.querySelectorAll('[data-zoom]').forEach(function (b) { b.addEventListener('click', function () { zoom = Math.min(4, Math.max(0.5, zoom + Number(b.dataset.zoom))); draw(); }); });
+    viewer.querySelector('[data-rotate]').addEventListener('click', function () { turn = (turn + 90) % 360; draw(); });
+    document.querySelectorAll('.kyc-decision').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            var reason = form.querySelector('[name=reason]');
+            if (reason && !reason.value && !form.querySelector('[name=reason_other]').value.trim()) {
+                e.preventDefault();
+                alert('Choose or write the reason for rejecting.');
+            } else if (!confirm(form.dataset.question)) {
+                e.preventDefault();
+            }
+        });
+    });
+});
+</script>

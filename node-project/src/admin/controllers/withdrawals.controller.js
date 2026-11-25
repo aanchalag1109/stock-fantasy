@@ -23,7 +23,7 @@ const index = async (req, res) => {
 const show = async (req, res) => {
   try {
     const request = await WithdrawalRequest.findById(req.params.id)
-      .populate({ path: 'user_id', model: 'User', select: 'name mobile email payment_details winnings_balance deposit_balance old_id' }).lean();
+      .populate({ path: 'user_id', model: 'User', select: 'name mobile email payment_details winnings_balance deposit_balance old_id kyc_status' }).lean();
     if (!request) { req.flash('error', 'Not found'); return res.redirect('/withdrawal_requests'); }
 
     // Fetch last 5 withdrawal requests for this user (for history panel)
