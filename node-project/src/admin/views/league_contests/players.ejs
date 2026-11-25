@@ -1,0 +1,116 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): League Contests, level 3 — players of one contest %>
+<%
+  const f = filters;
+  const r = row;
+  const base = `/league-contests/contests/${r.id}`;
+  const first = total ? (page - 1) * f.per_page + 1 : 0;
+  const cards = [
+    ['Joined', `${r.joined} / ${r.spots}`, r.spots_left ? `${r.spots_left} spots left` : 'Full'],
+    ['Unique players', r.players, `${r.real_entries} entries${r.bot_entries ? ` + ${r.bot_entries} by bots` : ''}`],
+    ['Entry fee', r.entry_fee > 0 ? coins(r.entry_fee) : 'Free', `platform fee ${r.platform_fee}%`],
+    ['Collection', coins(r.collection), r.refunded ? `${coins(r.refunded)} refunded` : 'from players'],
+    ['Prize pool', coins(r.current_pool), r.current_pool == null ? 'cancelled' : r.current_pool !== r.advertised_pool ? `${coins(r.advertised_pool)} if full` : 'advertised'],
+    ['First prize', coins(r.first_prize), r.winners != null ? `${r.winners} winner${r.winners === 1 ? '' : 's'}` : ''],
+    ['Prizes paid', r.state === 'paid' ? coins(r.prizes_paid) : '—', r.bot_prizes ? `plus ${coins(r.bot_prizes)} to bots` : 'to players'],
+    ['Platform earning', coins(r.earning), r.earning == null ? 'known after the result' : 'collection − prizes − refunds'],
+  ];
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-people text-primary me-2"></i>Contest #<%= shortId(r.id) %> <span class="badge fs-6 bg-dark"><%= r.type_label %></span> <span class="badge fs-6 <%= stateBadges[r.state] %>"><%= options.STATES[r.state] %></span></h1>
+            <p class="text-muted mb-0"><% if (session) { %><a href="/league-contests/contests?session=<%= idOf(session) %>"><%= session.name %></a> · <%= when(session.start_time) %> to <%= when(session.end_time) %><% } else { %>No league<% } %></p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="/league-contests/contests<%= session ? '?session=' + idOf(session) : '' %>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Contests</a>
+            <% if (can('contests.view')) { %><a href="/contests/<%= r.id %>" class="btn btn-outline-primary"><i class="bi bi-eye me-1"></i>Contest details</a><% } %>
+            <% if (can('league_contests.export')) { %><a href="<%= base %>/export<%= qs({}) %>" class="btn btn-success"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV (<%= total %>)</a><% } %>
+        </div>
+    </div>
+
+    <% if (r.needs > 0) { %><div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-1"></i>This contest has <%= r.joined %> of the <%= r.minimum %> players it needs. <%= r.state === 'live' ? 'It will be cancelled and refunded when the league ends.' : `If ${r.needs} more do not join, it is cancelled and the entry fees are refunded.` %></div><% } %>
+
+    <div class="row g-3 mb-4">
+        <% cards.forEach(([name, value, note]) => { %>
+        <div class="col-6 col-md-3 col-xl">
+            <div class="card shadow-sm h-100"><div class="card-body py-3">
+                <div class="small text-muted"><%= name %></div>
+                <div class="h5 mb-0 text-nowrap"><%= value %></div>
+                <div class="small text-muted"><%= note %></div>
+            </div></div>
+        </div>
+        <% }) %>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form action="<%= base %>" method="GET" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="search" class="form-label small text-muted mb-1">Search</label>
+                    <input type="text" class="form-control" id="search" name="search" value="<%= f.search %>" placeholder="Name, mobile, email, player or entry ID">
+                </div>
+                <% [['kind', 'Player / bot', options.KINDS], ['result', 'Result', options.RESULTS]].forEach(([name, label, choices]) => { %>
+                <div class="col-6 col-md-2">
+                    <label for="<%= name %>" class="form-label small text-muted mb-1"><%= label %></label>
+                    <select class="form-select" id="<%= name %>" name="<%= name %>">
+                        <option value="">All</option>
+                        <% Object.entries(choices).forEach(([v, text]) => { %><option value="<%= v %>" <%= f[name] === v ? 'selected' : '' %>><%= text %></option><% }) %>
+                    </select>
+                </div>
+                <% }) %>
+                <div class="col-6 col-md-2">
+                    <label for="from" class="form-label small text-muted mb-1">Joined from</label>
+                    <input type="date" class="form-control" id="from" name="from" value="<%= f.from %>">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="to" class="form-label small text-muted mb-1">Joined to</label>
+                    <input type="date" class="form-control" id="to" name="to" value="<%= f.to %>">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="sort" class="form-label small text-muted mb-1">Sort</label>
+                    <select class="form-select" id="sort" name="sort">
+                        <% Object.entries(options.PLAYER_SORTS).forEach(([v, text]) => { %><option value="<%= v %>" <%= f.sort === v ? 'selected' : '' %>><%= text %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-6 col-md-1">
+                    <label for="per_page" class="form-label small text-muted mb-1">Rows</label>
+                    <select class="form-select" id="per_page" name="per_page">
+                        <% options.PAGE_SIZES.forEach((n) => { %><option value="<%= n %>" <%= f.per_page === n ? 'selected' : '' %>><%= n %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-12 d-flex gap-2 align-items-center flex-wrap">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Apply</button>
+                    <a href="<%= base %>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle me-1"></i>Clear filters</a>
+                    <span class="text-muted small ms-auto"><%= total ? `Showing ${first}–${first + rows.length - 1} of ${total}` : 'Nothing found' %><%= total !== everyone ? ` (${everyone} entries in all)` : '' %>. Amounts are ProbCoins; dates are India time.</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>Rank</th><th>Player</th><th>Mobile</th><th>Entry</th><th>Basket</th><th>Joined</th><th class="text-end">Fee paid</th><th class="text-end">Score</th><th class="text-end">Prize / refund</th></tr></thead>
+                <tbody>
+                    <% rows.forEach((p) => { const u = p.user; %>
+                    <tr>
+                        <td class="fw-semibold"><%= p.rank || '—' %></td>
+                        <td><% if (u) { %><% if (can('users.view')) { %><a href="/users/<%= u._id %>"><%= u.name || 'No name' %></a><% } else { %><%= u.name || 'No name' %><% } %> <span class="small text-muted">#<%= u.old_id != null ? u.old_id : String(u._id).slice(-6) %></span><% if (p.is_bot) { %> <span class="badge bg-info text-dark">Bot</span><% } %><% } else { %><span class="text-muted">Player not found</span><% } %></td>
+                        <td><%= u ? u.mobile || '—' : '—' %></td>
+                        <td class="small text-muted">#<%= shortId(p.entry_id) %></td>
+                        <td><% if (p.basket) { %><div><%= p.basket %></div><div class="small text-muted" style="max-width: 260px"><%= p.picks.join(', ') %></div><% } else { %><span class="text-muted">—</span><% } %></td>
+                        <td class="small text-nowrap"><%= when(p.joined_at) %></td>
+                        <td class="text-end"><% if (p.is_bot) { %><span class="text-muted">bot</span><% } else { %><%= coins(p.fee) %><% if (p.fee_recorded && p.fee > 0) { %><div class="small text-muted text-nowrap"><%= [p.fee_from_deposit ? coins(p.fee_from_deposit) + ' deposit' : '', p.fee_from_winnings ? coins(p.fee_from_winnings) + ' winnings' : ''].filter(Boolean).join(' + ') %></div><% } %><% } %></td>
+                        <td class="text-end"><%= coins(p.score) %></td>
+                        <td class="text-end text-nowrap"><% if (p.prize > 0) { %><span class="badge bg-success">Paid <%= coins(p.prize) %></span><% } else if (p.refund > 0) { %><span class="badge bg-warning text-dark">Refunded <%= coins(p.refund) %></span><% } else { %><span class="text-muted">—</span><% } %></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!rows.length) { %><tr><td colspan="9" class="text-center text-muted py-4"><%= everyone ? 'No players match these filters.' : 'Nobody has joined this contest yet.' %></td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+        <% if (pages > 1) { %>
+        <div class="card-footer bg-white py-3"><%- include('../partials/pagination', { pages, page, extraQuery: qs({}).slice(1).replace(/"/g, '%22') }) %></div>
+        <% } %>
+    </div>
+</div>

@@ -13,6 +13,7 @@ const { cancelContest: cancelContestService, refundBeforeDelete } = require('../
 const { parseListFilters, withStatus } = require('../helpers/list-filters');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Fantasy contest formats (H2H, Winner Takes All, 2x–10x)
 const formats = require('../../services/contest-formats');
+const { advertisedPerWinner } = require('../../services/contest-automation/contest-scoring');
 const contestSettings = require('../../services/contest-settings.service');
 const { ensureOldId, keysOf, findByPublicId } = require('../../helpers/mobile-compat');
 
@@ -611,6 +612,8 @@ const show = async (req, res) => {
       joined,
       prizeState,
       prizes: Array.isArray(prizes) ? prizes : [],
+      // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the saved amount, as the app shows before live (was always 0)
+      perWinner: (row) => advertisedPerWinner(row || {}, Number(lean.prize_pool) || 0, formats.isFixedPool(lean)),
       formatLabel: formats.labelFor(lean), // NEW IMPLEMENTATION — NODE.JS PROJECT
       minPlayers: formats.minParticipantsFor(lean),
       money0,

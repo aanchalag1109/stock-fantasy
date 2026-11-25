@@ -54,6 +54,7 @@ const contestRoutes = require('./routes/contests.routes');
 const transactionRoutes = require('./routes/transactions.routes');
 const withdrawalRoutes = require('./routes/withdrawals.routes');
 const kycRoutes = require('./routes/kyc.routes');
+const leagueContestsRoutes = require('./routes/league-contests.routes'); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback)
 const ticketRoutes = require('./routes/tickets.routes');
 const bannerRoutes = require('./routes/banners.routes');
 const notificationRoutes = require('./routes/notifications.routes');
@@ -92,6 +93,7 @@ adminApp.use('/transactions', transactionRoutes);
 adminApp.use('/withdrawals', withdrawalRoutes);
 adminApp.use('/withdrawal_requests', withdrawalRoutes);
 adminApp.use('/kyc', kycRoutes);
+adminApp.use('/league-contests', leagueContestsRoutes);
 adminApp.use('/tickets', ticketRoutes);
 adminApp.use('/banners', bannerRoutes);
 adminApp.use('/notifications', notificationRoutes);

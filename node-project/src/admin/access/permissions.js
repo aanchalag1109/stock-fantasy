@@ -22,6 +22,8 @@ const MODULES = [
   { key: 'sessions', label: 'Leagues / Sessions', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit & change status', delete: 'Delete', cancel: 'Cancel session & refund users' } },
   { key: 'templates', label: 'Saved Templates', group: 'Games', actions: { view: 'View', edit: 'Edit', delete: 'Delete' } },
   { key: 'contests', label: 'Contests', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit, cancel & pin', delete: 'Delete' } },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): league-wise contest details (read-only)
+  { key: 'league_contests', label: 'League Contests', group: 'Games', actions: { view: 'View', export: 'Export (CSV)' } },
   { key: 'live_management', label: 'Live Management', group: 'Games', actions: { view: 'View', manage: 'Start / end & distribute / cleanup' } },
   { key: 'market_categories', label: 'Market Type Categories', group: 'Games', actions: { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' } },
   // NEW IMPLEMENTATION — NODE.JS PROJECT: Assets admin page (stocks/crypto in each market category)
@@ -83,6 +85,7 @@ const LANDING_PAGES = [
   ['dashboard.view', '/dashboard'],
   ['sessions.view', '/league_sessions'],
   ['contests.view', '/contests'],
+  ['league_contests.view', '/league-contests'],
   ['users.view', '/users'],
   ['transactions.view', '/transactions'],
   ['withdrawals.view', '/withdrawal_requests'],

@@ -1,0 +1,105 @@
+<%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): League Contests, level 1 — leagues %>
+<%
+  const f = filters;
+  const tabs = [['', 'All', 'primary']].concat([['upcoming', 'Upcoming', 'info'], ['live', 'Live', 'success'], ['completed', 'Completed', 'secondary'], ['cancelled', 'Cancelled', 'danger'], ['draft', 'Draft', 'dark']].filter((t) => counts[t[0]] || f.status === t[0] || ['upcoming', 'live', 'completed'].includes(t[0])));
+  const first = total ? (page - 1) * f.per_page + 1 : 0;
+%>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-diagram-3 text-primary me-2"></i>League Contests</h1>
+            <p class="text-muted mb-0">Choose a league to see its contests, how many joined, and the money</p>
+        </div>
+        <% if (can('league_contests.export')) { %>
+        <a href="/league-contests/export<%= qs({}) %>" class="btn btn-success"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV (<%= total %>)</a>
+        <% } %>
+    </div>
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item"><a class="nav-link active" href="/league-contests">Leagues</a></li>
+        <li class="nav-item"><a class="nav-link" href="/league-contests/contests">All contests</a></li>
+    </ul>
+
+    <div class="btn-group flex-wrap mb-3" role="group">
+        <% tabs.forEach(([value, label, color]) => { const on = f.status === value; %>
+        <a href="/league-contests<%= qs({ status: value }) %>" class="btn btn-sm <%= on ? 'btn-' + color : 'btn-outline-' + color %>" data-status-tab="<%= value || 'all' %>"><%= label %> <span class="badge <%= on ? 'bg-light text-dark' : 'bg-' + color %> ms-1"><%= counts[value] %></span></a>
+        <% }) %>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form action="/league-contests" method="GET" class="row g-3 align-items-end">
+                <% if (f.status) { %><input type="hidden" name="status" value="<%= f.status %>"><% } %>
+                <div class="col-md-3">
+                    <label for="search" class="form-label small text-muted mb-1">Search</label>
+                    <input type="text" class="form-control" id="search" name="search" value="<%= f.search %>" placeholder="League name or ID">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="market" class="form-label small text-muted mb-1">Market</label>
+                    <select class="form-select" id="market" name="market">
+                        <option value="">All</option>
+                        <% Object.entries(options.MARKETS).forEach(([v, label]) => { %><option value="<%= v %>" <%= f.market === v ? 'selected' : '' %>><%= label %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="from" class="form-label small text-muted mb-1">Starts from</label>
+                    <input type="date" class="form-control" id="from" name="from" value="<%= f.from %>">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="to" class="form-label small text-muted mb-1">Starts to</label>
+                    <input type="date" class="form-control" id="to" name="to" value="<%= f.to %>">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="sort" class="form-label small text-muted mb-1">Sort</label>
+                    <select class="form-select" id="sort" name="sort">
+                        <% Object.entries(options.SESSION_SORTS).forEach(([v, label]) => { %><option value="<%= v %>" <%= f.sort === v ? 'selected' : '' %>><%= label %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-6 col-md-1">
+                    <label for="per_page" class="form-label small text-muted mb-1">Rows</label>
+                    <select class="form-select" id="per_page" name="per_page">
+                        <% options.PAGE_SIZES.forEach((n) => { %><option value="<%= n %>" <%= f.per_page === n ? 'selected' : '' %>><%= n %></option><% }) %>
+                    </select>
+                </div>
+                <div class="col-12 d-flex gap-2 align-items-center flex-wrap">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Apply</button>
+                    <a href="/league-contests" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle me-1"></i>Clear filters</a>
+                    <span class="text-muted small ms-auto"><%= total ? `Showing ${first}–${first + rows.length - 1} of ${total}` : 'Nothing found' %>. Amounts are ProbCoins; dates are India time. Bots are not included in the money.</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>ID</th><th>League</th><th>Schedule</th><th>Status</th><th>Contests</th><th>Entries</th><th>Players</th><th>Spots filled</th><th class="text-end">Collection</th><th class="text-end">Prizes paid</th><th class="text-end">Earning</th><th></th></tr></thead>
+                <tbody>
+                    <% rows.forEach((r) => { const s = r.session, t = r.totals; %>
+                    <tr>
+                        <td class="text-nowrap" title="<%= r.id %>"><%= shortId(r.id) %></td>
+                        <td><div class="fw-semibold"><%= s.name %></div><div class="small text-muted"><%= r.market %></div></td>
+                        <td class="small text-nowrap"><%= when(s.start_time) %><div class="text-muted">to <%= when(s.end_time) %></div></td>
+                        <td><span class="badge <%= sessionBadges[r.status] || 'bg-secondary' %>"><%= options.SESSION_STATUSES[r.status] || r.status %></span></td>
+                        <td><span class="fw-semibold"><%= t.contests %></span>
+                            <div class="small text-muted"><%= Object.entries(t.states).filter(([, n]) => n).map(([k, n]) => `${n} ${options.STATES[k].toLowerCase()}`).join(', ') %></div>
+                            <% if (t.below_min) { %><div class="small text-danger"><i class="bi bi-exclamation-triangle me-1"></i><%= t.below_min %> below minimum players</div><% } %>
+                        </td>
+                        <td><%= t.entries %><% if (t.bot_entries) { %><div class="small text-muted"><%= t.bot_entries %> by bots</div><% } %></td>
+                        <td><%= t.players %></td>
+                        <td class="text-nowrap"><%= coins(t.spots_joined) %> / <%= coins(t.spots) %></td>
+                        <td class="text-end"><%= coins(t.collection) %><% if (t.refunded) { %><div class="small text-muted"><%= coins(t.refunded) %> refunded</div><% } %></td>
+                        <td class="text-end"><%= coins(t.prizes_paid) %></td>
+                        <td class="text-end"><span class="fw-semibold <%= t.earning == null ? 'text-muted' : (t.earning < 0 ? 'text-danger' : 'text-success') %>"><%= coins(t.earning) %></span><% if (t.unsettled) { %><div class="small text-muted"><%= t.unsettled %> not settled</div><% } %></td>
+                        <td><a href="/league-contests/contests?session=<%= r.id %>" class="btn btn-sm btn-outline-primary text-nowrap">View contests</a></td>
+                    </tr>
+                    <% }) %>
+                    <% if (!rows.length) { %><tr><td colspan="12" class="text-center text-muted py-4">No leagues found.</td></tr><% } %>
+                </tbody>
+            </table>
+        </div>
+        <% if (pages > 1) { %>
+        <div class="card-footer bg-white py-3"><%- include('../partials/pagination', { pages, page, extraQuery: qs({}).slice(1).replace(/"/g, '%22') }) %></div>
+        <% } %>
+    </div>
+</div>

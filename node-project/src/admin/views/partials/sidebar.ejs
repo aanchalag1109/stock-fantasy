@@ -17,6 +17,8 @@
     { title: 'Sessions & Contests', items: [
       { show: can('sessions.view'), href: '/league_sessions', icon: 'bi-calendar2-week', label: 'Leagues / Sessions', active: on('/league_sessions') || on('/sessions') },
       { show: can('contests.view'), href: '/contests', icon: 'bi-trophy', label: 'Contests', active: on('/contests') },
+      // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): league-wise contest details
+      { show: can('league_contests.view'), href: '/league-contests', icon: 'bi-diagram-3', label: 'League Contests', active: on('/league-contests') },
       { show: can('contest_settings.view'), href: '/contest-settings', icon: 'bi-sliders2', label: 'Contest Settings', active: on('/contest-settings') },
       { show: can('templates.view'), href: '/templates', icon: 'bi-bookmark', label: 'Saved Templates', active: on('/templates') },
       { show: can('market_categories.view'), href: '/market_type_categories', icon: 'bi-tags', label: 'Market Categories', active: on('/market_type_categories') },

@@ -210,6 +210,36 @@ describe('before live: the app shows exactly what the admin form saved', () => {
     }
   });
 
+  test('admin Contest Details shows the same prize per winner as the app (was 0 per winner)', async () => {
+    const { app } = await upcoming('mega', 20, 100, 10, 30);
+    const ejs = require('ejs');
+    const helper = require('../../src/admin/helpers/render');
+    const contestModel = { findOne: Contest.findOne, sessionFind: LeagueSession.findOne, count: ContestEntry.countDocuments };
+    Contest.findOne = async () => ({ ...db.contest, toObject: () => ({ ...db.contest }) });
+    LeagueSession.findOne = () => ({ select: () => ({ lean: async () => ({ name: 'Morning' }) }) });
+    ContestEntry.countDocuments = async () => 3;
+    try {
+      const original = helper.render;
+      let locals;
+      helper.render = async (_res, _view, data) => { locals = data; };
+      const id = require.resolve('../../src/admin/controllers/contests.controller');
+      delete require.cache[id];
+      const controller = require(id);
+      helper.render = original;
+      await controller.show({ params: { id: '50' }, session: {}, flash() {} }, { redirect() {}, status() { return this; }, send(m) { throw new Error(m); } });
+      const file = path.join(__dirname, '../../src/admin/views/contests/show.ejs');
+      const html = await ejs.renderFile(file, locals);
+      const shown = [...html.matchAll(/([0-9,]+) per winner/g)].map((m) => Number(m[1].replace(/,/g, '')));
+      assert.deepEqual(shown, app.map((r) => r.per_winner_amount));
+      assert.deepEqual(shown, [540, 324, 198, 121, 99]);
+      delete require.cache[id];
+    } finally {
+      Contest.findOne = contestModel.findOne;
+      LeagueSession.findOne = contestModel.sessionFind;
+      ContestEntry.countDocuments = contestModel.count;
+    }
+  });
+
   test('a full contest never pays less than the app showed', async () => {
     for (let n = 1; n <= 400; n += 1) {
       const { app } = await upcoming('mega', n, 100, 10, 100);
