@@ -101,6 +101,17 @@
                                         </div>
                                         <div class="small text-muted mt-2" data-example="<%= col.currency %>"></div>
 
+                                        <% if (col.currency === 'INR') { %>
+                                        <%# NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): INR withdrawals on / off %>
+                                        <h6 class="text-muted text-uppercase small mt-4">INR withdrawals</h6>
+                                        <label for="inr_withdrawal_status" class="form-label small mb-1">Allow users to withdraw in INR</label>
+                                        <select name="inr_withdrawal_status" id="inr_withdrawal_status" class="form-select form-select-sm" style="max-width:200px">
+                                            <option value="enabled" <%= val('inr_withdrawal_status') !== 'disabled' ? 'selected' : '' %>>Enabled</option>
+                                            <option value="disabled" <%= val('inr_withdrawal_status') === 'disabled' ? 'selected' : '' %>>Disabled</option>
+                                        </select>
+                                        <div class="invalid-feedback" data-error-for="inr_withdrawal_status"></div>
+                                        <div class="form-text">Disabled stops new INR requests at once. Requests already made stay in Withdrawal Requests and can still be accepted or rejected.</div>
+                                        <% } %>
                                         <% if (col.currency === 'USDT') { %>
                                         <h6 class="text-muted text-uppercase small mt-4">USDT withdrawals</h6>
                                         <label for="usdt_withdrawal_network" class="form-label small mb-1">Network users withdraw to</label>

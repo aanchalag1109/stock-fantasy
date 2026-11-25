@@ -19,6 +19,8 @@
  *     original names (min_deposit_amount, …) so existing values carry over.
  *   - deposit gateway charges: percent + fixed amount, and who pays them (user or platform).
  *   - USDT withdrawal network (what users must send their USDT address for).
+ *   - INR withdrawals on / off. Never saved = on. Off stops new requests; the limits are kept, and
+ *     requests already made can still be accepted or rejected.
  */
 
 const Setting = require('../models/setting.model');
@@ -37,6 +39,8 @@ const CHARGE_KEYS = {
 };
 const WITHDRAWAL_NETWORK_KEY = 'usdt_withdrawal_network';
 const WITHDRAWAL_NETWORKS = ['TRC20', 'BEP20', 'ERC20'];
+const INR_WITHDRAWAL_KEY = 'inr_withdrawal_status';
+const SWITCH_VALUES = ['enabled', 'disabled'];
 
 // Labels of the limit keys. INR labels are unchanged from the original module.
 const KEYS = {
@@ -68,6 +72,7 @@ const DEFAULTS = {
   usdt_deposit_charge_fixed: 0,
   usdt_deposit_charge_bearer: 'user',
   usdt_withdrawal_network: 'TRC20',
+  inr_withdrawal_status: 'enabled',
 };
 
 const ALL_KEYS = Object.keys(DEFAULTS);
@@ -147,6 +152,13 @@ function validate(input = {}) {
   if (!WITHDRAWAL_NETWORKS.includes(network)) errors[WITHDRAWAL_NETWORK_KEY] = `USDT withdrawal network must be one of ${WITHDRAWAL_NETWORKS.join(', ')}.`;
   else values[WITHDRAWAL_NETWORK_KEY] = network;
 
+  // Not sent → left as it is, so a save that does not know the switch can never turn it back on.
+  const inrSwitch = text(INR_WITHDRAWAL_KEY).toLowerCase();
+  if (inrSwitch !== '') {
+    if (!SWITCH_VALUES.includes(inrSwitch)) errors[INR_WITHDRAWAL_KEY] = 'INR withdrawals must be enabled or disabled.';
+    else values[INR_WITHDRAWAL_KEY] = inrSwitch;
+  }
+
   return { values, errors };
 }
 
@@ -171,6 +183,13 @@ async function getCharges(currency) {
     fixed: Number.isFinite(fixed) && fixed >= 0 ? fixed : 0,
     bearer: stored[c.bearer] === 'platform' ? 'platform' : 'user',
   };
+}
+
+/** False when the admin switched this currency's withdrawals off (INR only). Throws when it cannot be read. */
+async function isWithdrawalAllowed(currency) {
+  if (currency !== 'INR') return true;
+  const stored = await readRows([INR_WITHDRAWAL_KEY]);
+  return stored[INR_WITHDRAWAL_KEY] !== 'disabled';
 }
 
 async function getWithdrawalNetwork() {
@@ -294,6 +313,6 @@ function limitErrorBody(check) {
 
 module.exports = {
   KEYS, DEFAULTS, MAX_ALLOWED_AMOUNT, MAX_CHARGE_PERCENT, CURRENCIES, UNIT, LIMIT_KEYS, CHARGE_KEYS,
-  WITHDRAWAL_NETWORK_KEY, WITHDRAWAL_NETWORKS, getLimits, validate, saveLimits, getCharges, getWithdrawalNetwork,
+  WITHDRAWAL_NETWORK_KEY, WITHDRAWAL_NETWORKS, getLimits, validate, saveLimits, getCharges, getWithdrawalNetwork, isWithdrawalAllowed,
   checkTransactionAmount, limitErrorBody, limitsFor,
 };

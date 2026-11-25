@@ -385,6 +385,70 @@ describe('Withdrawals in INR or USDT', () => {
   });
 });
 
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): admin switch for INR withdrawals
+describe('INR withdrawals on / off', () => {
+  beforeEach(reset);
+  const inrUser = () => { user().payment_details = { upi_id: 'asha@upi', usdt_wallet_address: 'TXyzWallet' }; };
+  const ask = (currency) => request(app).post('/api/v1/withdraw/request').send({ user_id: '41', currency, probcoins: '5000' });
+  const option = async (currency) => (await request(app).get('/api/v1/payments/options')).body.currencies.find((c) => c.currency === currency);
+
+  test('never saved = enabled', async () => {
+    inrUser();
+    assert.equal((await option('INR')).withdrawal_enabled, true);
+    assert.equal((await ask('INR')).status, 200);
+  });
+
+  test('disabled: quote and request refused, nothing deducted or recorded; USDT and deposits unaffected', async () => {
+    inrUser();
+    db.settings.inr_withdrawal_status = 'disabled';
+    const start = user().winnings_balance;
+    for (const path of ['quote', 'request']) {
+      const res = await request(app).post('/api/v1/withdraw/' + path).send({ user_id: '41', currency: 'inr', probcoins: '5000' });
+      assert.deepEqual([res.status, res.body.message, res.body.withdrawal_disabled], [403, 'INR withdrawals are not available right now.', true], path);
+    }
+    assert.deepEqual([user().winnings_balance, db.WithdrawalRequest.length, db.Transaction.length], [start, 0, 0]);
+    const inr = await option('INR');
+    assert.deepEqual([inr.withdrawal_enabled, inr.deposit_enabled], [false, true]);
+    assert.equal((await option('USDT')).withdrawal_enabled, true);
+    assert.equal((await ask('USDT')).status, 200);
+    db.settings.inr_withdrawal_status = 'enabled';
+    assert.equal((await ask('INR')).status, 200, 'switching it on applies to the next request');
+  });
+
+  test('a request made before it was disabled can still be rejected and refunded', async () => {
+    inrUser();
+    const start = user().winnings_balance;
+    await ask('INR');
+    db.settings.inr_withdrawal_status = 'disabled';
+    assert.equal((await withdrawals.processWithdrawal(String(db.WithdrawalRequest[0]._id), { action: 'reject', admin: 'a@x' })).type, 'success');
+    assert.equal(user().winnings_balance, start);
+  });
+
+  test('if the switch cannot be read, nothing is withdrawn', async () => {
+    inrUser();
+    const start = user().winnings_balance;
+    const real = Setting.find;
+    Setting.find = () => ({ lean: async () => { throw new Error('db down'); } });
+    try { assert.ok((await ask('INR')).status >= 500); } finally { Setting.find = real; }
+    assert.equal(user().winnings_balance, start);
+  });
+
+  test('saving: validated; a save without the switch leaves it alone; the page shows the saved value', async () => {
+    const base = { min_deposit_amount: '100', max_deposit_amount: '50000', min_withdrawal_amount: '100', max_withdrawal_amount: '20000' };
+    assert.equal(settingsService.validate({ ...base, inr_withdrawal_status: 'Disabled' }).values.inr_withdrawal_status, 'disabled');
+    assert.match(settingsService.validate({ ...base, inr_withdrawal_status: 'maybe' }).errors.inr_withdrawal_status, /enabled or disabled/);
+    await settingsService.saveLimits(settingsService.validate({ ...base, inr_withdrawal_status: 'disabled' }).values);
+    await settingsService.saveLimits(settingsService.validate(base).values);
+    const limits = await settingsService.getLimits();
+    assert.equal(limits.inr_withdrawal_status, 'disabled');
+    const html = await require('ejs').renderFile(require('path').join(__dirname, '../../src/admin/views/settings/deposit_withdrawal.ejs'), {
+      limits, rates: {}, networks: ['TRC20'], maxChargePercent: 50, usdtDefaults: { min: 1, max: 2 }, maxAllowed: 100,
+    });
+    assert.match(html, /<option value="disabled" selected>Disabled/);
+    assert.match(html, /"inr_withdrawal_status"/, 'sent by the page script');
+  });
+});
+
 describe('Deposit & Withdrawal Settings validation', () => {
   test('USDT limits are all-or-nothing; charges validated; INR still required', () => {
     const base = { min_deposit_amount: '100', max_deposit_amount: '50000', min_withdrawal_amount: '100', max_withdrawal_amount: '20000' };

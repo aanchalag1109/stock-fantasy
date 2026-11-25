@@ -151,6 +151,11 @@ async function depositQuote({ currency: rawCurrency, amount, probcoins } = {}) {
 async function withdrawalQuote({ currency: rawCurrency, probcoins } = {}) {
   const currency = normalizeCurrency(rawCurrency);
   if (!currency) return fail(400, 'Choose a payout currency: INR or USDT.');
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): admin on/off switch. Every withdrawal request
+  // starts with this quote, so nothing is deducted while it is off.
+  if (!(await settings.isWithdrawalAllowed(currency))) {
+    return fail(403, `${currency} withdrawals are not available right now.`, { withdrawal_disabled: true });
+  }
   const coins = toCents(probcoins);
   if (coins === null || coins <= 0n) return fail(400, 'Enter a valid number of ProbCoins to withdraw (up to 2 decimal places).');
   const rate = await rateFor(currency);
@@ -192,10 +197,11 @@ async function paymentOptions() {
   const network = await settings.getWithdrawalNetwork();
   return Promise.all(settings.CURRENCIES.map(async (currency) => {
     const rate = rates[RATE_KEY[currency]] || null;
-    const [deposit, withdrawal, charge] = await Promise.all([
+    const [deposit, withdrawal, charge, withdrawalAllowed] = await Promise.all([
       settings.limitsFor('deposit', currency, { fallback: depositFallback(currency) }),
       settings.limitsFor('withdrawal', currency),
       settings.getCharges(currency),
+      settings.isWithdrawalAllowed(currency),
     ]);
     const gatewayReady = currency === 'USDT' ? require('../payram/payram.client').isConfigured() : true;
     // NEW IMPLEMENTATION — NODE.JS PROJECT: the same limits in ProbCoins, ready to show in the app
@@ -206,7 +212,7 @@ async function paymentOptions() {
       gateway: GATEWAY[currency],
       rate,
       deposit_enabled: Boolean(rate && deposit && gatewayReady),
-      withdrawal_enabled: Boolean(rate && withdrawal),
+      withdrawal_enabled: Boolean(rate && withdrawal && withdrawalAllowed),
       min_deposit: deposit ? deposit.min : null,
       max_deposit: deposit ? deposit.max : null,
       min_withdrawal: withdrawal ? withdrawal.min : null,
