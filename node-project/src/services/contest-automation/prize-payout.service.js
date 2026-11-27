@@ -27,7 +27,7 @@ const Contest = require('../../models/contest.model');
 const LeagueSession = require('../../models/league-session.model');
 const Transaction = require('../../models/transaction.model');
 const logger = require('../../config/logger');
-const { keysOf, publicId, num, round2, probcoinLabel } = require('../../helpers/mobile-compat');
+const { keysOf, publicId, num, round2, wholeCoins, probcoinLabel } = require('../../helpers/mobile-compat');
 const { notify } = require('../notifications/notification.service');
 const scoring = require('./contest-scoring');
 const { creditOnce } = require('./ledger');
@@ -124,7 +124,7 @@ async function distributeContest(contestId) {
       if (tied.length > 1) {
         let pool = 0;
         for (let r = entry.rank; r < entry.rank + tied.length; r += 1) pool += prizeForRank(rows, r);
-        amount = pool > 0 ? round2(pool / tied.length) : 0;
+        amount = pool > 0 ? wholeCoins(pool / tied.length) : 0; // NEW IMPLEMENTATION — NODE.JS PROJECT: whole coins (client feedback)
       } else {
         amount = round2(prizeForRank(rows, entry.rank));
       }

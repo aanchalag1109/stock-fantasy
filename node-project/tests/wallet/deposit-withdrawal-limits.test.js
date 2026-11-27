@@ -152,11 +152,8 @@ const DEPOSIT_ENDPOINTS = [
     okStatus: 302,
     send: (amount) => request(app).get(`/api/payment/create-order?data=${encodePaymentData(amount)}`),
   },
-  {
-    name: 'GET /api/v1/test-payment-add',
-    okStatus: 200,
-    send: (amount) => request(app).get('/api/v1/test-payment-add').query({ user_id: '7', amount: amount == null ? '' : amount }),
-  },
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (security): GET /api/v1/test-payment-add was removed (410) — it
+  // credited any wallet without a login. See the test below.
 ];
 
 const WITHDRAWAL_ENDPOINTS = [
@@ -367,6 +364,27 @@ describe('admin limit updates apply to the next request', () => {
       assert.deepEqual(state.writes, []);
     }
   });
+});
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (security): old PHP routes that moved money without a login.
+describe('removed money routes answer 410 and write nothing', () => {
+  beforeEach(resetState);
+  for (const [method, url, body] of [
+    ['get', '/api/v1/test-payment-add?user_id=7&amount=500'],
+    ['get', '/api/v1/trigger-callback?order_id=ORDER1'],
+    ['post', '/api/v1/calculate-results', { contest_id: '1' }],
+    ['get', '/api/v1/test-calculate-contest?contest_id=1'],
+    ['post', '/api/v1/contests/calculate-results', { contest_id: '1' }],
+  ]) {
+    test(`${method.toUpperCase()} ${url.split('?')[0]}`, async () => {
+      const before = snapshotBalances();
+      const req = request(app)[method](url);
+      const res = body ? await req.send(body) : await req;
+      assert.equal(res.status, 410, res.text);
+      assert.equal(res.body.success, false);
+      assertNothingWritten(res, before);
+    });
+  }
 });
 
 // ─── Service-level precision checks ─────────────────────────────────────────

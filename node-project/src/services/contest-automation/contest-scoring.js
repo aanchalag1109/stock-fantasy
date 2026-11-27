@@ -165,7 +165,7 @@ function advertisedPerWinner(row, pool, isFixed) {
  * @param {object} contest  lean contest
  * @param {string} sessionStatus
  * @param {number} joined   entries in the contest
- * @returns {{ prize_pool:number, first_prize:number, total_pool:number|null, winners:number|null, is_flexible_prize:boolean, is_live_prize:boolean }}
+ * @returns {{ prize_pool:number, first_prize:number, total_pool:number|null, winners:number|null, is_flexible_prize:boolean, is_live_prize:boolean, rows?:object[] }}
  */
 function cardPrize(contest, sessionStatus, joined) {
   const isFixed = formats.isFixedPool(contest);
@@ -179,6 +179,7 @@ function cardPrize(contest, sessionStatus, joined) {
       winners: live.winners,
       is_flexible_prize: true,
       is_live_prize: true,
+      rows: live.rows, // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the live prize table
     };
   }
   // Stored (advertised) prize — first prize as the detail screen shows it before the start.
@@ -186,6 +187,71 @@ function cardPrize(contest, sessionStatus, joined) {
   const stored = asPrizeArray(contest.prize_distribution);
   const first = stored.length ? advertisedPerWinner(stored[0], pool, isFixed) : 0;
   return { prize_pool: round2(pool), first_prize: round2(first), total_pool: null, winners: null, is_flexible_prize: !isFixed, is_live_prize: false };
+}
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): admin lists showed the prize pool saved at creation
+ * (the full-house, advertised one) even for live and completed contests. This sets, on each lean contest,
+ *   prize_pool            — the pool as the app shows it and the payout pays it (cardPrize: actual joins once
+ *                           the session is live; 0 for a cancelled contest),
+ *   advertised_prize_pool — the stored pool,
+ *   joined_count          — entries (all ids of the contest),
+ *   is_live_prize         — true when prize_pool comes from actual joins.
+ * Display only — never save these objects back.
+ * @param {object[]} contests  lean contests (all fields, or at least the prize fields)
+ */
+async function withCurrentPools(contests) {
+  if (!contests.length) return contests;
+  const LeagueSession = require('../../models/league-session.model');
+  const sessionKeys = [...new Set(contests.map((c) => String(c.league_session_id)))];
+  const sessions = await LeagueSession.find({
+    $or: [
+      { _id: { $in: sessionKeys.filter(isOid) } },
+      { old_id: { $in: sessionKeys.filter((k) => /^\d+$/.test(k) && k.length < 24).map(Number) } },
+    ],
+  }).select('_id old_id status').lean();
+  const statusOf = new Map();
+  sessions.forEach((s) => keysOf(s).forEach((k) => statusOf.set(String(k), s.status)));
+  const rows = await ContestEntry.aggregate([
+    { $match: { contest_id: { $in: contests.flatMap(keysOf) } } },
+    { $group: { _id: '$contest_id', count: { $sum: 1 } } },
+  ]);
+  const counts = new Map(rows.map((r) => [String(r._id), r.count]));
+  contests.forEach((c) => {
+    const joined = keysOf(c).reduce((sum, k) => sum + (counts.get(String(k)) || 0), 0);
+    const prize = c.status === 'cancelled' ? null : cardPrize(c, statusOf.get(String(c.league_session_id)) || 'upcoming', joined);
+    c.advertised_prize_pool = num(c.prize_pool);
+    c.prize_pool = prize ? prize.prize_pool : 0;
+    c.joined_count = joined;
+    c.is_live_prize = !!(prize && prize.is_live_prize);
+  });
+  return contests;
+}
+
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the prize rows a flexible contest was actually PAID
+ * with — saved by the payout (savePrizeRows) at the time. Contests paid before the whole-number rule keep
+ * showing what their winners received; null when the contest is unpaid, fixed-prize, or has no saved rows.
+ */
+async function paidPrizeRows(contest) {
+  if (!contest || !contest.prizes_distributed || isFixedPrize(contest)) return null;
+  const keys = keysOf(contest);
+  const rows = await ContestPerformancePrize.find({
+    $or: [
+      { contest_id: { $in: [...keys, ...keys.map(String)] } },
+      ...(contest.old_id != null ? [{ contest_old_id: contest.old_id }] : []),
+    ],
+  }).sort({ rank_start: 1 }).lean();
+  if (!rows.length) return null;
+  return rows.map((r) => ({
+    rank_label: r.rank_label || `Rank ${r.rank_start} to ${r.rank_end}`,
+    rank_start: num(r.rank_start),
+    rank_end: num(r.rank_end),
+    winners_count: num(r.winners_count) || (num(r.rank_end) - num(r.rank_start) + 1),
+    percentage: num(r.percentage),
+    prize_amount: num(r.prize_amount),
+    per_winner_amount: num(r.per_winner_amount),
+  }));
 }
 
 /** Replaces the stored ContestPerformancePrize rows for a contest. */
@@ -235,4 +301,5 @@ async function payoutPrizeRows(contest, participants) {
 module.exports = {
   sessionPriceMaps, sessionContests, contestEntries, countParticipants, basketsFor, basketSymbols,
   scoreEntries, assignRanks, savePrizeRows, payoutPrizeRows, isFixedPrize, dynamicPrizeRows, cardPrize, advertisedPerWinner,
+  withCurrentPools, paidPrizeRows,
 };

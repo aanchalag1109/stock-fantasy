@@ -13,6 +13,7 @@ const logger = require('../config/logger');
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
 const { keysOf, findByPublicId, priceMaps, absoluteUrl } = require('../helpers/mobile-compat');
+const { cardPrize } = require('../services/contest-automation/contest-scoring');
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -20,76 +21,9 @@ async function getUnreadCount(userId) {
 }
 
 // ─── Prize distribution tables ───────────────────────────────────────────────
-const PRIZE_TABLES = {
-  10:   [[1,1,30],[2,2,18],[3,3,11],[4,5,13.5],[6,10,27.5]],
-  25:   [[1,1,24],[2,2,14],[3,3,9],[4,5,12.375],[6,10,18.125],[11,25,22.5]],
-  50:   [[1,1,23],[2,2,13],[3,3,9],[4,5,8.1],[6,10,15],[11,25,16.4],[26,50,15.5]],
-  100:  [[1,1,18],[2,2,10],[3,3,8],[4,5,6.576],[6,10,10],[11,25,15.4],[26,50,16.524],[51,100,15.5]],
-  250:  [[1,1,14],[2,2,9],[3,3,7],[4,5,5.169],[6,10,8.602],[11,25,13.323],[26,50,13.031],[51,100,13.375],[101,250,16.5]],
-  500:  [[1,1,14],[2,2,9],[3,3,7],[4,5,3.1],[6,10,6.628],[11,25,10.576],[26,50,10.102],[51,100,12.469],[101,250,13.625],[251,500,13.5]],
-  1000: [[1,1,12],[2,2,8],[3,3,5],[4,5,2.399],[6,10,4.931],[11,25,9.11],[26,50,8.813],[51,100,10.418],[101,250,11.891],[251,500,12.188],[501,1000,15.25]],
-};
-
-function buildDynamicPrizeDistribution(totalWinners, prizePool, category = 'mega') {
-  if (totalWinners <= 0 || prizePool <= 0) return [];
-
-  if (formats.isEqualSplitCategory(category)) { // NEW IMPLEMENTATION — NODE.JS PROJECT: h2h / WTA / Nx split equally
-    const perWinner = Math.round((prizePool / totalWinners) * 100) / 100;
-    return [{
-      rank_label: `Rank 1 to ${totalWinners}`,
-      rank_start: 1, rank_end: totalWinners,
-      winners_count: totalWinners,
-      percentage: 100,
-      prize_amount: Math.round(prizePool * 100) / 100,
-      per_winner_amount: perWinner,
-    }];
-  }
-
-  const keys = Object.keys(PRIZE_TABLES).map(Number).sort((a, b) => a - b);
-  let chosenKey = keys[0];
-  let minDiff = Infinity;
-  keys.forEach((k) => {
-    const diff = Math.abs(k - totalWinners);
-    if (diff < minDiff) { minDiff = diff; chosenKey = k; }
-  });
-
-  const isHigher = chosenKey > totalWinners;
-  const tiers = PRIZE_TABLES[chosenKey];
-  const dist = [];
-  let previousPerWin = Infinity;
-
-  for (let idx = 0; idx < tiers.length; idx++) {
-    const [s, e, pct] = tiers[idx];
-    if (s > totalWinners) break;
-    const isLast = idx === tiers.length - 1;
-    let end = isHigher && isLast ? Math.min(e, totalWinners) : Math.min(e, totalWinners);
-    if (!isLast) end = Math.min(e, totalWinners);
-    if (end < s) break;
-    const cnt = end - s + 1;
-    const prize = Math.round(prizePool * pct / 100 * 100) / 100;
-    let perWin;
-    if (isLast || end >= totalWinners) {
-      const lastTier = tiers[tiers.length - 1];
-      const structureWinners = lastTier[1] - lastTier[0] + 1;
-      const divisor = cnt <= structureWinners ? structureWinners : cnt;
-      perWin = divisor > 0 ? Math.round(prize / divisor * 100) / 100 : 0;
-      if (perWin > previousPerWin) perWin = Math.round(previousPerWin * 0.95 * 100) / 100;
-    } else {
-      perWin = cnt > 0 ? Math.round(prize / cnt * 100) / 100 : 0;
-    }
-    dist.push({
-      rank_label: `Rank ${s} to ${end}`,
-      rank_start: s, rank_end: end,
-      winners_count: cnt,
-      percentage: Math.round(pct * 10000) / 10000,
-      prize_amount: prize,
-      per_winner_amount: perWin,
-    });
-    previousPerWin = perWin;
-    if (end >= totalWinners) break;
-  }
-  return dist;
-}
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): one prize builder for every API and the payout
+// (helpers/mobile-compat.js) — this file used to carry its own copy of the PHP tables.
+const { buildDynamicPrizeDistribution } = require('../helpers/mobile-compat');
 
 function calculateAssetPoints(assets, multipliers, startPrices, endPrices) {
   let totalScore = 0;
@@ -408,18 +342,14 @@ const getUserContests = async (req, res) => {
 
       const contestId = contest._id.toString();
       if (!sessionsMap[sessionId].contests[contestId]) {
-        const joinedCount = await ContestEntry.countDocuments({ contest_id: contestId });
-        const isFixed = formats.isFixedPool(contest);
+        // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): joins under every id of the contest and the
+        // shared card-prize calculation (same as the other contest APIs and the payout).
+        const joinedCount = await ContestEntry.countDocuments({ contest_id: { $in: keysOf(contest) } });
         const entryFee = contest.entry_fee || 0;
-        const platFee = contest.platform_fee || 0;
         const sessionStatus = sessionsMap[sessionId].session_status;
-        const isFlexible = !formats.isFixedPool(contest) && ['live', 'completed'].includes(sessionStatus);
-
-        let prizePool = contest.prize_pool || 0;
-        if (isFlexible) {
-          const totalPool = joinedCount * entryFee;
-          prizePool = totalPool - (totalPool * platFee) / 100;
-        }
+        const prize = cardPrize(contest, sessionStatus, joinedCount);
+        const isFlexible = prize.is_live_prize;
+        const prizePool = prize.prize_pool;
 
         sessionsMap[sessionId].contests[contestId] = {
           contest_id: contestId,

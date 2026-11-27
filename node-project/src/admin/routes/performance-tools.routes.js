@@ -5,8 +5,7 @@
  * routes/admin.php): admin/api/run-all/{contestId}, admin/api/run-all-log/{contestId},
  * admin/api/run-all-stop/{contestId}, admin/api/verify-historical-prices/{sessionId},
  * admin/api/analyze-price-errors/{sessionId}, and the page's "Calculate Results" button
- * (PHP called /api/v1/calculate-results on the same host; the Node admin runs on its own port,
- * so it gets an admin route that runs the same routine).
+ * (PHP called /api/v1/calculate-results; here it runs the server's safe prize payout).
  * Mounted at '/' in src/admin/app.js.
  */
 
@@ -18,7 +17,7 @@ const logger = require('../../config/logger');
 const Contest = require('../../models/contest.model');
 const runAll = require('../../services/run-all.service');
 const tools = require('../../services/performance-tools.service');
-const legacy = require('../../controllers/mobile-legacy.controller');
+const payout = require('../../services/contest-automation/prize-payout.service');
 const { publicId } = require('../../helpers/mobile-compat');
 
 const view = requirePermission('performance.view');
@@ -51,16 +50,24 @@ router.post('/api/analyze-price-errors/:sessionId', requireAdmin, view, async (r
   try { res.json(await tools.analyzePriceErrors(req.params.sessionId)); } catch (err) { res.json({ success: false, error: err.message }); }
 });
 
-// PHP "Calculate Results": same routine as POST /api/v1/calculate-results (scores, ranks and — if the
-// contest is not calculated yet — credits prizes; see controllers/mobile-legacy.controller.js).
+// PHP "Calculate Results". NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback / security): runs the safe
+// payout (prize-payout.service.distributeContest) — only after the session has completed, never twice, never
+// for a cancelled contest, prizes from actual joins. It used to run the legacy routine, which paid the
+// full-house prize table and did none of these checks.
 router.post('/api/performance/:contestId/calculate-results', requireAdmin, manage, async (req, res) => {
-  const id = String(req.params.contestId);
-  const contest = mongoose.isValidObjectId(id) && id.length === 24
-    ? await Contest.findById(id).select('_id old_id').lean()
-    : await Contest.findOne({ old_id: Number(id) }).select('_id old_id').lean();
-  if (!contest) return res.status(404).json({ success: false, error: 'Contest not found' });
-  logger.info(`[performance] ${actor(req)} ran Calculate Results for contest ${publicId(contest)}`);
-  return legacy.calculateResults({ body: { contest_id: String(publicId(contest)) }, query: {} }, res);
+  try {
+    const id = String(req.params.contestId);
+    const contest = mongoose.isValidObjectId(id) && id.length === 24
+      ? await Contest.findById(id).select('_id old_id').lean()
+      : await Contest.findOne({ old_id: Number(id) }).select('_id old_id').lean();
+    if (!contest) return res.status(404).json({ success: false, error: 'Contest not found' });
+    const result = await payout.distributeContest(String(publicId(contest)));
+    logger.info(`[performance] ${actor(req)} ran Calculate Results for contest ${publicId(contest)}: ${result.message}`);
+    return res.json(result);
+  } catch (err) {
+    logger.error(`[performance] Calculate Results for contest ${req.params.contestId} failed: ${err.message}`);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 module.exports = router;

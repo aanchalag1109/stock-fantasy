@@ -16,7 +16,7 @@ const Asset = require('../models/asset.model');
 const {
   keysOf, publicId, sqlDate, absoluteUrl, num, walletOf, unreadCount,
   findByPublicId, ensureOldId, priceMaps, scoreAssets, selectedMultipliers,
-  buildDynamicPrizeDistribution, asPrizeArray, round2, transactionLabels,
+  buildDynamicPrizeDistribution, asPrizeArray, round2, wholeCoins, transactionLabels,
 } = require('../helpers/mobile-compat');
 // NEW IMPLEMENTATION (node-project only, not converted from PHP): OTP-only Login and Signup.
 const otpService = require('../services/otp.service');
@@ -29,7 +29,7 @@ const deviceTokens = require('../services/notifications/device-token.service');
 const formats = require('../services/contest-formats');
 const contestJoin = require('../services/contest-join.service');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: live prize rows use the payout's own calculation
-const { dynamicPrizeRows, cardPrize, advertisedPerWinner } = require('../services/contest-automation/contest-scoring');
+const { dynamicPrizeRows, cardPrize, advertisedPerWinner, paidPrizeRows } = require('../services/contest-automation/contest-scoring');
 const sessionMarkets = require('../services/markets'); // NEW IMPLEMENTATION — NODE.JS PROJECT: market types
 // NEW IMPLEMENTATION — NODE.JS PROJECT: per-category pick limits for the player's basket (client feedback)
 const sessionAssets = require('../services/session-assets.service');
@@ -720,6 +720,19 @@ const getUserJoinedSessions = async (req, res) => {
   }
 };
 
+/** Live prize rows in the shape saved by admin (label / winners / per_winner / prize / percent). */
+function liveDistribution(rows) {
+  return (rows || []).map((row) => ({
+    label: row.rank_label,
+    rank_start: row.rank_start,
+    rank_end: row.rank_end,
+    winners: row.winners_count,
+    percent: row.percentage,
+    prize: row.prize_amount,
+    per_winner: row.per_winner_amount,
+  }));
+}
+
 function contestPublic(contest, session, joinedCount) {
   const entryFee = num(contest.entry_fee);
   const platformFee = num(contest.platform_fee);
@@ -747,7 +760,11 @@ function contestPublic(contest, session, joinedCount) {
     is_live_prize: prize.is_live_prize, // NEW IMPLEMENTATION — NODE.JS PROJECT: true = from actual joins
     is_pinned: !!contest.is_pinned,
     pin_order: contest.pin_order || 0,
-    prize_distribution: typeof contest.prize_distribution === 'string' ? contest.prize_distribution : JSON.stringify(distribution),
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): once live, the table for the actual joins
+    // (the same one the detail screen shows and the payout pays), not the full-house one saved at creation.
+    prize_distribution: prize.is_live_prize
+      ? JSON.stringify(liveDistribution(prize.rows))
+      : (typeof contest.prize_distribution === 'string' ? contest.prize_distribution : JSON.stringify(distribution)),
     joined_count: joinedCount,
     first_prize: firstPrize,
     badge,
@@ -905,7 +922,8 @@ const getContest = async (req, res) => {
       totalPool = live.totalPool;
       displayPrizePool = live.prizePool;
       platformFeeAmount = live.totalPool - live.prizePool;
-      prizeDistribution = live.rows;
+      // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): an already-paid contest shows what was paid
+      prizeDistribution = (await paidPrizeRows(plain)) || live.rows;
     } else {
       prizeDistribution = stored.map((item) => {
         const winnersCount = parseInt(item.winners || item.winners_count || 1, 10);
@@ -938,7 +956,7 @@ const getContest = async (req, res) => {
           const match = prizeDistribution.find((row) => step >= row.rank_start && step <= row.rank_end);
           if (match) totalPrize += num(match.per_winner_amount);
         }
-        prize = totalPrize > 0 ? round2(totalPrize / tiedCount) : 0;
+        prize = totalPrize > 0 ? wholeCoins(totalPrize / tiedCount) : 0; // NEW IMPLEMENTATION — NODE.JS PROJECT: whole coins, as paid
       } else {
         const match = prizeDistribution.find((row) => rank >= row.rank_start && rank <= row.rank_end);
         prize = match ? num(match.per_winner_amount) : 0;
@@ -1345,6 +1363,19 @@ const getUserContestBaskets = async (req, res) => {
 
     const entryByBasket = new Map();
     entries.forEach((entry) => entryByBasket.set(String(entry.basket_id), entry));
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the contest's prize pool as every other
+    // contest API shows it (cardPrize) — actual joins once the session is live; one count per contest.
+    const pools = new Map();
+    const livePool = async (contestDoc, sessionDoc) => {
+      const contestPlain = contestDoc.toObject ? contestDoc.toObject() : contestDoc;
+      const status = sessionDoc ? sessionDoc.status : 'upcoming';
+      const key = `${contestPlain._id}:${status}`;
+      if (!pools.has(key)) {
+        const joined = await ContestEntry.countDocuments({ contest_id: { $in: keysOf(contestPlain) } });
+        pools.set(key, cardPrize(contestPlain, status, joined).prize_pool);
+      }
+      return pools.get(key);
+    };
 
     const data = [];
     for (const basket of baskets) {
@@ -1379,7 +1410,7 @@ const getUserContestBaskets = async (req, res) => {
         total_score: entry ? num(entry.total_score) : num(basket.total_score),
         rank: entry ? entry.rank : basket.rank,
         entry_fee: contest ? num(contest.entry_fee) : 0,
-        prize_pool: contest ? num(contest.prize_pool) : 0,
+        prize_pool: contest ? await livePool(contest, session) : 0, // NEW IMPLEMENTATION — NODE.JS PROJECT: actual joins once live
         category: contest ? contest.category : null,
         is_standalone: !!basket.is_standalone,
         assets_by_category: grouped,

@@ -190,10 +190,13 @@ describe('before live: the app shows exactly what the admin form saved', () => {
     return { rows, app: (await fetchContest()).contest.prize_distribution, card: cards.contests[0] };
   }
 
-  test('adjusted last tier: rank 6 of 6 winners shows 99, not 495', async () => {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): whole-number prizes that add up to the whole pool.
+  // 6 winners of 1,800 used to get 540 / 324 / 198 / 121 / 99 — 1,403 in all, 397 never paid.
+  test('6 winners of a 1,800 pool: whole numbers that add up to 1,800', async () => {
     const { app } = await upcoming('mega', 20, 100, 10, 30);
-    assert.deepEqual(app.map((r) => r.per_winner_amount), [540, 324, 198, 121, 99]);
-    assert.equal(app[4].prize_amount, 99, 'group total is what the group is paid');
+    assert.deepEqual(app.map((r) => r.per_winner_amount), [688, 410, 250, 153, 146]);
+    assert.equal(app[4].prize_amount, 146, 'group total is what the group is paid');
+    assert.equal(app.reduce((sum, r) => sum + r.prize_amount, 0), 1800);
   });
 
   test('mega and equal: ranks, winners, % and prize per winner equal the admin structure for 1–400 winners', async () => {
@@ -231,7 +234,7 @@ describe('before live: the app shows exactly what the admin form saved', () => {
       const html = await ejs.renderFile(file, locals);
       const shown = [...html.matchAll(/([0-9,]+) per winner/g)].map((m) => Number(m[1].replace(/,/g, '')));
       assert.deepEqual(shown, app.map((r) => r.per_winner_amount));
-      assert.deepEqual(shown, [540, 324, 198, 121, 99]);
+      assert.deepEqual(shown, [688, 410, 250, 153, 146]);
       delete require.cache[id];
     } finally {
       Contest.findOne = contestModel.findOne;
@@ -272,5 +275,99 @@ describe('leaderboard profile photos', () => {
     const byName = Object.fromEntries(body.participants.map((p) => [p.user_name, p.profile_image]));
     assert.deepEqual(byName, { Asha: 'http://206.189.133.192:8000/uploads/profiles/p1.jpg', Ravi: null });
     User.find = () => list([]);
+  });
+});
+
+// NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): "after live, no paise in the prize structure — like
+// admin — and the prize pool accurate for the actual joins". Prizes are whole coins, the rows add up to the
+// whole pool (the rounding leftover goes to rank 1), and every API shows the same table.
+describe('whole-number prizes that add up to the pool', () => {
+  const { buildDynamicPrizeDistribution } = require('../../src/helpers/mobile-compat');
+
+  test('the client\'s contest: 1,000 joined × 50, 50% fee, 380 winners → 25,000 paid in whole coins', () => {
+    const rows = buildDynamicPrizeDistribution(380, 25000, 'mega');
+    assert.equal(rows.reduce((sum, r) => sum + r.prize_amount, 0), 25000, 'was 23,380.55');
+    assert.deepEqual(rows.map((r) => [r.rank_start, r.rank_end, r.per_winner_amount]), [
+      [1, 1, 3686], [2, 2, 2302], [3, 3, 1790], [4, 5, 396], [6, 10, 339], [11, 25, 180],
+      [26, 50, 103], [51, 100, 63], [101, 250, 23], [251, 380, 22],
+    ]);
+  });
+
+  test('1–3,000 winners, many pools: whole numbers, never more for a lower rank, total = the pool', () => {
+    for (let winners = 1; winners <= 3000; winners += (winners < 300 ? 1 : 37)) {
+      for (const pool of [winners * 9, winners * 45 + 0.5, 25000, 123456.78]) {
+        const rows = buildDynamicPrizeDistribution(winners, pool, 'mega');
+        const label = `${winners} winners, pool ${pool}`;
+        assert.ok(rows.length, label);
+        assert.ok(rows.every((r) => Number.isInteger(r.per_winner_amount) && r.per_winner_amount > 0), label);
+        assert.ok(rows.every((r, i) => i === 0 || r.per_winner_amount <= rows[i - 1].per_winner_amount), `${label}: order`);
+        assert.equal(rows[rows.length - 1].rank_end, winners, `${label}: every winner has a prize`);
+        assert.equal(rows.reduce((sum, r) => sum + r.prize_amount, 0), Math.floor(pool), label);
+      }
+    }
+  });
+
+  test('equal-split formats: the same whole amount for everyone; the leftover stays with the platform', () => {
+    for (const category of ['equal', 'h2h', 'winner_takes_all', 'multiplier']) {
+      const rows = buildDynamicPrizeDistribution(3, 100, category);
+      assert.deepEqual(rows.map((r) => [r.rank_start, r.rank_end, r.per_winner_amount, r.prize_amount]), [[1, 3, 33, 99]], category);
+    }
+  });
+
+  test('live card: prize_distribution is the live table (was the full-house one saved at creation)', async () => {
+    reset({ joined: 40 });
+    Contest.find = () => list([db.contest]);
+    const { contestsBySession } = require('../../src/controllers/mobile-api.controller');
+    let body;
+    await contestsBySession({ params: { sessionId: '5' }, query: {} }, { json: (b) => { body = b; }, status() { return this; } });
+    const cardRows = JSON.parse(body.contests[0].prize_distribution);
+    const payout = dynamicPrizeRows(db.contest, 40).rows;
+    assert.deepEqual(cardRows.map((r) => [r.rank_start, r.rank_end, r.winners, r.per_winner]), payout.map((r) => [r.rank_start, r.rank_end, r.winners_count, r.per_winner_amount]));
+    assert.equal(cardRows.reduce((sum, r) => sum + r.prize, 0), 3600);
+    assert.equal(body.contests[0].first_prize, cardRows[0].per_winner);
+  });
+
+  test('live detail: every prize, including a tie share, is a whole number', async () => {
+    reset({ joined: 40 });
+    db.entries[1].total_score = db.entries[2].total_score; // ranks 2 and 3 tie
+    const body = await fetchContest();
+    assert.ok(body.participants.every((p) => Number.isInteger(p.prize_amount)), JSON.stringify(body.participants.slice(0, 4)));
+    const rows = body.prize_distribution || body.contest.prize_distribution;
+    assert.equal(rows.reduce((sum, r) => sum + r.prize_amount, 0), 3600);
+  });
+
+  test('a contest paid before this change keeps showing what its winners were paid', async () => {
+    const ContestPerformancePrize = require('../../src/models/contest-performance-prize.model');
+    const original = ContestPerformancePrize.find;
+    const paid = [
+      { contest_id: 50, rank_start: 1, rank_end: 1, winners_count: 1, per_winner_amount: 1000.5, prize_amount: 1000.5 },
+      { contest_id: 50, rank_start: 2, rank_end: 12, winners_count: 11, per_winner_amount: 120.25, prize_amount: 1322.75 },
+    ];
+    ContestPerformancePrize.find = () => ({ sort: () => ({ lean: async () => paid }) });
+    try {
+      reset({ joined: 40, sessionStatus: 'completed' });
+      db.contest.prizes_distributed = true;
+      const body = await fetchContest();
+      const rows = body.prize_distribution || body.contest.prize_distribution;
+      assert.deepEqual(rows.map((r) => r.per_winner_amount), [1000.5, 120.25]);
+      assert.equal(body.participants[0].prize_amount, 1000.5);
+      // not paid yet → the new whole-number table
+      db.contest.prizes_distributed = false;
+      const unpaid = await fetchContest();
+      assert.deepEqual(unpaid.prize_distribution || unpaid.contest.prize_distribution, dynamicPrizeRows(db.contest, 40).rows);
+    } finally {
+      ContestPerformancePrize.find = original;
+    }
+  });
+
+  test('admin save: flexible tables are built on the server, whatever the form posts', () => {
+    const { buildPrizeDistribution } = require('../../src/admin/controllers/contests.controller');
+    const tampered = JSON.stringify([{ rank_start: 1, rank_end: 1, winners: 1, per_winner: 999999, prize: 999999, percent: 100 }]);
+    const rows = buildPrizeDistribution({ prize_distribution: tampered }, 'mega', 6, 1800);
+    assert.deepEqual(rows.map((r) => r.per_winner), [688, 410, 250, 153, 146]);
+    assert.equal(rows.reduce((sum, r) => sum + r.prize, 0), 1800);
+    // fixed-prize contests keep the admin's own table
+    const fixed = buildPrizeDistribution({ prize_distribution: tampered }, 'guaranteed', 1, 999999);
+    assert.equal(fixed[0].per_winner, 999999);
   });
 });

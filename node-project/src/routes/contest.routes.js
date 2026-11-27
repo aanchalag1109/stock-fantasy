@@ -10,7 +10,8 @@ router.get('/session-details/:sessionId', ctrl.getSessionDetails);
 router.get('/active-session', ctrl.getActiveSession);
 router.get('/user', ctrl.getUserContests);
 router.post('/bulk-join', requireSupportedAppVersion, ctrl.bulkJoinContest); // NEW IMPLEMENTATION — NODE.JS PROJECT: Android/iOS app version guard
-router.post('/calculate-results', ctrl.calculateResults);
+// NEW IMPLEMENTATION — NODE.JS PROJECT (security): rewrote every entry's score without a login — removed
+router.post('/calculate-results', (req, res) => res.status(410).json({ success: false, error: 'This endpoint has been removed.' }));
 router.get('/', ctrl.contests);
 router.get('/:id', ctrl.getContest);
 

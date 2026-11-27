@@ -26,6 +26,7 @@ const { imageChange } = require('../helpers/session-image-upload'); // NEW IMPLE
 const paymentOrders = require('../../services/payment-orders.service');
 // PHP PARITY: Performance "How It Works" diagnostics
 const performanceTools = require('../../services/performance-tools.service');
+const { withCurrentPools, dynamicPrizeRows, advertisedPerWinner, paidPrizeRows } = require('../../services/contest-automation/contest-scoring'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 
 function fmt(d) {
   if (!d) return '—';
@@ -112,9 +113,8 @@ const performance = {
     if (!session) { req.flash('error', 'Session not found'); return res.redirect('/performance'); }
     const keys = [session._id];
     if (session.old_id != null) keys.push(session.old_id);
-    const contests = await Contest.find({ league_session_id: { $in: keys } })
-      .select('old_id category prize_pool entry_fee participants status')
-      .lean();
+    const contests = await Contest.find({ league_session_id: { $in: keys } }).lean();
+    await withCurrentPools(contests); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pool (actual joins once live)
     const contestKeys = contests.flatMap((contest) => [contest._id, contest.old_id].filter((id) => id != null));
     const joined = contestKeys.length
       ? await ContestEntry.aggregate([
@@ -221,49 +221,36 @@ const performance = {
       // NEW IMPLEMENTATION — NODE.JS PROJECT: h2h / WTA / Nx have their own winner rule
       if (formats.isNewFormat(contest)) actualWinnersCount = formats.winnersFor(contest, actualParticipantsCount);
 
-      const contestCategory  = (contest.category || '').toLowerCase().trim();
       const sessionStatus    = contest.session_status;
 
+      // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): the same prize table the app shows and the
+      // payout pays — the saved one before the start (and always for fixed-prize contests), the actual-joins
+      // one (dynamicPrizeRows) once live. This page used to carry its own copy of the tables (only up to 100).
       let flexibleDistribution = [];
-      if (sessionStatus === 'upcoming') {
-        let prizeDistJson = contest.prize_distribution;
-        if (typeof prizeDistJson === 'string') {
-          try { prizeDistJson = JSON.parse(prizeDistJson); } catch { prizeDistJson = []; }
-        }
-        if (Array.isArray(prizeDistJson)) {
-          flexibleDistribution = prizeDistJson.map(item => {
-            const rankStart = item.rank_start || 1;
-            const rankEnd   = item.rank_end   || 1;
-            const winners   = item.winners || 1;
-            const percent   = item.prize_percent || 0;
-            const perWinner = item.prize_per_user || 0;
-            return {
-              label:     `Ranks ${rankStart}-${rankEnd}`,
-              winners,
-              percent,
-              prize:     perWinner * winners,
-              perWinner,
-            };
-          });
-        }
-      } else if (contestCategory === 'equal' && sessionStatus === 'live') {
-        let prizeDistJson = contest.prize_distribution;
-        if (typeof prizeDistJson === 'string') {
-          try { prizeDistJson = JSON.parse(prizeDistJson); } catch { prizeDistJson = []; }
-        }
-        if (Array.isArray(prizeDistJson)) {
-          flexibleDistribution = prizeDistJson.map(item => {
-            const rankStart = item.rank_start || 1;
-            const rankEnd   = item.rank_end   || 1;
-            const percent   = Number(item.prize_percent || 0);
-            const winners   = Number(item.winners || 1);
-            const groupPrize = actualPrizePool * (percent / 100);
-            const perWinner  = winners > 0 ? Math.floor(groupPrize / winners) : 0;
-            return { label: `Ranks ${rankStart}-${rankEnd}`, winners, percent, prize: groupPrize, perWinner };
-          });
-        }
+      const savedRows = (() => {
+        let rows = contest.prize_distribution;
+        if (typeof rows === 'string') { try { rows = JSON.parse(rows); } catch { rows = []; } }
+        return Array.isArray(rows) ? rows : [];
+      })();
+      if (formats.isFixedPool(contest) || !['live', 'completed'].includes(sessionStatus)) {
+        flexibleDistribution = savedRows.map((item) => {
+          const rankStart = parseInt(item.rank_start || 1, 10);
+          const rankEnd = parseInt(item.rank_end || rankStart, 10);
+          const winners = rankEnd - rankStart + 1;
+          const perWinner = advertisedPerWinner(item, Number(contest.prize_pool) || 0, formats.isFixedPool(contest));
+          return { label: `Ranks ${rankStart}-${rankEnd}`, winners, percent: Number(item.percent ?? item.percentage ?? item.prize_percent ?? 0), prize: perWinner * winners, perWinner };
+        });
       } else {
-        flexibleDistribution = getSimplePrizeTable(actualWinnersCount, actualPrizePool);
+        const live = dynamicPrizeRows(contest, actualParticipantsCount);
+        actualWinnersCount = live.winners;
+        // an already-paid contest shows the rows it was paid with
+        flexibleDistribution = ((await paidPrizeRows(contest)) || live.rows).map((row) => ({
+          label: `Ranks ${row.rank_start}-${row.rank_end}`,
+          winners: row.winners_count,
+          percent: row.percentage,
+          prize: row.prize_amount,
+          perWinner: row.per_winner_amount,
+        }));
       }
 
       const stats = {
@@ -315,70 +302,6 @@ const performance = {
   },
 };
 
-// ── Prize table helper (mirrors PHP getSimplePrizeTable) ──────────────────
-function getSimplePrizeTable(totalWinners, prizePool) {
-  if (totalWinners <= 0 || prizePool <= 0) return [];
-  const prizeDistributionTable = {
-    10: [
-      { start: 1, end: 1,   percent: 30 },
-      { start: 2, end: 2,   percent: 18 },
-      { start: 3, end: 3,   percent: 11 },
-      { start: 4, end: 5,   percent: 13.5 },
-      { start: 6, end: 10,  percent: 27.5 },
-    ],
-    25: [
-      { start: 1,  end: 1,  percent: 24 },
-      { start: 2,  end: 2,  percent: 14 },
-      { start: 3,  end: 3,  percent: 9 },
-      { start: 4,  end: 5,  percent: 12.375 },
-      { start: 6,  end: 10, percent: 18.125 },
-      { start: 11, end: 25, percent: 22.5 },
-    ],
-    50: [
-      { start: 1,  end: 1,  percent: 23 },
-      { start: 2,  end: 2,  percent: 13 },
-      { start: 3,  end: 3,  percent: 9 },
-      { start: 4,  end: 5,  percent: 8.1 },
-      { start: 6,  end: 10, percent: 15 },
-      { start: 11, end: 25, percent: 16.4 },
-      { start: 26, end: 50, percent: 15.5 },
-    ],
-    100: [
-      { start: 1,  end: 1,   percent: 18 },
-      { start: 2,  end: 2,   percent: 10 },
-      { start: 3,  end: 3,   percent: 8 },
-      { start: 4,  end: 5,   percent: 6.576 },
-      { start: 6,  end: 10,  percent: 10 },
-      { start: 11, end: 25,  percent: 15.4 },
-      { start: 26, end: 50,  percent: 16.524 },
-      { start: 51, end: 100, percent: 15.5 },
-    ],
-  };
-  const keys = Object.keys(prizeDistributionTable).map(Number).sort((a, b) => a - b);
-  let chosen = keys[0];
-  let minDiff = Infinity;
-  keys.forEach(k => {
-    const diff = Math.abs(k - totalWinners);
-    if (diff < minDiff) { minDiff = diff; chosen = k; }
-  });
-  const groups = prizeDistributionTable[chosen];
-  const distribution = [];
-  for (const group of groups) {
-    if (group.start > totalWinners) break;
-    const end = Math.min(group.end, totalWinners);
-    const groupPrize = prizePool * (group.percent / 100);
-    const numInGroup = end - group.start + 1;
-    distribution.push({
-      label:     `Ranks ${group.start}-${end}`,
-      winners:   numInGroup,
-      percent:   group.percent,
-      prize:     groupPrize,
-      perWinner: Math.floor(groupPrize / numInGroup),
-    });
-    if (end >= totalWinners) break;
-  }
-  return distribution;
-}
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -505,6 +428,7 @@ const contestAnalysis = {
     const session = await findDoc(LeagueSession, req.params.id);
     if (!session) { req.flash('error', 'Session not found'); return res.redirect('/contest-analysis'); }
     const contests = await Contest.find({ league_session_id: { $in: docKeys(session) } }).sort({ old_id: 1 }).lean();
+    await withCurrentPools(contests); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pool (actual joins once live)
     const contestKeys = contests.flatMap(docKeys);
     const [playerRows, winRows] = contestKeys.length
       ? await Promise.all([
@@ -869,9 +793,15 @@ const pendingPrizes = {
     if (filter === 'pending') contestFilter.prizes_distributed = { $ne: true };
     if (filter === 'paid') contestFilter.prizes_distributed = true;
     const contests = await Contest.find(contestFilter).sort({ created_at: -1 }).limit(200).lean();
+    await withCurrentPools(contests); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pool (actual joins once live)
     const sessionIds = [...new Set(contests.map(c => String(c.league_session_id)).filter(Boolean))];
-    const sessions = await LeagueSession.find({ _id: { $in: sessionIds } }).lean();
-    const byId = Object.fromEntries(sessions.map(s => [String(s._id), s]));
+    // NEW IMPLEMENTATION — NODE.JS PROJECT: old numeric session ids crashed this query (CastError)
+    const sessions = await LeagueSession.find({ $or: [
+      { _id: { $in: sessionIds.filter((id) => mongoose.isValidObjectId(id) && id.length === 24) } },
+      { old_id: { $in: sessionIds.filter((id) => /^\d+$/.test(id) && id.length < 24).map(Number) } },
+    ] }).lean();
+    const byId = {};
+    sessions.forEach((s) => { byId[String(s._id)] = s; if (s.old_id != null) byId[String(s.old_id)] = s; });
     const grouped = {};
     contests.forEach(c => {
       const key = String(c.league_session_id || 'none');
@@ -1004,8 +934,8 @@ const testing = {
     if (!session) { req.flash('error', 'Session not found'); return res.redirect('/testing'); }
     const keys = [session._id];
     if (session.old_id != null) keys.push(session.old_id);
-    const contests = await Contest.find({ league_session_id: { $in: keys } })
-      .select('old_id category entry_fee participants status prize_pool created_at').sort({ created_at: -1 }).lean();
+    const contests = await Contest.find({ league_session_id: { $in: keys } }).sort({ created_at: -1 }).lean();
+    await withCurrentPools(contests); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pool (actual joins once live)
     render(res, 'testing/session_contests', { title: `Contests - ${session.name}`, session, contests, admin: req.session.admin });
   },
   contestDetail: async (req, res) => {

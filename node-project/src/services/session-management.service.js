@@ -131,18 +131,11 @@ async function liveSessionsData(status = 'all') {
     .lean();
   const sessionKeys = sessions.flatMap(keysOf);
   const contests = sessionKeys.length
-    ? await Contest.find({ league_session_id: { $in: sessionKeys } }).select('old_id league_session_id prize_pool status').lean()
+    ? await Contest.find({ league_session_id: { $in: sessionKeys } }).lean()
     : [];
-  const entryCounts = new Map();
-  const contestKeys = contests.flatMap(keysOf);
-  if (contestKeys.length) {
-    const rows = await ContestEntry.aggregate([
-      { $match: { contest_id: { $in: contestKeys } } },
-      { $group: { _id: '$contest_id', count: { $sum: 1 } } },
-    ]);
-    rows.forEach((r) => entryCounts.set(String(r._id), r.count));
-  }
-  const entriesOf = (c) => keysOf(c).reduce((sum, k) => sum + (entryCounts.get(String(k)) || 0), 0);
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pools (actual joins once live) + joins
+  await scoring.withCurrentPools(contests);
+  const entriesOf = (c) => c.joined_count;
   const contestsBySession = new Map();
   contests.forEach((c) => {
     const key = String(c.league_session_id);
@@ -171,7 +164,8 @@ async function liveSessionsData(status = 'all') {
 
   const liveSessions = await LeagueSession.find({ status: 'live' }).select('_id old_id').lean();
   const liveKeys = liveSessions.flatMap(keysOf);
-  const liveContests = liveKeys.length ? await Contest.find({ league_session_id: { $in: liveKeys } }).select('prize_pool').lean() : [];
+  const liveContests = liveKeys.length ? await Contest.find({ league_session_id: { $in: liveKeys } }).lean() : [];
+  await scoring.withCurrentPools(liveContests); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback)
   return {
     success: true,
     sessions: out,
@@ -383,7 +377,7 @@ async function sessionContests(sessionId) {
   const session = await findSession(sessionId);
   if (!session) return null;
   const contests = await Contest.find({ league_session_id: { $in: keysOf(session) } }).sort({ created_at: 1 }).lean();
-  for (const contest of contests) contest.joined_count = await scoring.countParticipants(contest);
+  await scoring.withCurrentPools(contests); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pools + joins
   return {
     session,
     contests,
@@ -396,6 +390,7 @@ async function sessionContests(sessionId) {
 async function contestDetails(contestId) {
   const contest = await findByAnyId(Contest, contestId);
   if (!contest) return null;
+  await scoring.withCurrentPools([contest]); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pool
   const session = contest.league_session_id != null ? await findSession(contest.league_session_id) : null;
   const entries = await ContestEntry.find({ contest_id: { $in: keysOf(contest) } }).lean();
   const baskets = await scoring.basketsFor(entries);

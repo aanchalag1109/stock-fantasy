@@ -15,6 +15,7 @@ const { keysOf, ensureOldId } = require('../../helpers/mobile-compat');
 const markets = require('../../services/markets');
 const sessionAssets = require('../../services/session-assets.service');
 const { imageChange } = require('../helpers/session-image-upload'); // NEW IMPLEMENTATION — NODE.JS PROJECT
+const { withCurrentPools } = require('../../services/contest-automation/contest-scoring'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 
 const LIST_STATUSES = ['live', 'upcoming', 'completed', 'draft', 'cancelled'];
 
@@ -309,6 +310,7 @@ const show = async (req, res) => {
     const session = await findSession(req.params.id);
     if (!session) { req.flash('error', 'Session not found'); return res.redirect('/league_sessions'); }
     const contests = await Contest.find({ league_session_id: { $in: sessionKeys(session) } }).lean();
+    await withCurrentPools(contests); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pool (actual joins once live)
     const totalParticipants = contests.reduce((sum, contest) => sum + (Number(contest.participants) || 0), 0);
     const seenSymbols = new Set();
     const uniqueAssets = [];

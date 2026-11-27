@@ -5,6 +5,15 @@ const Contest = require('../models/contest.model');
 const ContestEntry = require('../models/contest-entry.model');
 const Notification = require('../models/notification.model');
 const logger = require('../config/logger');
+const { keysOf } = require('../helpers/mobile-compat');
+const { cardPrize } = require('../services/contest-automation/contest-scoring');
+
+/** Matches documents by Mongo id or old numeric id. */
+function idQuery(ids) {
+  const objectIds = ids.filter((id) => /^[a-f0-9]{24}$/i.test(String(id)));
+  const oldIds = ids.map(Number).filter((n) => Number.isInteger(n));
+  return [{ _id: { $in: objectIds } }, { old_id: { $in: oldIds } }];
+}
 
 async function getUnreadCount(userId) {
   if (!userId) return 0;
@@ -122,42 +131,45 @@ const getUserJoinedSessions = async (req, res) => {
       return res.json({ success: true, sessions: [], total: 0, unread_notifications: await getUnreadCount(userId) });
     }
 
-    // Get all contests
-    const contestQuery = { _id: { $in: contestIds } };
-    const contests = await Contest.find(contestQuery)
-      .select('league_session_id category prize_pool entry_fee platform_fee')
-      .lean();
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): contests and sessions are matched under every
+    // id they may be stored with (Mongo id or the old numeric id), and each live / completed contest's pool
+    // comes from the shared card-prize calculation (actual joins, every contest type) — the same number the
+    // other APIs show and the payout pays. Before, only mega / equal were recalculated.
+    const contests = await Contest.find({ $or: idQuery(contestIds) }).lean();
+    const contestOf = new Map();
+    contests.forEach((c) => keysOf(c).forEach((k) => contestOf.set(String(k), c)));
+    const sessionIds = [...new Set(contests.map((c) => String(c.league_session_id)))];
 
-    const sessionIds = [...new Set(contests.map((c) => c.league_session_id?.toString()))];
-
-    const sessionFilter = { _id: { $in: sessionIds } };
+    const sessionFilter = { $or: idQuery(sessionIds) };
     if (status) sessionFilter.status = status;
 
     const sessions = await LeagueSession.find(sessionFilter)
       .sort({ start_time: -1 })
       .lean();
 
+    const joinRows = await ContestEntry.aggregate([
+      { $match: { contest_id: { $in: contests.flatMap(keysOf) } } },
+      { $group: { _id: '$contest_id', count: { $sum: 1 } } },
+    ]);
+    const joined = new Map();
+    joinRows.forEach((row) => {
+      const c = contestOf.get(String(row._id));
+      if (c) joined.set(String(c._id), (joined.get(String(c._id)) || 0) + row.count);
+    });
+
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     const enriched = await Promise.all(sessions.map(async (session) => {
-      const sessionContests = contests.filter((c) => c.league_session_id?.toString() === session._id.toString());
-      
+      const sessionKeys = new Set(keysOf(session).map(String));
+      const sessionContests = contests.filter((c) => sessionKeys.has(String(c.league_session_id)));
+
       let totalPrizePool = 0;
       for (const contest of sessionContests) {
-        let prizePool = contest.prize_pool || 0;
-        if (['live', 'completed'].includes(session.status) &&
-            ['mega', 'equal', 'flexible'].includes((contest.category || '').toLowerCase())) {
-          const joinCount = await ContestEntry.countDocuments({ contest_id: contest._id });
-          const entryFee = contest.entry_fee || 0;
-          const platformFeePercent = contest.platform_fee || 0;
-          const totalPool = joinCount * entryFee;
-          prizePool = totalPool - (totalPool * platformFeePercent) / 100;
-        }
-        totalPrizePool += prizePool;
+        totalPrizePool += cardPrize(contest, session.status, joined.get(String(contest._id)) || 0).prize_pool;
       }
 
       const sessionEntries = entries.filter((e) => {
-        const c = contests.find((c) => c._id.toString() === e.contest_id?.toString());
-        return c && c.league_session_id?.toString() === session._id.toString();
+        const c = contestOf.get(String(e.contest_id));
+        return c && sessionKeys.has(String(c.league_session_id));
       });
 
       return {

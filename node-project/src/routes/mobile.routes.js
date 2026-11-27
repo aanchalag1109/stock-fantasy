@@ -10,6 +10,9 @@ const payment = require('../controllers/payment.controller');
 // NEW IMPLEMENTATION — NODE.JS PROJECT: Admin-Controlled Android Force Update System
 const appVersion = require('../controllers/app-version.controller');
 const { requireSupportedAppVersion } = require('../middleware/app-version.middleware');
+// NEW IMPLEMENTATION — NODE.JS PROJECT (security): old PHP debug / payout routes that moved money without a
+// login now answer 410 Gone. Prizes are paid only by the server's payout (prize-payout.service).
+const removed = (req, res) => res.status(410).json({ success: false, error: 'This endpoint has been removed.' });
 
 const profileDir = path.join(__dirname, '../../public/uploads/profiles');
 const profileUpload = multer({
@@ -117,12 +120,12 @@ router.get('/session-stats/:sessionId/history', api.stockHistory); // NEW IMPLEM
 router.get('/debug-payment', legacy.debugPayment);
 router.get('/check-wallet', legacy.checkWallet);
 router.get('/check-latest-payment', legacy.checkLatestPayment);
-router.get('/test-payment-add', legacy.testPaymentAdd);
-router.get('/trigger-callback', legacy.triggerCallback);
+router.get('/test-payment-add', removed); // NEW IMPLEMENTATION — NODE.JS PROJECT: credited any wallet without login
+router.get('/trigger-callback', removed); // NEW IMPLEMENTATION — NODE.JS PROJECT: marked any deposit paid without the gateway
 router.post('/save-start-prices', legacy.saveStartPrices);
 router.post('/save-end-prices', legacy.saveEndPrices);
-router.post('/calculate-results', legacy.calculateResults);
-router.get('/test-calculate-contest', legacy.testCalculateContest);
+router.post('/calculate-results', removed); // NEW IMPLEMENTATION — NODE.JS PROJECT: paid prizes without login; prizes are paid by the server (prize-payout.service)
+router.get('/test-calculate-contest', removed); // NEW IMPLEMENTATION — NODE.JS PROJECT: same unauthenticated payout as /calculate-results
 router.get('/debug-calculate-contest', legacy.debugCalculateContest);
 router.post('/save-api-structure', legacy.saveApiStructure);
 

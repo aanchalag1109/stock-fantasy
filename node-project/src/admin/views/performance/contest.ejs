@@ -141,7 +141,7 @@
               <h5 class="mb-0"><i class="bi bi-trophy-fill me-2"></i>Prize Distribution</h5>
             </div>
             <div class="card-body">
-              <%# PHP PARITY: "Calculate Results" — same routine as POST /api/v1/calculate-results (credits prizes once) %>
+              <%# NEW IMPLEMENTATION — NODE.JS PROJECT: "Calculate Results" runs the safe prize payout (prize-payout.service) %>
               <% if (can('performance.manage')) { %>
               <div class="mb-3">
                 <button class="btn btn-sm btn-warning" id="calculateResultsBtn"><i class="bi bi-calculator"></i> Calculate Results</button>
@@ -508,7 +508,7 @@ function getPrizeForRank(rank) {
   // ── Calculate Results ──
   var calcBtn = document.getElementById('calculateResultsBtn');
   if (calcBtn) calcBtn.addEventListener('click', function () {
-    if (!confirm('Recalculate contest results based on current start/end prices?\n\nIf the contest has not been calculated yet, winners are credited.')) return;
+    if (!confirm('Calculate the results and pay the winners now?\n\nRuns only after the session has completed, and never pays a contest twice.')) return;
     calcBtn.disabled = true;
     calcBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Calculating...';
     postJson('/api/performance/' + cid + '/calculate-results').then(function (data) {

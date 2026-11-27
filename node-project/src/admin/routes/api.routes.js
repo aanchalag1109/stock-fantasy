@@ -29,6 +29,7 @@ router.get('/live-contests-count', requireAdmin, requirePermission('live_managem
 // the older 'stock' / 'crypto' still work). Each: id (numeric), name, market, min_assets, max_assets, description.
 const sessionAssets = require('../../services/session-assets.service');
 const marketsLib = require('../../services/markets');
+const { withCurrentPools } = require('../../services/contest-automation/contest-scoring'); // NEW IMPLEMENTATION — NODE.JS PROJECT
 const assetRow = (asset) => ({ id: asset.old_id, name: asset.name, symbol: asset.symbol, image_url: asset.image_url || null, market: asset.market || null });
 
 router.get('/categories/:type', requireAdmin, requirePermission('sessions.create', 'sessions.edit', 'templates.edit'), async (req, res) => {
@@ -214,8 +215,8 @@ router.get('/session-contests/:id', requireAdmin, requirePermission('sessions.vi
 
     const keys = [session._id];
     if (session.old_id != null) keys.push(session.old_id);
-    const contests = await Contest.find({ league_session_id: { $in: keys } })
-      .select('old_id category prize_pool entry_fee participants status').lean();
+    const contests = await Contest.find({ league_session_id: { $in: keys } }).lean();
+    await withCurrentPools(contests); // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): current pool (actual joins once live)
 
     const contestKeys = contests.flatMap(c => [c._id, c.old_id].filter(k => k != null));
     const joinedRows = contestKeys.length

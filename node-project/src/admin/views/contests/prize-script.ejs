@@ -141,58 +141,53 @@ function regenerateAutoTiers() {
     if (cat === 'equal' || isNewFormat()) { // H2H / WTA / Nx: winners share the pool equally
         const perWinner = Math.floor(pool / winners);
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td>Rank 1' + (winners > 1 ? '–' + winners : '') + '</td><td>' + winners + '</td><td>100%</td><td class="fw-bold text-success">' + perWinner + '</td><td>' + Math.floor(pool) + '</td>';
+        tr.innerHTML = '<td>Rank 1' + (winners > 1 ? '–' + winners : '') + '</td><td>' + winners + '</td><td>100%</td><td class="fw-bold text-success">' + perWinner + '</td><td>' + (perWinner * winners) + '</td>';
         tbody.appendChild(tr);
-        document.getElementById('autoTotal').textContent = Math.floor(pool);
-        document.getElementById('prize_distribution_hidden').value = JSON.stringify([{ label: 'Rank 1 to ' + winners, rank_start: 1, rank_end: winners, winners: winners, percent: 100, prize: pool, per_winner: perWinner }]);
+        document.getElementById('autoTotal').textContent = perWinner * winners;
+        document.getElementById('prize_distribution_hidden').value = JSON.stringify([{ label: 'Rank 1 to ' + winners, rank_start: 1, rank_end: winners, winners: winners, percent: 100, prize: perWinner * winners, per_winner: perWinner }]);
         return;
     }
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): same rule as buildDynamicPrizeDistribution
+    // (helpers/mobile-compat.js) — the server saves that table; this is its preview. Whole-number prizes
+    // that add up to the pool; the coins left over from rounding go to rank 1.
     const key = getClosestTierKey(winners);
     const isHigher = key > winners;
     const tiers = TIERS[key];
-    let totalAllocated = 0;
     const rows = [];
-    tiers.forEach(([s, e, pct], idx) => {
-        if (s > winners) return;
-        const isLastTier = idx === tiers.length - 1;
-        let end = isLastTier ? (isHigher ? Math.min(e, winners) : winners) : Math.min(e, winners);
-        if (end < s) return;
+    let previous = Infinity;
+    for (let idx = 0; idx < tiers.length; idx++) {
+        const [s, e, pct] = tiers[idx];
+        if (s > winners) break;
+        const end = (idx === tiers.length - 1 && !isHigher) ? winners : Math.min(e, winners);
         const cnt = end - s + 1;
-        const groupPrize = pool * pct / 100;
-        let perWinner;
-        if (isLastTier || end >= winners) {
-            const originalLastTier = tiers[tiers.length - 1];
-            const structureWinners = originalLastTier[1] - originalLastTier[0] + 1;
-            const divisor = cnt <= structureWinners ? structureWinners : cnt;
-            perWinner = groupPrize / divisor;
-        } else {
-            perWinner = groupPrize / cnt;
-        }
-        totalAllocated += groupPrize;
-        rows.push({ s, end, cnt, pct, groupPrize, perWinner });
-    });
-    if (!isHigher) {
-        const lastRow = rows[rows.length - 1];
-        if (lastRow && lastRow.end < winners) {
-            const extraStart = lastRow.end + 1;
-            const extraEnd = winners;
-            const extraCnt = extraEnd - extraStart + 1;
-            const lastTierPct = tiers[tiers.length - 1][2];
-            const extraPrize = pool * lastTierPct / 100;
-            rows.push({ s: extraStart, end: extraEnd, cnt: extraCnt, pct: lastTierPct, groupPrize: extraPrize, perWinner: extraPrize / extraCnt });
-            totalAllocated += extraPrize;
-        }
+        let perWinner = (pool * pct / 100) / cnt;
+        if (perWinner > previous) perWinner = previous * 0.95;
+        rows.push({ s, end, cnt, perWinner });
+        previous = perWinner;
+        if (end >= winners) break;
     }
-    rows.forEach(r => {
+    const raw = rows.reduce((sum, r) => sum + r.perWinner * r.cnt, 0);
+    if (!(raw > 0)) return;
+    const whole = (v) => Math.max(0, Math.floor(v + 1e-6));
+    rows.forEach(r => { r.per = whole(r.perWinner * pool / raw); });
+    const leftover = whole(pool) - rows.reduce((sum, r) => sum + r.per * r.cnt, 0);
+    if (leftover > 0 && rows[0].cnt === 1) rows[0].per += leftover;
+    const shown = rows.filter(r => r.per > 0);
+    let totalAllocated = 0;
+    shown.forEach(r => {
+        const group = r.per * r.cnt;
+        const pct = Math.round(group / pool * 100 * 10000) / 10000;
+        totalAllocated += group;
+        r.pct = pct;
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td>Rank ' + r.s + (r.end > r.s ? '–' + r.end : '') + '</td><td>' + r.cnt + '</td><td>' + r.pct + '%</td><td class="fw-bold text-success">' + Math.floor(r.perWinner) + '</td><td>' + Math.floor(r.groupPrize) + '</td>';
+        tr.innerHTML = '<td>Rank ' + r.s + (r.end > r.s ? '–' + r.end : '') + '</td><td>' + r.cnt + '</td><td>' + pct + '%</td><td class="fw-bold text-success">' + r.per + '</td><td>' + group + '</td>';
         tbody.appendChild(tr);
     });
-    document.getElementById('autoTotal').textContent = Math.floor(totalAllocated);
-    document.getElementById('prize_distribution_hidden').value = JSON.stringify(rows.map(r => ({
+    document.getElementById('autoTotal').textContent = totalAllocated;
+    document.getElementById('prize_distribution_hidden').value = JSON.stringify(shown.map(r => ({
         label: 'Rank ' + r.s + ' to ' + r.end,
         rank_start: r.s, rank_end: r.end, winners: r.cnt, percent: r.pct,
-        prize: r.groupPrize, per_winner: Math.floor(r.perWinner)
+        prize: r.per * r.cnt, per_winner: r.per
     })));
 }
 function addTreeRow(rs, re, pw) {

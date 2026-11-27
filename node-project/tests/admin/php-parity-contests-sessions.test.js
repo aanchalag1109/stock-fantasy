@@ -419,11 +419,13 @@ describe('Live Management (PHP LiveManagementController)', () => {
     assert.equal(res.body.sessions.length, 1);
     assert.equal(res.body.sessions[0].contests_count, 1);
     assert.equal(res.body.sessions[0].participants_count, 4);
-    assert.equal(res.body.sessions[0].total_prize_pool, 300);
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): a live contest's pool comes from actual joins
+    // (4 × 25 − 10% = 90), as the app shows it — not the advertised 300
+    assert.equal(res.body.sessions[0].total_prize_pool, 90);
     assert.equal(res.body.live_sessions_count, 1);
     assert.equal(res.body.live_contests_count, 1);
     assert.equal(res.body.total_participants, 4);
-    assert.equal(res.body.total_prize_pool, 300);
+    assert.equal(res.body.total_prize_pool, 90);
     assert.equal((await json(admin, 'get', '/api/live-sessions-data?status=all')).body.sessions.length, 2);
   });
 

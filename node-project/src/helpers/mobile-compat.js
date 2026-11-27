@@ -158,18 +158,33 @@ function round2(value) {
   return Math.round(num(value) * 100) / 100;
 }
 
+/**
+ * NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): prize rows for `totalWinners` winners sharing
+ * `prizePool`. Every prize is a whole number (rounded down, as the admin form shows it) and the rows add
+ * up to the whole pool: the coins left over from rounding go to rank 1. Equal-split formats (equal, H2H,
+ * winner takes all, Nx) give every winner the same whole amount; the leftover (under 1 coin per winner)
+ * stays with the platform so the split stays equal.
+ *
+ * Mega tiers come from PRIZE_TABLES (the table nearest to the winner count, cut at the last winner). The
+ * group that reaches the last winner is now divided by its real number of winners — PHP divided it by the
+ * size of that group in the full table, so with fewer winners part of the pool was never paid (380 winners
+ * of a 25,000 pool got 23,380.55; 3 winners of 450 got 225.90). The tiers are then scaled to the pool.
+ */
 function buildDynamicPrizeDistribution(totalWinners, prizePool, category = 'mega') {
+  totalWinners = Math.floor(num(totalWinners));
+  prizePool = num(prizePool);
   if (totalWinners <= 0 || prizePool <= 0) return [];
   // NEW IMPLEMENTATION — NODE.JS PROJECT: h2h, winner_takes_all and multiplier also split equally
   if (isEqualSplitCategory(category)) {
-    const perWinner = round2(prizePool / totalWinners);
+    const perWinner = wholeCoins(prizePool / totalWinners);
+    if (perWinner <= 0) return [];
     return [{
       rank_label: totalWinners === 1 ? 'Rank 1' : `Rank 1 to ${totalWinners}`,
       rank_start: 1,
       rank_end: totalWinners,
       winners_count: totalWinners,
       percentage: 100,
-      prize_amount: round2(prizePool),
+      prize_amount: perWinner * totalWinners,
       per_winner_amount: perWinner,
     }];
   }
@@ -185,38 +200,41 @@ function buildDynamicPrizeDistribution(totalWinners, prizePool, category = 'mega
   });
   const isHigher = chosenKey > totalWinners;
   const tiers = PRIZE_TABLES[chosenKey];
-  const dist = [];
+  const rows = [];
   let previousPerWin = Infinity;
-  tiers.forEach((tier, index) => {
-    const [start, endRaw, pct] = tier;
-    if (start > totalWinners) return;
+  for (let index = 0; index < tiers.length; index += 1) {
+    const [start, endRaw, pct] = tiers[index];
+    if (start > totalWinners) break;
     const isLast = index === tiers.length - 1;
-    let end = isLast && !isHigher ? totalWinners : Math.min(endRaw, totalWinners);
-    if (end < start) return;
+    const end = isLast && !isHigher ? totalWinners : Math.min(endRaw, totalWinners);
     const count = end - start + 1;
-    const prize = round2((prizePool * pct) / 100);
-    let perWin;
-    if (isLast || end >= totalWinners) {
-      const original = tiers[tiers.length - 1];
-      const structureWinners = original[1] - original[0] + 1;
-      const divisor = count <= structureWinners ? structureWinners : count;
-      perWin = divisor > 0 ? round2(prize / divisor) : 0;
-      if (perWin > previousPerWin) perWin = round2(previousPerWin * 0.95);
-    } else {
-      perWin = count > 0 ? round2(prize / count) : 0;
-    }
-    dist.push({
-      rank_label: `Rank ${start} to ${end}`,
-      rank_start: start,
-      rank_end: end,
-      winners_count: count,
-      percentage: Math.round(pct * 10000) / 10000,
-      prize_amount: prize,
-      per_winner_amount: perWin,
-    });
+    let perWin = ((prizePool * pct) / 100) / count;
+    // a lower rank never gets more than the rank above it
+    if (perWin > previousPerWin) perWin = previousPerWin * 0.95;
+    rows.push({ start, end, count, perWin });
     previousPerWin = perWin;
-  });
-  return dist.filter((row) => row.rank_end >= row.rank_start);
+    if (end >= totalWinners) break;
+  }
+  const raw = rows.reduce((sum, r) => sum + r.perWin * r.count, 0);
+  if (!(raw > 0)) return [];
+  const scale = prizePool / raw;
+  const dist = rows.map((r) => ({ ...r, per: wholeCoins(r.perWin * scale) }));
+  const leftover = wholeCoins(prizePool) - dist.reduce((sum, r) => sum + r.per * r.count, 0);
+  if (leftover > 0 && dist[0].count === 1) dist[0].per += leftover;
+  return dist.filter((r) => r.per > 0).map((r) => ({
+    rank_label: `Rank ${r.start} to ${r.end}`,
+    rank_start: r.start,
+    rank_end: r.end,
+    winners_count: r.count,
+    percentage: Math.round(((r.per * r.count) / prizePool) * 100 * 10000) / 10000,
+    prize_amount: r.per * r.count,
+    per_winner_amount: r.per,
+  }));
+}
+
+/** Whole coins, rounded down (a tiny epsilon keeps 413.99999999 from becoming 413). */
+function wholeCoins(value) {
+  return Math.max(0, Math.floor(num(value) + 1e-6));
 }
 
 function asPrizeArray(value) {
@@ -269,6 +287,7 @@ module.exports = {
   scoreAssets,
   selectedMultipliers,
   buildDynamicPrizeDistribution,
+  wholeCoins,
   asPrizeArray,
   round2,
 };

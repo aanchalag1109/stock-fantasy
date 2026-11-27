@@ -472,18 +472,36 @@ describe('Performance contest page (PHP performance/show.blade.php)', () => {
     assert.deepEqual(titles.sort(), ['FLAT:No Price Movement Detected', 'HUGE:Extreme Price Value', 'LATE:Significant Timing Deviation', 'MISSING:Missing or Invalid Price']);
   });
 
-  test('Calculate Results runs the PHP calculate-results routine (scores, ranks, credits prizes once)', async () => {
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback / security): the button runs the safe payout —
+  // prizes from actual joins (whole coins), never twice, never before the session has completed.
+  test('Calculate Results runs the safe prize payout (actual joins, whole coins, never twice)', async () => {
     const { contest, rows } = contestFixture();
-    db.ContestPerformancePrize.push({ contest_id: contest._id, rank_start: 1, rank_end: 1, per_winner_amount: 50 });
+    // a stale full-house prize row is ignored: the payout rebuilds the table from the actual joins
+    db.ContestPerformancePrize.push({ contest_id: contest._id, rank_start: 1, rank_end: 1, per_winner_amount: 5000 });
+    const { dynamicPrizeRows } = require('../../src/services/contest-automation/contest-scoring');
+    const expected = dynamicPrizeRows(contest, rows.length).rows[0].per_winner_amount;
+    assert.ok(expected > 0 && Number.isInteger(expected), `first prize ${expected}`);
     const admin = await login();
     const res = await admin.post(`/api/performance/${contest._id}/calculate-results`).set('Accept', 'application/json');
     assert.equal(res.body.success, true, JSON.stringify(res.body));
     assert.equal(get('ContestEntry', rows[0].entry._id).rank, 1);
-    assert.equal(get('User', rows[0].user._id).winnings_balance, 50);
-    await admin.post(`/api/performance/${contest._id}/calculate-results`).set('Accept', 'application/json');
-    assert.equal(get('User', rows[0].user._id).winnings_balance, 50, 'not credited twice');
+    assert.equal(get('User', rows[0].user._id).winnings_balance, expected);
+    assert.equal(get('Contest', contest._id).prizes_distributed, true);
+    const again = await admin.post(`/api/performance/${contest._id}/calculate-results`).set('Accept', 'application/json');
+    assert.equal(again.body.success, false);
+    assert.equal(get('User', rows[0].user._id).winnings_balance, expected, 'not credited twice');
     const viewer = await login('viewer@test.local');
     assert.equal((await viewer.post(`/api/performance/${contest._id}/calculate-results`).set('Accept', 'application/json')).status, 403);
+  });
+
+  test('Calculate Results refuses while the session is still live', async () => {
+    const { contest, rows, session } = contestFixture();
+    get('LeagueSession', session._id).status = 'live';
+    const admin = await login();
+    const res = await admin.post(`/api/performance/${contest._id}/calculate-results`).set('Accept', 'application/json');
+    assert.equal(res.body.success, false);
+    assert.match(res.body.message, /not completed/);
+    assert.equal(get('User', rows[0].user._id).winnings_balance, 0);
   });
 });
 

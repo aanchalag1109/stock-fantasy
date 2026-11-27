@@ -45,8 +45,6 @@ const FORMATS = {
 const CATEGORIES = Object.keys(FORMATS);
 const NEW_FORMATS = ['h2h', 'winner_takes_all', 'multiplier'];
 
-const round2 = (value) => Math.round(((Number(value) || 0) + Number.EPSILON) * 100) / 100;
-
 /** The contest's type; unknown/legacy values (e.g. "flexible") behave like mega. */
 function formatOf(contest) {
   const key = String((contest && contest.category) || '').toLowerCase().trim();
@@ -155,13 +153,15 @@ const appBadge = (contest) => (contest && contest.is_pinned ? 'Featured' : forma
 /** One equal-split row: ranks 1..winners share the pool. Admin/stored shape. */
 function equalSplitRows(winners, prizePool) {
   if (!(winners > 0) || !(prizePool > 0)) return [];
+  // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): whole-number prizes, as the payout pays them
+  const perWinner = Math.max(0, Math.floor(prizePool / winners + 1e-6));
   return [{
     label: winners === 1 ? 'Rank 1' : `Rank 1 to ${winners}`,
     rank_start: 1,
     rank_end: winners,
     winners,
-    per_winner: round2(prizePool / winners),
-    prize: round2(prizePool),
+    per_winner: perWinner,
+    prize: perWinner * winners,
     percent: 100,
   }];
 }

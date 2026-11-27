@@ -139,7 +139,7 @@ These were missed in the conversion and restored from PHP; they are marked `PHP 
   - **How It Works** shows eight system checks, the calculation steps 1–6, the prize breakdown, user-wise prizes, the full leaderboard and price-timing validation.
   - **Verify All Prices via API** compares saved prices with API prices; most sources are *current* prices, as in PHP.
   - **Analyze Error Reasons** looks for missing, late, extreme or unchanged prices.
-  - **Calculate Results** runs the same routine as `POST /api/v1/calculate-results`, which credits prizes once.
+  - **Calculate Results** runs the safe prize payout (only after the session has completed, never twice). The public `POST /api/v1/calculate-results` was removed.
   - **RUN ALL** takes a start and end time (today, IST). It waits, captures the prices, takes the session live, then pays this contest and completes the session. Its log is polled live, and **Stop** works.
 - **Deliberate differences from PHP:**
   - Stop really stops a running job; PHP only removed queued jobs.

@@ -84,7 +84,7 @@ This document provides the exhaustive mapping between Laravel routes and the mig
 | POST | `/api/flexible-pricing` | `/api/flexible-pricing` | Public | `pricingController.flexiblePricing` | Calculate prize tiers from participants & fee |
 | POST | `/api/save-start-prices` | `/api/save-start-prices` & `/api/v1/save-start-prices` | Public | `calculateController.saveStartPrices` | Fetch and persist start prices |
 | POST | `/api/save-end-prices` | `/api/save-end-prices` & `/api/v1/save-end-prices` | Public | `calculateController.saveEndPrices` | Fetch and persist end prices |
-| POST | `/api/calculate-results` | `/api/calculate-results` & `/api/v1/calculate-results` | Public | `calculateController.calculateResults` | Calculate score, ranks, prize payouts |
+| POST | `/api/calculate-results` | `/api/v1/calculate-results`, `/api/v1/contests/calculate-results` | — | **Removed (410)** | Paid prizes without a login. Prizes are paid only by the server (automatic results job, Pending Prizes, Performance → Calculate Results). `GET /api/v1/test-calculate-contest`, `GET /api/v1/test-payment-add` and `GET /api/v1/trigger-callback` were removed for the same reason. |
 | POST | `/api/v1/save-api-structure` | `/api/v1/save-api-structure` | Public | `performanceController.saveApiStructure` | Save performance prizes structure |
 | POST | `/api/distribute-prizes/:id` | `/api/distribute-prizes/:id` | Public | `transactionController.distributePrizes` | Distribute prizes to contest winners |
 | POST | `/api/fix-duplicate-transactions/:id`| `/api/fix-duplicate-transactions/:id`| Public | `transactionController.fixDuplicates` | Deduplicate and reconcile winnings |

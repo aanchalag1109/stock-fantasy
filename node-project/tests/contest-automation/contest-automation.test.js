@@ -438,8 +438,11 @@ describe('prize payout (Pending Prizes)', () => {
     const per = (rank) => prize.find((p) => rank >= p.rank_start && rank <= p.rank_end).per_winner_amount;
     // 10 entries × 30% → 3 paid ranks
     assert.equal(get('User', rows[0].user._id).winnings_balance, per(1));
-    // entries 1 and 2 tie at rank 2 → they split the prizes of ranks 2 and 3 equally
-    const tieShare = round2((per(2) + per(3)) / 2);
+    // entries 1 and 2 tie at rank 2 → they split the prizes of ranks 2 and 3 equally, in whole coins
+    // NEW IMPLEMENTATION — NODE.JS PROJECT (client feedback): prizes are whole numbers (rounded down)
+    const tieShare = Math.floor((per(2) + per(3)) / 2);
+    assert.ok(Number.isInteger(per(1)) && Number.isInteger(tieShare));
+    assert.equal(prize.reduce((sum, p) => sum + p.prize_amount, 0), 90, 'the rows add up to the whole pool');
     assert.equal(get('User', rows[1].user._id).winnings_balance, tieShare);
     assert.equal(get('User', rows[2].user._id).winnings_balance, tieShare);
     assert.equal(get('ContestEntry', rows[3].entry._id).rank, 4, 'rank after a tie is skipped');
@@ -499,6 +502,35 @@ describe('prize payout (Pending Prizes)', () => {
 
     await pendingPrizes.distributeContest({ params: { id: String(c._id) }, adminAccess: { email: 'admin@test' } }, res);
     assert.equal(res.body.already_paid, true);
+  });
+
+  // NEW IMPLEMENTATION — NODE.JS PROJECT: an old numeric session id crashed the page (CastError), and the
+  // pool shown was the advertised one instead of the actual joins.
+  test('Pending Prizes page: numeric session ids are grouped under their session; pools from actual joins', async () => {
+    get('LeagueSession', s._id).old_id = 301;
+    Object.assign(get('Contest', c._id), { league_session_id: 301, created_at: new Date(), prize_pool: 99999 });
+    const ejs = require('ejs');
+    const originalRender = ejs.renderFile;
+    const originalAggregate = models.ContestEntry.aggregate;
+    models.ContestEntry.aggregate = async (pipeline) => {
+      const counts = new Map();
+      db.ContestEntry.filter((e) => matches(e, pipeline[0].$match)).forEach((e) => counts.set(String(e.contest_id), (counts.get(String(e.contest_id)) || 0) + 1));
+      return [...counts].map(([id, count]) => ({ _id: id, count }));
+    };
+    let locals;
+    ejs.renderFile = async (file, data) => { if (/pending_prizes/.test(file)) locals = data; return ''; };
+    try {
+      await pendingPrizes.index({ query: {}, session: {} }, { locals: {}, send() {}, status() { return this; } });
+    } finally {
+      ejs.renderFile = originalRender;
+      models.ContestEntry.aggregate = originalAggregate;
+    }
+    const group = locals.groups.find((g) => g.contests.some((x) => String(x._id) === String(c._id)));
+    assert.equal(group.session.name, get('LeagueSession', s._id).name, 'not "Unassigned"');
+    const shown = group.contests.find((x) => String(x._id) === String(c._id));
+    const { dynamicPrizeRows } = require('../../src/services/contest-automation/contest-scoring');
+    assert.equal(shown.prize_pool, Math.round(dynamicPrizeRows(get('Contest', c._id), shown.joined_count).prizePool * 100) / 100);
+    assert.equal(shown.advertised_prize_pool, 99999);
   });
 });
 
